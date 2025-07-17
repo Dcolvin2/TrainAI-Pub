@@ -15,7 +15,7 @@ export default function ForgotPasswordPage() {
     setMessage(null);
     try {
       const redirectTo = `${process.env.NEXT_PUBLIC_APP_URL}/reset-password`;
-      const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo,
       });
       if (error) {
@@ -23,8 +23,9 @@ export default function ForgotPasswordPage() {
       } else {
         setMessage('Check your inbox for reset instructions.');
       }
-    } catch (err: any) {
-      setError(err.message || 'Something went wrong');
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Something went wrong';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
