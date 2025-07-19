@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
-export default function ResetPassword() {
+function ResetPasswordContent() {
   const searchParams = useSearchParams();
 
   // Supabase delivers tokens in the URL *hash* fragment (#) in production emails –
@@ -127,5 +127,13 @@ export default function ResetPassword() {
         <a href="/login">← Back to Login</a>
       </p>
     </div>
+  );
+}
+
+export default function ResetPassword() {
+  return (
+    <Suspense fallback={<div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div>}>
+      <ResetPasswordContent />
+    </Suspense>
   );
 } 
