@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
-export default function ConfirmPage() {
+function ConfirmPageContent() {
   const searchParams = useSearchParams();
 
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
@@ -50,5 +50,17 @@ export default function ConfirmPage() {
         </p>
       )}
     </div>
+  );
+}
+
+export default function ConfirmPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ padding: '2rem', maxWidth: 400, margin: '0 auto', textAlign: 'center' }}>
+        <p>Loading...</p>
+      </div>
+    }>
+      <ConfirmPageContent />
+    </Suspense>
   );
 } 
