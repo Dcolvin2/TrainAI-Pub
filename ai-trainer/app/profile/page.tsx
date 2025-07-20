@@ -5,11 +5,6 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import Guard from '@/app/components/Guard';
 
-interface Equipment {
-  id: string;
-  name: string;
-}
-
 export default function ProfilePage() {
   const router = useRouter();
 
