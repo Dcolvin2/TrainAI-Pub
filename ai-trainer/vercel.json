@@ -1,0 +1,6 @@
+{
+  "buildCommand": "cd ai-trainer && npm run build",
+  "outputDirectory": "ai-trainer/.next",
+  "framework": "nextjs",
+  "installCommand": "cd ai-trainer && npm install"
+} 

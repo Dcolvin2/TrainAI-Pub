@@ -1,8 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: 'export',
-  trailingSlash: true,
   async redirects() {
     return [];
   },
@@ -22,7 +20,6 @@ const nextConfig: NextConfig = {
   // Allow external images and domains
   images: {
     domains: ['localhost', '127.0.0.1'],
-    unoptimized: true,
   },
 };
 
