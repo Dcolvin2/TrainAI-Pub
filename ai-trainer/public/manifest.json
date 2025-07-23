@@ -1,0 +1,21 @@
+{
+  "name": "TrainAI - Your AI-Powered Workout Partner",
+  "short_name": "TrainAI",
+  "description": "Track progress, get stronger, and stay consistent with intelligent training guidance.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0F172A",
+  "theme_color": "#22C55E",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["fitness", "health", "lifestyle"],
+  "lang": "en",
+  "dir": "ltr"
+} 

@@ -2,7 +2,12 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import Image from 'next/image';
 import { supabase } from '@/lib/supabaseClient';
+import Button from '@/app/components/ui/Button';
+import Input from '@/app/components/ui/Input';
+import Card from '@/app/components/ui/Card';
 
 export default function SignUpPage() {
   const router = useRouter();
@@ -67,57 +72,83 @@ export default function SignUpPage() {
   };
 
   return (
-    <div className="p-4 max-w-sm mx-auto">
-      <h1 className="text-xl font-bold mb-4 text-center">Sign Up</h1>
-      {errorMsg && (
-        <div className="mb-2">
-          <p className="text-red-500 text-sm mb-1">{errorMsg}</p>
-          {errorMsg.toLowerCase().includes('already') && (
-            <p className="text-sm">
-              <a href="/forgot-password" className="text-blue-500 underline">
-                Reset your password
-              </a>
-            </p>
-          )}
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <Image
+            src="/trainai-logo.svg"
+            alt="TrainAI Logo"
+            width={160}
+            height={64}
+            className="logo mx-auto"
+          />
         </div>
-      )}
-      <input
-        className="border p-2 mb-2 block w-full rounded"
-        placeholder="Email"
-        type="email"
-        value={email}
-        onChange={(e) => { setEmail(e.target.value); setErrorMsg(''); }}
-      />
-      <input
-        className="border p-2 mb-2 block w-full rounded"
-        type="password"
-        placeholder="Password"
-        value={password}
-        onChange={(e) => { setPassword(e.target.value); setErrorMsg(''); }}
-      />
-      <input
-        className="border p-2 mb-4 block w-full rounded"
-        type="password"
-        placeholder="Confirm Password"
-        value={confirmPassword}
-        onChange={(e) => { setConfirmPassword(e.target.value); setErrorMsg(''); }}
-      />
-      <input
-        className="border p-2 mb-4 block w-full rounded"
-        placeholder="First Name"
-        value={firstName}
-        onChange={(e) => { setFirstName(e.target.value); setErrorMsg(''); }}
-      />
-      <button
-        disabled={loading}
-        className="w-full bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white px-4 py-2 rounded mb-4"
-        onClick={handleSignup}
-      >
-        {loading ? 'Signing Up...' : 'Sign Up'}
-      </button>
 
-      <div className="text-sm text-center">
-        <a href="/login" className="text-blue-600 hover:underline">Back to Login</a>
+        {/* Signup Card */}
+        <Card className="w-full">
+          <h1 className="text-2xl font-bold text-center mb-6">Join TrainAI</h1>
+          
+          {errorMsg && (
+            <div className="bg-error/10 border border-error/20 text-error px-4 py-3 rounded-lg mb-6">
+              <p className="text-sm">{errorMsg}</p>
+              {errorMsg.toLowerCase().includes('already') && (
+                <Link href="/forgot-password" className="text-accent hover:text-primary transition-colors text-sm underline">
+                  Reset your password
+                </Link>
+              )}
+            </div>
+          )}
+          
+          <form onSubmit={(e) => { e.preventDefault(); handleSignup(); }} className="space-y-4">
+            <Input
+              type="email"
+              placeholder="Email address"
+              value={email}
+              onChange={(e) => { setEmail(e.target.value); setErrorMsg(''); }}
+              required
+            />
+            
+            <Input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => { setPassword(e.target.value); setErrorMsg(''); }}
+              required
+            />
+            
+            <Input
+              type="password"
+              placeholder="Confirm Password"
+              value={confirmPassword}
+              onChange={(e) => { setConfirmPassword(e.target.value); setErrorMsg(''); }}
+              required
+            />
+            
+            <Input
+              type="text"
+              placeholder="First Name"
+              value={firstName}
+              onChange={(e) => { setFirstName(e.target.value); setErrorMsg(''); }}
+              required
+            />
+            
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={loading}
+            >
+              {loading ? 'Creating Account...' : 'Create Account'}
+            </Button>
+          </form>
+
+          {/* Links */}
+          <div className="mt-6 text-center">
+            <Link href="/login" className="text-accent hover:text-primary transition-colors text-sm">
+              Already have an account? Sign in
+            </Link>
+          </div>
+        </Card>
       </div>
     </div>
   );

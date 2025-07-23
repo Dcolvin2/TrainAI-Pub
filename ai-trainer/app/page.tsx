@@ -1,103 +1,98 @@
 import Image from "next/image";
+import Link from "next/link";
 
 export default function Home() {
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+    <main className="bg-background min-h-screen text-foreground">
+      {/* Hero Section */}
+      <section className="gradient-bg min-h-screen flex flex-col items-center justify-center p-8 relative overflow-hidden">
+        {/* Background gradient elements */}
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-accent/5"></div>
+        
+        {/* Logo */}
+        <div className="relative z-10 mb-8">
+          <Image
+            src="/trainai-logo.svg"
+            alt="TrainAI Logo"
+            width={200}
+            height={80}
+            className="logo"
+            priority
+          />
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+        
+        {/* Hero Content */}
+        <div className="text-center max-w-2xl mx-auto relative z-10">
+          <h1 className="text-4xl md:text-6xl font-bold mb-6 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+            Welcome to TrainAI
+          </h1>
+          <p className="text-xl text-muted mb-8 leading-relaxed">
+            Your AI-powered workout partner. Track progress, get stronger, and stay consistent with intelligent training guidance.
+          </p>
+          
+          {/* CTA Buttons */}
+          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+            <Link href="/new-workout">
+              <button className="button-primary">
+                Start a Workout
+              </button>
+            </Link>
+            <Link href="/dashboard">
+              <button className="button-secondary">
+                View Dashboard
+              </button>
+            </Link>
+          </div>
+        </div>
+        
+        {/* Feature highlights */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-16 max-w-4xl mx-auto relative z-10">
+          <div className="card text-center">
+            <div className="text-3xl mb-4">🤖</div>
+            <h3 className="text-lg font-semibold mb-2">AI-Powered</h3>
+            <p className="text-muted text-sm">Intelligent workout recommendations based on your progress and goals</p>
+          </div>
+          <div className="card text-center">
+            <div className="text-3xl mb-4">📊</div>
+            <h3 className="text-lg font-semibold mb-2">Track Progress</h3>
+            <p className="text-muted text-sm">Monitor your strength gains and fitness improvements over time</p>
+          </div>
+          <div className="card text-center">
+            <div className="text-3xl mb-4">🎯</div>
+            <h3 className="text-lg font-semibold mb-2">Stay Consistent</h3>
+            <p className="text-muted text-sm">Build lasting habits with personalized training schedules</p>
+          </div>
+        </div>
+      </section>
+      
+      {/* Quick Actions Section */}
+      <section className="py-16 px-8">
+        <div className="max-w-6xl mx-auto">
+          <h2 className="text-3xl font-bold text-center mb-12">Get Started</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <Link href="/new-workout" className="card hover:shadow-lg transition-all duration-300 hover:scale-105 cursor-pointer">
+              <div className="text-2xl mb-3">💪</div>
+              <h3 className="font-semibold mb-2">New Workout</h3>
+              <p className="text-muted text-sm">Create a personalized training session</p>
+            </Link>
+            <Link href="/dashboard" className="card hover:shadow-lg transition-all duration-300 hover:scale-105 cursor-pointer">
+              <div className="text-2xl mb-3">📈</div>
+              <h3 className="font-semibold mb-2">Dashboard</h3>
+              <p className="text-muted text-sm">View your progress and statistics</p>
+            </Link>
+            <Link href="/equipment" className="card hover:shadow-lg transition-all duration-300 hover:scale-105 cursor-pointer">
+              <div className="text-2xl mb-3">🏋️</div>
+              <h3 className="font-semibold mb-2">Equipment</h3>
+              <p className="text-muted text-sm">Manage your available equipment</p>
+            </Link>
+            <Link href="/profile" className="card hover:shadow-lg transition-all duration-300 hover:scale-105 cursor-pointer">
+              <div className="text-2xl mb-3">👤</div>
+              <h3 className="font-semibold mb-2">Profile</h3>
+              <p className="text-muted text-sm">Update your personal information</p>
+            </Link>
+          </div>
+        </div>
+      </section>
+    </main>
   );
 }

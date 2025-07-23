@@ -2,7 +2,12 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import Image from 'next/image';
 import { supabase } from '@/lib/supabaseClient';
+import Button from '@/app/components/ui/Button';
+import Input from '@/app/components/ui/Input';
+import Card from '@/app/components/ui/Card';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -23,7 +28,6 @@ export default function LoginPage() {
       if (error) {
         console.error('Login error:', error);
         setError(error.message);
-        alert(error.message);
       } else {
         console.log('Login successful:', data);
         router.push('/new-workout');
@@ -31,46 +35,74 @@ export default function LoginPage() {
     } catch (err) {
       console.error('Unexpected error:', err);
       setError('An unexpected error occurred');
-      alert('An unexpected error occurred');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="p-4 max-w-sm mx-auto">
-      <h1 className="text-xl font-bold mb-4 text-center">Log In</h1>
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-          {error}
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <Image
+            src="/trainai-logo.svg"
+            alt="TrainAI Logo"
+            width={160}
+            height={64}
+            className="logo mx-auto"
+          />
         </div>
-      )}
-      <input
-        className="border p-2 mb-2 block w-full rounded"
-        placeholder="Email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        type="email"
-      />
-      <input
-        className="border p-2 mb-2 block w-full rounded"
-        type="password"
-        placeholder="Password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-      />
-      <button
-        className="w-full bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded mb-4 disabled:opacity-50"
-        onClick={handleLogin}
-        disabled={loading}
-      >
-        {loading ? 'Logging in...' : 'Log In'}
-      </button>
 
-      <div className="text-sm text-center space-y-1">
-        <a href="/signup" className="text-blue-600 hover:underline block">Sign up</a>
-        <a href="/forgot-password" className="text-blue-600 hover:underline block">Forgot password?</a>
-        <a href="/magic-link" className="text-blue-600 hover:underline block">Use magic link</a>
+        {/* Login Card */}
+        <Card className="w-full">
+          <h1 className="text-2xl font-bold text-center mb-6">Welcome Back</h1>
+          
+          {error && (
+            <div className="bg-error/10 border border-error/20 text-error px-4 py-3 rounded-lg mb-6">
+              {error}
+            </div>
+          )}
+          
+          <form onSubmit={(e) => { e.preventDefault(); handleLogin(); }} className="space-y-4">
+            <Input
+              type="email"
+              placeholder="Email address"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+            
+            <Input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+            
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={loading}
+            >
+              {loading ? 'Signing In...' : 'Sign In'}
+            </Button>
+          </form>
+
+          {/* Links */}
+          <div className="mt-6 text-center space-y-3">
+            <Link href="/signup" className="text-accent hover:text-primary transition-colors block text-sm">
+              Don't have an account? Sign up
+            </Link>
+            <Link href="/forgot-password" className="text-muted hover:text-foreground transition-colors block text-sm">
+              Forgot your password?
+            </Link>
+            <Link href="/magic-link" className="text-muted hover:text-foreground transition-colors block text-sm">
+              Sign in with magic link
+            </Link>
+          </div>
+        </Card>
       </div>
     </div>
   );
