@@ -10,16 +10,11 @@ export default function Home() {
         <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-accent/5"></div>
         
         {/* Logo */}
-        <div className="relative z-10 mb-6 flex justify-center">
-          <Image
-            src="/trainai-logo.png"
-            alt="TrainAI Logo"
-            width={128}
-            height={128}
-            className="w-32 h-auto"
-            priority
-          />
-        </div>
+        <img
+          src="/trainai-logo.png"
+          alt="TrainAI Logo"
+          className="w-32 sm:w-40 mb-6 mx-auto"
+        />
         
         {/* Hero Content */}
         <div className="text-center max-w-2xl mx-auto relative z-10">

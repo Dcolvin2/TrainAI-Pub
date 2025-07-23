@@ -14,11 +14,9 @@ export default function Nav() {
       <div className="max-w-6xl mx-auto px-4 flex items-center justify-between">
         {/* Logo */}
         <Link href="/" className="flex items-center">
-          <Image
+          <img
             src="/trainai-logo.png"
             alt="TrainAI Logo"
-            width={96}
-            height={96}
             className="w-24 h-auto"
           />
         </Link>
