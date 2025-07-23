@@ -67,8 +67,8 @@ export default function SignUpPage() {
       return;
     }
 
-    // Success → go to new-workout
-    router.push('/new-workout');
+    // Success → go to dashboard
+    router.push('/dashboard');
   };
 
   return (

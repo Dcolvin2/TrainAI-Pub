@@ -3,8 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabaseClient'
-import Card from '@/app/components/ui/Card'
-import Button from '@/app/components/ui/Button'
+import Link from 'next/link'
 import WeightChart from '@/app/components/dashboard/WeightChart'
 import LiftChart from '@/app/components/dashboard/LiftChart'
 
@@ -110,13 +109,14 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background text-foreground p-8">
+      <div className="min-h-screen bg-background text-foreground p-4 sm:p-6">
         <div className="max-w-6xl mx-auto">
-          <div className="animate-pulse">
-            <div className="h-8 bg-card rounded mb-8 w-1/3"></div>
+          <div className="animate-pulse space-y-6">
+            <div className="h-8 bg-[#1E293B] rounded-2xl w-1/3"></div>
+            <div className="h-12 bg-[#1E293B] rounded-2xl w-full max-w-md"></div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {[...Array(6)].map((_, i) => (
-                <div key={i} className="h-48 bg-card rounded-xl"></div>
+                <div key={i} className="h-48 bg-[#1E293B] rounded-2xl shadow-md"></div>
               ))}
             </div>
           </div>
@@ -126,34 +126,54 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground p-8">
-      <div className="max-w-6xl mx-auto">
-        <h1 className="text-3xl font-bold mb-8">
-          Welcome back, {profile?.first_name || 'Athlete'} 👋
-        </h1>
+    <div className="min-h-screen bg-background text-foreground p-4 sm:p-6">
+      <div className="max-w-6xl mx-auto space-y-6">
+        {/* Header Section */}
+        <div className="space-y-4">
+          <h1 className="text-xl font-semibold tracking-wide">
+            Welcome back, {profile?.first_name || 'Athlete'}
+          </h1>
+          
+          {/* New Workout Button */}
+          <div className="flex flex-col sm:flex-row gap-4">
+            <Link href="/new-workout" className="inline-flex">
+              <button className="bg-primary hover:bg-primary-hover text-white font-medium px-6 py-3 rounded-2xl shadow-md transition-all duration-200 tracking-wide">
+                Start New Workout
+              </button>
+            </Link>
+            {lastWorkout && (
+              <Link href="/new-workout" className="inline-flex">
+                <button className="bg-[#1E293B] hover:bg-[#334155] text-foreground font-medium px-6 py-3 rounded-2xl shadow-md transition-all duration-200 tracking-wide">
+                  Continue Workout Program
+                </button>
+              </Link>
+            )}
+          </div>
+        </div>
 
+        {/* Dashboard Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {/* Weight Progress Widget */}
-          <Card>
-            <h2 className="text-lg font-semibold mb-4 text-primary">Weight Progress</h2>
+          <div className="bg-[#1E293B] rounded-2xl p-6 shadow-md">
+            <h2 className="text-lg font-semibold mb-4 tracking-wide">Weight Progress</h2>
             {profile?.weight && profile?.goal_weight ? (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <div className="flex justify-between">
-                  <span className="text-muted">Current:</span>
-                  <span className="font-semibold">{profile.weight} lbs</span>
+                  <span className="text-muted text-sm">Current</span>
+                  <span className="font-medium">{profile.weight} lbs</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted">Goal:</span>
-                  <span className="font-semibold">{profile.goal_weight} lbs</span>
+                  <span className="text-muted text-sm">Goal</span>
+                  <span className="font-medium">{profile.goal_weight} lbs</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted">Remaining:</span>
-                  <span className="font-semibold text-accent">
+                  <span className="text-muted text-sm">Remaining</span>
+                  <span className="font-medium text-accent">
                     {(profile.weight - profile.goal_weight).toFixed(1)} lbs
                   </span>
                 </div>
                 <div className="mt-4">
-                  <div className="w-full bg-card border rounded-full h-2">
+                  <div className="w-full bg-[#334155] rounded-full h-2">
                     <div 
                       className="bg-primary h-2 rounded-full transition-all duration-300"
                       style={{ 
@@ -164,102 +184,106 @@ export default function Dashboard() {
                 </div>
               </div>
             ) : (
-              <p className="text-muted">No weight data yet</p>
+              <p className="text-muted text-sm">No weight data yet</p>
             )}
-          </Card>
+          </div>
 
           {/* Last Workout Widget */}
-          <Card>
-            <h2 className="text-lg font-semibold mb-4 text-primary">Last Workout</h2>
+          <div className="bg-[#1E293B] rounded-2xl p-6 shadow-md">
+            <h2 className="text-lg font-semibold mb-4 tracking-wide">Last Workout</h2>
             {lastWorkout ? (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <div className="flex justify-between">
-                  <span className="text-muted">Date:</span>
-                  <span className="font-semibold">
+                  <span className="text-muted text-sm">Date</span>
+                  <span className="font-medium">
                     {new Date(lastWorkout.created_at).toLocaleDateString()}
                   </span>
                 </div>
                 {lastWorkout.name && (
                   <div className="flex justify-between">
-                    <span className="text-muted">Workout:</span>
-                    <span className="font-semibold">{lastWorkout.name}</span>
+                    <span className="text-muted text-sm">Workout</span>
+                    <span className="font-medium">{lastWorkout.name}</span>
                   </div>
                 )}
                 {lastWorkout.total_sets && (
                   <div className="flex justify-between">
-                    <span className="text-muted">Sets:</span>
-                    <span className="font-semibold">{lastWorkout.total_sets}</span>
+                    <span className="text-muted text-sm">Sets</span>
+                    <span className="font-medium">{lastWorkout.total_sets}</span>
                   </div>
                 )}
                 {lastWorkout.duration && (
                   <div className="flex justify-between">
-                    <span className="text-muted">Duration:</span>
-                    <span className="font-semibold">{lastWorkout.duration} mins</span>
+                    <span className="text-muted text-sm">Duration</span>
+                    <span className="font-medium">{lastWorkout.duration} mins</span>
                   </div>
                 )}
               </div>
             ) : (
               <div className="text-center">
-                <p className="text-muted mb-4">No workouts logged yet</p>
-                <Button variant="primary" size="sm">
-                  Start First Workout
-                </Button>
+                <p className="text-muted text-sm mb-4">No workouts logged yet</p>
+                <Link href="/new-workout">
+                  <button className="bg-primary hover:bg-primary-hover text-white font-medium px-4 py-2 rounded-xl shadow-md transition-all duration-200 text-sm">
+                    Start First Workout
+                  </button>
+                </Link>
               </div>
             )}
-          </Card>
+          </div>
 
           {/* Weekly Workout Frequency */}
-          <Card>
-            <h2 className="text-lg font-semibold mb-4 text-primary">Weekly Activity</h2>
-            <div className="space-y-2">
+          <div className="bg-[#1E293B] rounded-2xl p-6 shadow-md">
+            <h2 className="text-lg font-semibold mb-4 tracking-wide">Weekly Activity</h2>
+            <div className="space-y-3">
               <div className="flex justify-between">
-                <span className="text-muted">This Week:</span>
-                <span className="font-semibold text-accent">3 workouts</span>
+                <span className="text-muted text-sm">This Week</span>
+                <Link href="/dashboard" className="text-sm text-accent hover:underline">
+                  3 workouts
+                </Link>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted">Last Week:</span>
-                <span className="font-semibold">4 workouts</span>
+                <span className="text-muted text-sm">Last Week</span>
+                <span className="font-medium">4 workouts</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted">Streak:</span>
-                <span className="font-semibold text-primary">5 days</span>
+                <span className="text-muted text-sm">Streak</span>
+                <span className="font-medium text-primary">5 days</span>
               </div>
             </div>
-          </Card>
+          </div>
 
           {/* Weight Chart */}
-          <Card className="lg:col-span-2">
-            <h2 className="text-lg font-semibold mb-4 text-primary">Weight Progress Chart</h2>
+          <div className="bg-[#1E293B] rounded-2xl p-6 shadow-md lg:col-span-2">
+            <h2 className="text-lg font-semibold mb-4 tracking-wide">Weight Progress Chart</h2>
             <WeightChart weightLogs={weightLogs} />
-          </Card>
+          </div>
 
           {/* AI Suggestion Card */}
-          <Card>
-            <h2 className="text-lg font-semibold mb-4 text-primary">AI Training Feedback</h2>
+          <div className="bg-[#1E293B] rounded-2xl p-6 shadow-md">
+            <h2 className="text-lg font-semibold mb-4 tracking-wide">AI Training Feedback</h2>
             <div className="space-y-3">
               <p className="text-sm text-muted">
-                Your streak looks strong! 💪
+                Your streak looks strong!
               </p>
               <p className="text-sm text-muted">
                 Try adding more leg days for better balance and overall strength development.
               </p>
               <div className="mt-4">
-                <Button variant="secondary" size="sm" className="w-full">
+                <button className="bg-[#334155] hover:bg-[#475569] text-foreground font-medium px-4 py-2 rounded-xl shadow-md transition-all duration-200 text-sm w-full">
                   Get Personalized Plan
-                </Button>
+                </button>
               </div>
             </div>
-          </Card>
+          </div>
 
           {/* Lift Progress Chart */}
-          <Card className="lg:col-span-2">
-            <h2 className="text-lg font-semibold mb-4 text-primary">Top Lifts Progress</h2>
+          <div className="bg-[#1E293B] rounded-2xl p-6 shadow-md lg:col-span-2">
+            <h2 className="text-lg font-semibold mb-4 tracking-wide">Top Lifts Progress</h2>
             <LiftChart liftRecords={liftRecords} />
-          </Card>
+          </div>
 
           {/* Milestones Timeline */}
-          <Card>
-            <h2 className="text-lg font-semibold mb-4 text-primary">Milestones</h2>
+          <div className="bg-[#1E293B] rounded-2xl p-6 shadow-md">
+            <h2 className="text-lg font-semibold mb-4 tracking-wide">Milestones</h2>
             {milestones.length > 0 ? (
               <div className="space-y-3">
                 {milestones.slice(0, 3).map((milestone) => (
@@ -279,13 +303,13 @@ export default function Dashboard() {
               </div>
             ) : (
               <div className="text-center">
-                <p className="text-muted mb-4">No milestones yet</p>
-                <Button variant="secondary" size="sm">
+                <p className="text-muted text-sm mb-4">No milestones yet</p>
+                <button className="bg-[#334155] hover:bg-[#475569] text-foreground font-medium px-4 py-2 rounded-xl shadow-md transition-all duration-200 text-sm">
                   Set Your First Goal
-                </Button>
+                </button>
               </div>
             )}
-          </Card>
+          </div>
         </div>
       </div>
     </div>

@@ -30,7 +30,7 @@ export default function LoginPage() {
         setError(error.message);
       } else {
         console.log('Login successful:', data);
-        router.push('/new-workout');
+        router.push('/dashboard');
       }
     } catch (err) {
       console.error('Unexpected error:', err);
