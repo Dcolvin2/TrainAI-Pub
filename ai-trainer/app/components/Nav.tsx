@@ -15,11 +15,11 @@ export default function Nav() {
         {/* Logo */}
         <Link href="/" className="flex items-center">
           <Image
-            src="/trainai-logo.svg"
+            src="/trainai-logo.png"
             alt="TrainAI Logo"
-            width={120}
-            height={48}
-            className="logo"
+            width={96}
+            height={96}
+            className="w-24 h-auto"
           />
         </Link>
 

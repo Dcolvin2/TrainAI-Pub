@@ -77,11 +77,11 @@ export default function SignUpPage() {
         {/* Logo */}
         <div className="text-center mb-8">
           <Image
-            src="/trainai-logo.svg"
+            src="/trainai-logo.png"
             alt="TrainAI Logo"
-            width={160}
-            height={64}
-            className="logo mx-auto"
+            width={128}
+            height={128}
+            className="w-32 h-auto mx-auto"
           />
         </div>
 
