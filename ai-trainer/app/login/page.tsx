@@ -93,7 +93,7 @@ export default function LoginPage() {
           {/* Links */}
           <div className="mt-6 text-center space-y-3">
             <Link href="/signup" className="text-accent hover:text-primary transition-colors block text-sm">
-              Don't have an account? Sign up
+              Don&apos;t have an account? Sign up
             </Link>
             <Link href="/forgot-password" className="text-muted hover:text-foreground transition-colors block text-sm">
               Forgot your password?
