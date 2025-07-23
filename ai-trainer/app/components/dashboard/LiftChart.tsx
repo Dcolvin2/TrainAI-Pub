@@ -9,7 +9,6 @@ import {
   Title,
   Tooltip,
   Legend,
-  TooltipItem,
 } from 'chart.js'
 
 ChartJS.register(
@@ -89,11 +88,7 @@ export default function LiftChart({ liftRecords }: LiftChartProps) {
         borderWidth: 1,
         cornerRadius: 8,
         displayColors: false,
-        callbacks: {
-          label: function(context: TooltipItem<'bar'>) {
-            return `${context.parsed.y} lbs`
-          }
-        }
+
       },
     },
     scales: {
