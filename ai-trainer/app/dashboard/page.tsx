@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
-import WeightChart from '@/app/components/dashboard/WeightChart'
+import WeightProgressWidget from '@/app/components/dashboard/WeightProgressWidget'
 import LiftChart from '@/app/components/dashboard/LiftChart'
 
 interface Profile {
@@ -61,73 +61,77 @@ export default function Dashboard() {
   const [activeProgram, setActiveProgram] = useState<WorkoutProgram | null>(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
+  const fetchData = async () => {
     if (!user) return
 
-    const fetchData = async () => {
-      try {
-        // Fetch profile data
-        const { data: profileData } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', user.id)
-          .single()
-        setProfile(profileData)
+    try {
+      // Fetch profile data
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single()
+      setProfile(profileData)
 
-        // Fetch weight logs
-        const { data: weights } = await supabase
-          .from('weight_logs')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('logged_at', { ascending: false })
-          .limit(10)
-        setWeightLogs(weights || [])
+      // Fetch weight logs
+      const { data: weights } = await supabase
+        .from('weight_logs')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('logged_at', { ascending: false })
+        .limit(10)
+      setWeightLogs(weights || [])
 
-        // Fetch last workout
-        const { data: workouts } = await supabase
-          .from('workouts')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-        setLastWorkout(workouts?.[0] || null)
+      // Fetch last workout
+      const { data: workouts } = await supabase
+        .from('workouts')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+      setLastWorkout(workouts?.[0] || null)
 
-        // Fetch lift records
-        const { data: lifts } = await supabase
-          .from('lift_records')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('recorded_at', { ascending: true })
-        setLiftRecords(lifts || [])
+      // Fetch lift records
+      const { data: lifts } = await supabase
+        .from('lift_records')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('recorded_at', { ascending: true })
+      setLiftRecords(lifts || [])
 
-        // Fetch milestones
-        const { data: milestoneData } = await supabase
-          .from('milestones')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('achieved_on', { ascending: false })
-        setMilestones(milestoneData || [])
+      // Fetch milestones
+      const { data: milestoneData } = await supabase
+        .from('milestones')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('achieved_on', { ascending: false })
+      setMilestones(milestoneData || [])
 
-        // Mock active program data (replace with actual Supabase query when table exists)
-        // For now, simulate an active program
-        const mockActiveProgram: WorkoutProgram = {
-          id: '1',
-          name: 'Strength Builder',
-          current_week: 3,
-          current_day: 2,
-          total_weeks: 8,
-          is_active: true
-        }
-        setActiveProgram(mockActiveProgram)
-      } catch (error) {
-        console.error('Error fetching dashboard data:', error)
-      } finally {
-        setLoading(false)
+      // Mock active program data (replace with actual Supabase query when table exists)
+      // For now, simulate an active program
+      const mockActiveProgram: WorkoutProgram = {
+        id: '1',
+        name: 'Strength Builder',
+        current_week: 3,
+        current_day: 2,
+        total_weeks: 8,
+        is_active: true
       }
+      setActiveProgram(mockActiveProgram)
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error)
+    } finally {
+      setLoading(false)
     }
+  }
 
+  useEffect(() => {
     fetchData()
   }, [user])
+
+  const handleWeightLogged = () => {
+    fetchData()
+  }
 
   if (loading) {
     return (
@@ -189,39 +193,11 @@ export default function Dashboard() {
         {/* Dashboard Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {/* Weight Progress Widget */}
-          <div className="bg-[#1E293B] rounded-2xl p-6 shadow-md">
-            <h2 className="text-lg font-semibold mb-4 tracking-wide">Weight Progress</h2>
-            {profile?.weight && profile?.goal_weight ? (
-              <div className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-muted text-sm">Current</span>
-                  <span className="font-medium">{profile.weight} lbs</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted text-sm">Goal</span>
-                  <span className="font-medium">{profile.goal_weight} lbs</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted text-sm">Remaining</span>
-                  <span className="font-medium text-accent">
-                    {(profile.weight - profile.goal_weight).toFixed(1)} lbs
-                  </span>
-                </div>
-                <div className="mt-4">
-                  <div className="w-full bg-[#334155] rounded-full h-2">
-                    <div 
-                      className="bg-primary h-2 rounded-full transition-all duration-300"
-                      style={{ 
-                        width: `${Math.min(100, Math.max(0, ((profile.weight - profile.goal_weight) / profile.weight) * 100))}%` 
-                      }}
-                    ></div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <p className="text-muted text-sm">No weight data yet</p>
-            )}
-          </div>
+          <WeightProgressWidget
+            profile={profile}
+            weightLogs={weightLogs}
+            onWeightLogged={handleWeightLogged}
+          />
 
           {/* Last Workout Widget */}
           <div className="bg-[#1E293B] rounded-2xl p-6 shadow-md">
@@ -286,11 +262,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Weight Chart */}
-          <div className="bg-[#1E293B] rounded-2xl p-6 shadow-md lg:col-span-2">
-            <h2 className="text-lg font-semibold mb-4 tracking-wide">Weight Progress Chart</h2>
-            <WeightChart weightLogs={weightLogs} />
-          </div>
+
 
           {/* AI Suggestion Card */}
           <div className="bg-[#1E293B] rounded-2xl p-6 shadow-md">
