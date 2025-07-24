@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import TrainAILogo from '@/app/components/TrainAILogo';
+import { TrainAILogo } from '@/app/components/TrainAILogo';
 
 export default function Home() {
   const { user, loading } = useAuth();
@@ -39,7 +39,7 @@ export default function Home() {
         
         {/* Logo */}
         <div className="flex justify-center items-center mb-6">
-          <TrainAILogo size="xl" />
+          <TrainAILogo size="large" />
         </div>
         
         {/* Hero Content */}

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import Link from 'next/link';
-import TrainAILogo from '@/app/components/TrainAILogo';
+import { TrainAILogo } from '@/app/components/TrainAILogo';
 
 export default function SignUpPage() {
   const [firstName, setFirstName] = useState('');
@@ -87,7 +87,7 @@ export default function SignUpPage() {
       <div className="w-full max-w-md space-y-6">
         {/* Logo */}
         <div className="flex justify-center items-center mt-12 mb-6">
-          <TrainAILogo size="xl" />
+          <TrainAILogo size="large" />
         </div>
 
         {/* Signup Container */}

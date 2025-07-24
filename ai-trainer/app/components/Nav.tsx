@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
-import TrainAILogo from './TrainAILogo';
+import { TrainAILogo } from './TrainAILogo';
 
 export default function Nav() {
   const { user, signOut } = useAuth();
@@ -15,7 +15,7 @@ export default function Nav() {
         <div className="flex items-center justify-between">
           {/* Logo */}
           <Link href="/" className="flex items-center">
-            <TrainAILogo size="medium" className="ml-2" />
+            <TrainAILogo size="large" />
           </Link>
 
           {/* Desktop Navigation */}
