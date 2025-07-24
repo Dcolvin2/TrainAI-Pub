@@ -3,14 +3,49 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
+interface Profile {
+  id: string
+  first_name: string
+  weight?: number
+  goal_weight?: number
+}
+
+interface WeightLog {
+  id: string
+  weight: number
+  logged_at: string
+}
+
+interface Workout {
+  id: string
+  created_at: string
+  total_sets?: number
+  duration?: number
+  name?: string
+}
+
+interface TrainingProgram {
+  id: string
+  user_id: string
+  status: string
+  current_week: number
+  current_day: number
+}
+
+interface WeeklyStats {
+  thisWeek: number
+  lastWeek: number
+  streak: number
+}
+
 export default function Dashboard() {
-  const [profile, setProfile] = useState<any>(null)
-  const [weightLogs, setWeightLogs] = useState<any[]>([])
+  const [profile, setProfile] = useState<Profile | null>(null)
+  const [weightLogs, setWeightLogs] = useState<WeightLog[]>([])
   const [showWeightForm, setShowWeightForm] = useState(false)
   const [newWeight, setNewWeight] = useState<string>('')
-  const [lastWorkout, setLastWorkout] = useState<any>(null)
-  const [program, setProgram] = useState<any>(null)
-  const [weeklyStats, setWeeklyStats] = useState({ thisWeek: 0, lastWeek: 0, streak: 0 })
+  const [lastWorkout, setLastWorkout] = useState<Workout | null>(null)
+  const [program, setProgram] = useState<TrainingProgram | null>(null)
+  const [weeklyStats] = useState<WeeklyStats>({ thisWeek: 0, lastWeek: 0, streak: 0 })
 
   useEffect(() => {
     async function load() {
