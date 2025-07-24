@@ -79,22 +79,11 @@ export default function WeightProgressWidget({ profile, weightLogs, onWeightLogg
 
   return (
     <>
-      <div className="rounded-xl bg-[#1E293B] p-4 shadow-md w-full">
-        {/* Header */}
-        <div className="flex justify-between items-start mb-4">
-          <h2 className="text-lg font-semibold text-white tracking-wide">Weight Progress</h2>
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="bg-[#22C55E] hover:bg-[#16a34a] text-white text-sm font-semibold px-3 py-2 rounded-lg shadow-md transition-all duration-200"
-            aria-label="Log your weight"
-          >
-            Log My Weight
-          </button>
-        </div>
-
+      <div className="rounded-xl bg-[#1E293B] p-4 shadow-md w-full overflow-hidden">
         {weightLogs.length === 0 ? (
           <div className="text-center py-6">
-            <p className="text-muted text-sm mb-4">No logs yet — tap above to track your progress</p>
+            <h2 className="text-lg font-semibold text-white tracking-wide mb-4">Weight Progress</h2>
+            <p className="text-muted text-sm mb-4">No logs yet — tap below to track your progress</p>
             <button
               onClick={() => setIsModalOpen(true)}
               className="bg-[#22C55E] hover:bg-[#16a34a] text-white font-medium px-4 py-2 rounded-lg shadow-md transition-all duration-200 text-sm"
@@ -103,54 +92,69 @@ export default function WeightProgressWidget({ profile, weightLogs, onWeightLogg
             </button>
           </div>
         ) : (
-          <div className="space-y-4">
-            {/* Weight Change Display */}
-            {getWeightChangeText() && (
-              <div className="text-center">
-                <p className="text-sm text-[#22C55E] font-medium">{getWeightChangeText()}</p>
+          <div className="flex flex-col lg:flex-row gap-4">
+            {/* Left Column - Title and Weight Data */}
+            <div className="flex-1 space-y-4">
+              {/* Header */}
+              <div className="flex justify-between items-start">
+                <h2 className="text-lg font-semibold text-white tracking-wide">Weight Progress</h2>
+                <button
+                  onClick={() => setIsModalOpen(true)}
+                  className="bg-[#22C55E] hover:bg-[#16a34a] text-white text-sm font-semibold px-3 py-2 rounded-lg shadow-md transition-all duration-200"
+                  aria-label="Log your weight"
+                >
+                  Log My Weight
+                </button>
               </div>
-            )}
 
-            {/* Current Stats */}
-            <div className="flex justify-around text-center text-white">
-              <div>
-                <p className="text-sm text-muted">Current</p>
-                <p className="text-lg font-semibold">{currentWeight || 0} lbs</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted">Goal</p>
-                <p className="text-lg font-semibold">{goalWeight || 0} lbs</p>
-              </div>
-            </div>
-
-            {/* Progress Message */}
-            <div className="text-center space-y-2">
-              <p className="text-sm text-muted">Progress</p>
-              <p className="text-sm font-medium text-white">{getProgressMessage()}</p>
-            </div>
-
-            {/* Progress Bar */}
-            {goalWeight && goalProgress !== null && (
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted">Progress</span>
-                  <span className="font-medium text-white">{goalProgress.toFixed(1)}%</span>
+              {/* Weight Change Display */}
+              {getWeightChangeText() && (
+                <div className="text-center">
+                  <p className="text-sm text-[#22C55E] font-medium">{getWeightChangeText()}</p>
                 </div>
-                <div className="w-full bg-[#334155] rounded-full h-2">
-                  <div 
-                    className={`${getProgressColor()} h-2 rounded-full transition-all duration-500`}
-                    style={{ 
-                      width: `${goalProgress}%` 
-                    }}
-                  ></div>
+              )}
+
+              {/* Current Stats */}
+              <div className="flex justify-around text-center text-white">
+                <div>
+                  <p className="text-sm text-muted">Current</p>
+                  <p className="text-lg font-semibold">{currentWeight || 0} lbs</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted">Goal</p>
+                  <p className="text-lg font-semibold">{goalWeight || 0} lbs</p>
                 </div>
               </div>
-            )}
 
-            {/* Weight Chart */}
-            <div className="mt-4">
+              {/* Progress Message */}
+              <div className="text-center space-y-2">
+                <p className="text-sm text-muted">Progress</p>
+                <p className="text-sm font-medium text-white">{getProgressMessage()}</p>
+              </div>
+
+              {/* Progress Bar */}
+              {goalWeight && goalProgress !== null && (
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted">Progress</span>
+                    <span className="font-medium text-white">{goalProgress.toFixed(1)}%</span>
+                  </div>
+                  <div className="w-full bg-[#334155] rounded-full h-2">
+                    <div 
+                      className={`${getProgressColor()} h-2 rounded-full transition-all duration-500`}
+                      style={{ 
+                        width: `${goalProgress}%` 
+                      }}
+                    ></div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Right Column - Weight Chart */}
+            <div className="flex-1 min-h-[200px] overflow-hidden">
               <h3 className="text-sm font-semibold text-white mb-3 tracking-wide">Weekly Trend</h3>
-              <div className="w-full h-[200px] overflow-hidden px-4">
+              <div className="w-full h-[200px] overflow-hidden">
                 <WeightChart weightLogs={weightLogs} />
               </div>
             </div>

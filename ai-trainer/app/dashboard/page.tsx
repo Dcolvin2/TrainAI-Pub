@@ -186,94 +186,73 @@ export default function Dashboard() {
                   )}
                 </button>
               </Link>
-
-              {/* Conditional Start First Workout Button */}
-              {!lastWorkout && (
-                <Link href="/new-workout" className="flex-1 sm:flex-none">
-                  <button 
-                    className="w-full sm:w-auto bg-[#334155] hover:bg-[#475569] text-foreground text-sm font-semibold py-3 px-6 rounded-xl shadow-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-accent/50"
-                    aria-label="Start your first workout"
-                  >
-                    Start First Workout
-                  </button>
-                </Link>
-              )}
             </div>
           </div>
         </div>
 
-        {/* Dashboard Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {/* Weight Progress Widget */}
-          <WeightProgressWidget
-            profile={profile}
-            weightLogs={weightLogs}
-            onWeightLogged={handleWeightLogged}
-          />
+        {/* Dashboard Grid - Improved Layout */}
+        <div className="grid grid-cols-1 md:grid-cols-12 xl:grid-cols-12 gap-4">
+          {/* Weight Progress Widget - Horizontal Layout */}
+          <div className="md:col-span-6 xl:col-span-4">
+            <WeightProgressWidget
+              profile={profile}
+              weightLogs={weightLogs}
+              onWeightLogged={handleWeightLogged}
+            />
+          </div>
 
           {/* Last Workout Widget - Collapsed if no data */}
-          {lastWorkout ? (
-            <div className="w-full rounded-2xl shadow-md bg-[#1E293B] text-white p-4">
-              <h2 className="text-lg font-semibold mb-3">Last Workout</h2>
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted">Date</span>
-                  <span className="text-sm font-medium text-white">
-                    {new Date(lastWorkout.created_at).toLocaleDateString()}
-                  </span>
+          <div className="md:col-span-6 xl:col-span-4">
+            {lastWorkout ? (
+              <div className="w-full rounded-2xl shadow-md bg-[#1E293B] text-white p-4 overflow-hidden">
+                <h2 className="text-lg font-semibold mb-3">Last Workout</h2>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted">Date</span>
+                    <span className="text-sm font-medium text-white">
+                      {new Date(lastWorkout.created_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                  {lastWorkout.name && (
+                    <div className="flex justify-between">
+                      <span className="text-sm text-muted">Workout</span>
+                      <span className="text-sm font-medium text-white">{lastWorkout.name}</span>
+                    </div>
+                  )}
+                  {lastWorkout.total_sets && (
+                    <div className="flex justify-between">
+                      <span className="text-sm text-muted">Sets</span>
+                      <span className="text-sm font-medium text-white">{lastWorkout.total_sets}</span>
+                    </div>
+                  )}
+                  {lastWorkout.duration && (
+                    <div className="flex justify-between">
+                      <span className="text-sm text-muted">Duration</span>
+                      <span className="text-sm font-medium text-white">{lastWorkout.duration} mins</span>
+                    </div>
+                  )}
                 </div>
-                {lastWorkout.name && (
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted">Workout</span>
-                    <span className="text-sm font-medium text-white">{lastWorkout.name}</span>
-                  </div>
-                )}
-                {lastWorkout.total_sets && (
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted">Sets</span>
-                    <span className="text-sm font-medium text-white">{lastWorkout.total_sets}</span>
-                  </div>
-                )}
-                {lastWorkout.duration && (
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted">Duration</span>
-                    <span className="text-sm font-medium text-white">{lastWorkout.duration} mins</span>
-                  </div>
-                )}
               </div>
-            </div>
-          ) : (
-            <div className="w-full rounded-2xl shadow-md bg-[#1E293B] text-white p-4">
-              <h2 className="text-lg font-semibold mb-3">Last Workout</h2>
-              <div className="text-center py-2">
-                <p className="text-sm text-muted mb-3">No workouts logged yet</p>
-                <Link href="/new-workout">
-                  <button className="bg-[#22C55E] hover:bg-[#16a34a] text-white text-sm font-medium px-4 py-2 rounded-lg transition-all duration-200">
-                    Start First Workout
-                  </button>
-                </Link>
+            ) : (
+              <div className="w-full rounded-2xl shadow-md bg-[#1E293B] text-white p-4 overflow-hidden">
+                <h2 className="text-lg font-semibold mb-3">Last Workout</h2>
+                <div className="text-center py-2">
+                  <p className="text-sm text-muted mb-3">No workouts logged yet</p>
+                  <Link href="/new-workout">
+                    <button className="w-full sm:w-auto bg-[#22C55E] hover:bg-[#16a34a] text-white text-sm font-medium px-4 py-2 rounded-lg transition-all duration-200">
+                      Start First Workout
+                    </button>
+                  </Link>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
-          {/* Training Summary - Merged Weekly Activity + Coaching Insights */}
-          <div className="w-full rounded-2xl shadow-md bg-[#1E293B] text-white p-4">
-            <h2 className="text-lg font-semibold mb-3">Training Summary</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Left Column - Insights */}
-              <div className="space-y-3">
-                <h3 className="text-sm font-medium text-muted">Insights</h3>
-                <p className="text-sm text-muted">
-                  Your streak looks strong! Try adding more leg days for better balance.
-                </p>
-                <button className="bg-[#334155] hover:bg-[#475569] text-foreground font-medium px-3 py-2 rounded-lg shadow-md transition-all duration-200 text-sm w-full">
-                  Get Personalized Plan
-                </button>
-              </div>
-              
-              {/* Right Column - Stats */}
-              <div className="space-y-3">
-                <h3 className="text-sm font-medium text-muted">Activity</h3>
+          {/* Weekly Activity - Reduced Width */}
+          <div className="md:col-span-6 xl:col-span-4">
+            <div className="w-full rounded-2xl shadow-md bg-[#1E293B] text-white p-4 overflow-hidden">
+              <h2 className="text-lg font-semibold mb-3">Weekly Activity</h2>
+              <div className="space-y-2">
                 <div className="flex justify-between items-center px-2 py-1 bg-[#0F172A] rounded-lg">
                   <span className="text-sm text-muted">This Week:</span>
                   <span className="text-sm font-semibold text-[#22C55E]">3</span>
@@ -290,53 +269,72 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Top Lifts Progress - Collapsed if empty */}
-          <div className="w-full rounded-2xl shadow-md bg-[#1E293B] text-white p-4 xl:col-span-2">
-            <h2 className="text-lg font-semibold mb-3">Top Lifts Progress</h2>
-            {liftRecords.length > 0 ? (
-              <div className="mt-3 mb-2">
-                <LiftChart liftRecords={liftRecords} />
-              </div>
-            ) : (
-              <div className="text-center py-4">
-                <p className="text-sm text-muted mb-3">No lift records yet</p>
-                <Link href="/new-workout">
-                  <button className="bg-[#22C55E] hover:bg-[#16a34a] text-white text-sm font-medium px-4 py-2 rounded-lg transition-all duration-200">
-                    Log Your First Lift
-                  </button>
-                </Link>
-              </div>
-            )}
-          </div>
-
-          {/* Milestones Timeline */}
-          <div className="w-full rounded-2xl shadow-md bg-[#1E293B] text-white p-4">
-            <h2 className="text-lg font-semibold mb-3">Milestones</h2>
-            {milestones.length > 0 ? (
+          {/* AI Training Feedback - Vertical Layout */}
+          <div className="md:col-span-6 xl:col-span-4">
+            <div className="w-full rounded-2xl shadow-md bg-[#1E293B] text-white p-4 overflow-hidden">
+              <h2 className="text-lg font-semibold mb-3">AI Training Feedback</h2>
               <div className="space-y-3">
-                {milestones.slice(0, 3).map((milestone) => (
-                  <div key={milestone.id} className="flex items-start space-x-3">
-                    <div className="w-2 h-2 bg-[#22C55E] rounded-full mt-2 flex-shrink-0"></div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-white">{milestone.type}</p>
-                      <p className="text-xs text-muted">
-                        {new Date(milestone.achieved_on).toLocaleDateString()}
-                      </p>
-                      {milestone.description && (
-                        <p className="text-xs text-muted mt-1">{milestone.description}</p>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center">
-                <p className="text-sm text-muted mb-4">No milestones yet</p>
-                <button className="bg-[#334155] hover:bg-[#475569] text-foreground font-medium px-4 py-2 rounded-lg shadow-md transition-all duration-200 text-sm">
-                  Set Your First Goal
+                <p className="text-sm text-muted">
+                  Your streak looks strong! Try adding more leg days for better balance.
+                </p>
+                <button className="w-full bg-[#334155] hover:bg-[#475569] text-foreground font-medium px-3 py-2 rounded-lg shadow-md transition-all duration-200 text-sm">
+                  Get Personalized Plan
                 </button>
               </div>
-            )}
+            </div>
+          </div>
+
+          {/* Top Lifts Progress - Side by side with Milestones on large screens */}
+          <div className="md:col-span-6 xl:col-span-6">
+            <div className="w-full rounded-2xl shadow-md bg-[#1E293B] text-white p-4 overflow-hidden">
+              <h2 className="text-lg font-semibold mb-3">Top Lifts Progress</h2>
+              {liftRecords.length > 0 ? (
+                <div className="mt-3 mb-2 overflow-hidden">
+                  <LiftChart liftRecords={liftRecords} />
+                </div>
+              ) : (
+                <div className="text-center py-4">
+                  <p className="text-sm text-muted mb-3">No lift records yet</p>
+                  <Link href="/new-workout">
+                    <button className="w-full sm:w-auto bg-[#22C55E] hover:bg-[#16a34a] text-white text-sm font-medium px-4 py-2 rounded-lg transition-all duration-200">
+                      Log Your First Lift
+                    </button>
+                  </Link>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Milestones Timeline - Side by side with Top Lifts on large screens */}
+          <div className="md:col-span-6 xl:col-span-6">
+            <div className="w-full rounded-2xl shadow-md bg-[#1E293B] text-white p-4 overflow-hidden">
+              <h2 className="text-lg font-semibold mb-3">Milestones</h2>
+              {milestones.length > 0 ? (
+                <div className="space-y-3">
+                  {milestones.slice(0, 3).map((milestone) => (
+                    <div key={milestone.id} className="flex items-start space-x-3">
+                      <div className="w-2 h-2 bg-[#22C55E] rounded-full mt-2 flex-shrink-0"></div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-white">{milestone.type}</p>
+                        <p className="text-xs text-muted">
+                          {new Date(milestone.achieved_on).toLocaleDateString()}
+                        </p>
+                        {milestone.description && (
+                          <p className="text-xs text-muted mt-1">{milestone.description}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center">
+                  <p className="text-sm text-muted mb-4">No milestones yet</p>
+                  <button className="w-full sm:w-auto bg-[#334155] hover:bg-[#475569] text-foreground font-medium px-4 py-2 rounded-lg shadow-md transition-all duration-200 text-sm">
+                    Set Your First Goal
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
