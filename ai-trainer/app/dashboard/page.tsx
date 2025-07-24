@@ -42,6 +42,15 @@ interface Milestone {
   description?: string
 }
 
+interface WorkoutProgram {
+  id: string
+  name: string
+  current_week: number
+  current_day: number
+  total_weeks: number
+  is_active: boolean
+}
+
 export default function Dashboard() {
   const { user } = useAuth()
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -49,6 +58,7 @@ export default function Dashboard() {
   const [lastWorkout, setLastWorkout] = useState<Workout | null>(null)
   const [liftRecords, setLiftRecords] = useState<LiftRecord[]>([])
   const [milestones, setMilestones] = useState<Milestone[]>([])
+  const [activeProgram, setActiveProgram] = useState<WorkoutProgram | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -97,6 +107,18 @@ export default function Dashboard() {
           .eq('user_id', user.id)
           .order('achieved_on', { ascending: false })
         setMilestones(milestoneData || [])
+
+        // Mock active program data (replace with actual Supabase query when table exists)
+        // For now, simulate an active program
+        const mockActiveProgram: WorkoutProgram = {
+          id: '1',
+          name: 'Strength Builder',
+          current_week: 3,
+          current_day: 2,
+          total_weeks: 8,
+          is_active: true
+        }
+        setActiveProgram(mockActiveProgram)
       } catch (error) {
         console.error('Error fetching dashboard data:', error)
       } finally {
@@ -134,20 +156,33 @@ export default function Dashboard() {
             Welcome back, {profile?.first_name || 'Athlete'}
           </h1>
           
-          {/* New Workout Button */}
-          <div className="flex flex-col sm:flex-row gap-4">
-            <Link href="/new-workout" className="inline-flex">
-              <button className="bg-primary hover:bg-primary-hover text-white font-medium px-6 py-3 rounded-2xl shadow-md transition-all duration-200 tracking-wide">
-                Start New Workout
-              </button>
-            </Link>
-            {lastWorkout && (
-              <Link href="/new-workout" className="inline-flex">
-                <button className="bg-[#1E293B] hover:bg-[#334155] text-foreground font-medium px-6 py-3 rounded-2xl shadow-md transition-all duration-200 tracking-wide">
-                  Continue Workout Program
+          {/* Action Buttons - Sticky at top for mobile */}
+          <div className="sticky top-4 z-10 bg-background/95 backdrop-blur-sm py-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:static sm:bg-transparent sm:backdrop-blur-none">
+            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+              {/* Start Custom Workout Button */}
+              <Link href="/new-workout" className="flex-1 sm:flex-none">
+                <button 
+                  className="w-full sm:w-auto bg-primary hover:bg-primary-hover focus:bg-primary-hover text-white text-sm font-semibold py-3 px-6 rounded-xl shadow-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  aria-label="Start a new custom workout"
+                >
+                  Start Custom Workout
                 </button>
               </Link>
-            )}
+              
+              {/* Continue Program or Start Program Button */}
+              <Link href="/workout-program" className="flex-1 sm:flex-none">
+                <button 
+                  className="w-full sm:w-auto bg-[#1E293B] hover:bg-[#334155] focus:bg-[#334155] text-foreground text-sm font-semibold py-3 px-6 rounded-xl shadow-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-accent/50"
+                  aria-label={activeProgram ? `Continue ${activeProgram.name} program` : "Start a new workout program"}
+                >
+                  {activeProgram ? (
+                    `Continue: Week ${activeProgram.current_week}, Day ${activeProgram.current_day}`
+                  ) : (
+                    "Start a Program"
+                  )}
+                </button>
+              </Link>
+            </div>
           </div>
         </div>
 

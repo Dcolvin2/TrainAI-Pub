@@ -17,7 +17,7 @@ export default function Nav() {
           {/* Logo */}
           <Link href="/" className="flex items-center">
             <img
-              src="/trainai-logo.png"
+              src="/Updatedlogo.png"
               alt="TrainAI Logo"
               className="w-20 h-auto"
             />

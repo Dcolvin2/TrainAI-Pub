@@ -38,7 +38,7 @@ export default function Home() {
         
         {/* Logo */}
         <img
-          src="/trainai-logo.png"
+          src="/Updatedlogo.png"
           alt="TrainAI Logo"
           className="w-32 sm:w-40 mb-6 mx-auto"
         />

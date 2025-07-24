@@ -45,11 +45,9 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <Image
-            src="/trainai-logo.png"
+          <img
+            src="/Updatedlogo.png"
             alt="TrainAI Logo"
-            width={128}
-            height={128}
             className="w-32 h-auto mx-auto"
           />
         </div>
