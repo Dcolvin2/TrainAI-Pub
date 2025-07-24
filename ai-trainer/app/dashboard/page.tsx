@@ -3,17 +3,54 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
+interface Profile {
+  id: string
+  first_name: string
+  weight?: number
+  goal_weight?: number
+}
+
+interface WeightLog {
+  id: string
+  weight: number
+  logged_at: string
+}
+
+interface Workout {
+  id: string
+  created_at: string
+  total_sets?: number
+  duration?: number
+  name?: string
+}
+
+interface TrainingProgram {
+  id: string
+  user_id: string
+  status: string
+  current_week: number
+  current_day: number
+}
+
+interface WeeklyStats {
+  thisWeek: number
+  lastWeek: number
+  streak: number
+}
+
 export default function Dashboard() {
-  const [profile, setProfile] = useState<any>(null)
-  const [weightLogs, setWeightLogs] = useState<any[]>([])
-  const [lastWorkout, setLastWorkout] = useState<any>(null)
-  const [program, setProgram] = useState<any>(null)
-  const [weeklyStats, setWeeklyStats] = useState({ thisWeek: 0, lastWeek: 0, streak: 0 })
+  const [profile, setProfile] = useState<Profile | null>(null)
+  const [weightLogs, setWeightLogs] = useState<WeightLog[]>([])
+  const [lastWorkout, setLastWorkout] = useState<Workout | null>(null)
+  const [program, setProgram] = useState<TrainingProgram | null>(null)
+  const [weeklyStats] = useState<WeeklyStats>({ thisWeek: 0, lastWeek: 0, streak: 0 })
 
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser()
-      const uid = user?.id!
+      if (!user?.id) return
+      
+      const uid = user.id
       const { data: prof } = await supabase.from('profiles').select('*').eq('id', uid).single()
       setProfile(prof)
 
@@ -76,7 +113,7 @@ export default function Dashboard() {
             <div className="flex-1">
               <h2 className="text-xl font-semibold mb-2">Weight Progress</h2>
               {lost ? (
-                <p className="text-green-400 mb-2">You've lost {lost} lbs</p>
+                <p className="text-green-400 mb-2">You&apos;ve lost {lost} lbs</p>
               ) : (
                 <p className="text-sm text-gray-400 mb-2">Log two weights to see progress</p>
               )}
