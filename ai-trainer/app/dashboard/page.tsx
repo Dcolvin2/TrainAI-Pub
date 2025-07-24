@@ -65,6 +65,8 @@ export default function Dashboard() {
   const [lastWorkout, setLastWorkout] = useState<Workout | null>(null)
   const [program, setProgram] = useState<TrainingProgram | null>(null)
   const [weeklyStats] = useState<WeeklyStats>({ thisWeek: 0, lastWeek: 0, streak: 0 })
+  const [isSubmittingWeight, setIsSubmittingWeight] = useState(false)
+  const [weightError, setWeightError] = useState<string>('')
 
   useEffect(() => {
     async function load() {
@@ -115,15 +117,58 @@ export default function Dashboard() {
 
   // Handle weight submit
   async function submitWeight() {
-    if (!profile?.id) return
-    
-    const { data, error } = await supabase
-      .from('weight_logs')
-      .insert([{ user_id: profile.id, weight: parseFloat(newWeight) }])
-    if (!error && data) {
-      setWeightLogs(prev => [...prev, data[0]])
-      setShowWeightForm(false)
-      setNewWeight('')
+    if (!profile?.id) {
+      setWeightError('Profile not found. Please refresh the page.')
+      return
+    }
+
+    const weight = parseFloat(newWeight)
+    if (isNaN(weight) || weight <= 0) {
+      setWeightError('Please enter a valid weight (greater than 0)')
+      return
+    }
+
+    if (weight > 1000) {
+      setWeightError('Please enter a realistic weight value')
+      return
+    }
+
+    setIsSubmittingWeight(true)
+    setWeightError('')
+
+    try {
+      const { data, error } = await supabase
+        .from('weight_logs')
+        .insert([{ 
+          user_id: profile.id, 
+          weight: weight,
+          logged_at: new Date().toISOString()
+        }])
+        .select()
+
+      if (error) {
+        console.error('Weight logging error:', error)
+        setWeightError('Failed to save weight. Please try again.')
+        return
+      }
+
+      if (data && data[0]) {
+        setWeightLogs(prev => [...prev, data[0]])
+        setShowWeightForm(false)
+        setNewWeight('')
+        setWeightError('')
+      }
+    } catch (err) {
+      console.error('Unexpected error:', err)
+      setWeightError('An unexpected error occurred. Please try again.')
+    } finally {
+      setIsSubmittingWeight(false)
+    }
+  }
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      submitWeight()
     }
   }
 
@@ -150,42 +195,76 @@ export default function Dashboard() {
             {/* Metrics */}
             <div className="flex-1">
               <h2 className="text-xl font-semibold">Weight Progress</h2>
-              {lost
-                ? <p className="text-green-400 mt-1">You&apos;ve lost {lost} lbs</p>
-                : <p className="text-sm text-gray-400 mt-1">Log two entries to see progress</p>
-              }
+              
+              {/* Goal Weight Display */}
+              {goalW && (
+                <div className="mt-2 p-3 bg-[#0F172A] rounded-lg border border-[#334155]">
+                  <p className="text-sm text-gray-400">Goal Weight</p>
+                  <p className="text-lg font-semibold text-[#22C55E]">{goalW} lbs</p>
+                </div>
+              )}
+
+              {/* Progress Display */}
+              {lost ? (
+                <p className="text-green-400 mt-2">You&apos;ve lost {lost} lbs</p>
+              ) : weightLogs.length > 0 ? (
+                <p className="text-sm text-gray-400 mt-2">Keep logging to see your progress</p>
+              ) : (
+                <p className="text-sm text-gray-400 mt-2">Log your first weight to get started</p>
+              )}
+
               <div className="flex justify-between my-4">
                 <div>
                   <p className="text-sm text-gray-400">Current</p>
                   <p className="text-lg font-medium">{currentW ?? '—'} lbs</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-400">Goal</p>
-                  <p className="text-lg font-medium">{goalW ?? '—'} lbs</p>
+                  <p className="text-sm text-gray-400">Starting</p>
+                  <p className="text-lg font-medium">{startW ?? '—'} lbs</p>
                 </div>
               </div>
-              <button
-                onClick={() => setShowWeightForm(true)}
-                className="bg-[#22C55E] px-4 py-2 rounded-lg font-medium hover:bg-[#16a34a]"
-              >
-                Log My Weight
-              </button>
 
-              {/* Inline Form */}
-              {showWeightForm && (
-                <div className="mt-4 flex gap-2">
-                  <input
-                    type="number"
-                    value={newWeight}
-                    onChange={e => setNewWeight(e.target.value)}
-                    placeholder="Enter weight"
-                    className="flex-1 bg-[#0F172A] border border-[#334155] px-3 py-2 rounded-lg"
-                  />
+              {!showWeightForm ? (
+                <button
+                  onClick={() => setShowWeightForm(true)}
+                  className="bg-[#22C55E] px-4 py-2 rounded-lg font-medium hover:bg-[#16a34a] transition-colors"
+                >
+                  Log My Weight
+                </button>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      value={newWeight}
+                      onChange={e => setNewWeight(e.target.value)}
+                      onKeyPress={handleKeyPress}
+                      placeholder="Enter weight (lbs)"
+                      className="flex-1 bg-[#0F172A] border border-[#334155] px-3 py-2 rounded-lg focus:border-[#22C55E] focus:outline-none"
+                      disabled={isSubmittingWeight}
+                    />
+                    <button
+                      onClick={submitWeight}
+                      disabled={isSubmittingWeight || !newWeight.trim()}
+                      className="bg-[#22C55E] px-4 py-2 rounded-lg font-medium hover:bg-[#16a34a] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {isSubmittingWeight ? 'Saving...' : 'Save'}
+                    </button>
+                  </div>
+                  
+                  {weightError && (
+                    <p className="text-red-400 text-sm">{weightError}</p>
+                  )}
+                  
                   <button
-                    onClick={submitWeight}
-                    className="bg-[#22C55E] px-4 py-2 rounded-lg hover:bg-[#16a34a]"
+                    onClick={() => {
+                      setShowWeightForm(false)
+                      setNewWeight('')
+                      setWeightError('')
+                    }}
+                    className="text-gray-400 text-sm hover:text-white transition-colors"
                   >
-                    Save
+                    Cancel
                   </button>
                 </div>
               )}
