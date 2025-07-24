@@ -14,8 +14,7 @@ const handler: NextApiHandler = async (req, res) => {
   }
 
   // 1) Fetch user context
-  const [{ data: prof }, { data: equip }, { data: goals }] = await Promise.all([
-    supabase.from('profiles').select('*').eq('id', userId).single(),
+  const [{ data: equip }, { data: goals }] = await Promise.all([
     supabase.from('equipment').select('name').eq('user_id', userId),
     supabase.from('user_goals').select('description').eq('user_id', userId),
   ])
