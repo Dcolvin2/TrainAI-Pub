@@ -33,7 +33,7 @@ export default function WeightProgressWidget({ profile, weightLogs, onWeightLogg
 
   // Determine progress bar color
   const getProgressColor = () => {
-    if (goalWeight === 0) return 'bg-primary';
+    if (goalWeight === 0) return 'bg-[#22C55E]';
     
     const isLosing = goalWeight < startingWeight;
     const isGaining = goalWeight > startingWeight;
@@ -55,12 +55,13 @@ export default function WeightProgressWidget({ profile, weightLogs, onWeightLogg
 
   return (
     <>
-      <div className="bg-[#1E293B] rounded-2xl p-6 shadow-md">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold tracking-wide">Weight Progress</h2>
+      <div className="rounded-xl bg-[#1E293B] p-4 shadow-md w-full">
+        {/* Header */}
+        <div className="flex justify-between items-start mb-4">
+          <h2 className="text-lg font-semibold text-white tracking-wide">Weight Progress</h2>
           <button
             onClick={() => setIsModalOpen(true)}
-            className="bg-primary hover:bg-primary-hover text-white text-sm font-semibold px-4 py-2 rounded-xl shadow-md transition-all duration-200"
+            className="bg-[#22C55E] hover:bg-[#16a34a] text-white text-sm font-semibold px-3 py-2 rounded-lg shadow-md transition-all duration-200"
             aria-label="Log your weight"
           >
             Log My Weight
@@ -68,11 +69,11 @@ export default function WeightProgressWidget({ profile, weightLogs, onWeightLogg
         </div>
 
         {weightLogs.length === 0 ? (
-          <div className="text-center py-8">
+          <div className="text-center py-6">
             <p className="text-muted text-sm mb-4">No logs yet — tap above to track your progress</p>
             <button
               onClick={() => setIsModalOpen(true)}
-              className="bg-primary hover:bg-primary-hover text-white font-medium px-4 py-2 rounded-xl shadow-md transition-all duration-200 text-sm"
+              className="bg-[#22C55E] hover:bg-[#16a34a] text-white font-medium px-4 py-2 rounded-lg shadow-md transition-all duration-200 text-sm"
             >
               Start Tracking
             </button>
@@ -80,19 +81,19 @@ export default function WeightProgressWidget({ profile, weightLogs, onWeightLogg
         ) : (
           <div className="space-y-4">
             {/* Progress Message */}
-            <div className="text-center">
-              <p className="text-sm text-muted mb-2">Progress</p>
-              <p className="text-base font-medium">{getProgressMessage()}</p>
+            <div className="text-center space-y-2">
+              <p className="text-sm text-muted">Progress</p>
+              <p className="text-sm font-medium text-white">{getProgressMessage()}</p>
             </div>
 
             {/* Current Stats */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="text-center">
-                <p className="text-muted text-sm">Current</p>
+            <div className="flex justify-around text-center text-white">
+              <div>
+                <p className="text-sm text-muted">Current</p>
                 <p className="text-lg font-semibold">{currentWeight} lbs</p>
               </div>
-              <div className="text-center">
-                <p className="text-muted text-sm">Goal</p>
+              <div>
+                <p className="text-sm text-muted">Goal</p>
                 <p className="text-lg font-semibold">{goalWeight} lbs</p>
               </div>
             </div>
@@ -102,11 +103,11 @@ export default function WeightProgressWidget({ profile, weightLogs, onWeightLogg
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted">Progress</span>
-                  <span className="font-medium">{Math.abs(percentComplete).toFixed(1)}%</span>
+                  <span className="font-medium text-white">{Math.abs(percentComplete).toFixed(1)}%</span>
                 </div>
-                <div className="w-full bg-[#334155] rounded-full h-3">
+                <div className="w-full bg-[#334155] rounded-full h-2">
                   <div 
-                    className={`${getProgressColor()} h-3 rounded-full transition-all duration-500`}
+                    className={`${getProgressColor()} h-2 rounded-full transition-all duration-500`}
                     style={{ 
                       width: `${Math.min(100, Math.max(0, Math.abs(percentComplete)))}%` 
                     }}
@@ -116,9 +117,9 @@ export default function WeightProgressWidget({ profile, weightLogs, onWeightLogg
             )}
 
             {/* Weight Chart */}
-            <div className="mt-6">
-              <h3 className="text-sm font-medium mb-3 tracking-wide">Weekly Trend</h3>
-              <div className="h-32">
+            <div className="mt-4">
+              <h3 className="text-sm font-semibold text-white mb-3 tracking-wide">Weekly Trend</h3>
+              <div className="w-full h-[200px] overflow-hidden px-2 sm:px-4">
                 <WeightChart weightLogs={weightLogs} />
               </div>
             </div>

@@ -114,7 +114,7 @@ export default function WeightChart({ weightLogs }: WeightChartProps) {
   }
 
   return (
-    <div className="h-48">
+    <div className="w-full h-full">
       <Line data={data} options={options} />
     </div>
   )
