@@ -1,16 +1,17 @@
 'use client';
 
-import Link from "next/link";
-import { useAuth } from '@/context/AuthContext';
 import { useEffect } from 'react';
+import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import TrainAILogo from '@/app/components/TrainAILogo';
 
 export default function Home() {
   const { user, loading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (user && !loading) {
+    if (!loading && user) {
       router.push('/dashboard');
     }
   }, [user, loading, router]);
@@ -37,11 +38,9 @@ export default function Home() {
         <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-accent/5"></div>
         
         {/* Logo */}
-        <img
-          src="/Updatedlogo.png"
-          alt="TrainAI Logo"
-          className="w-32 sm:w-40 mb-6 mx-auto"
-        />
+        <div className="flex justify-center items-center mb-6">
+          <TrainAILogo size="xl" />
+        </div>
         
         {/* Hero Content */}
         <div className="text-center max-w-2xl mx-auto relative z-10">

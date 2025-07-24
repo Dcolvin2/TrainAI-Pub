@@ -2,8 +2,9 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
+import Link from 'next/link';
+import TrainAILogo from '@/app/components/TrainAILogo';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -41,12 +42,8 @@ export default function LoginPage() {
     <div className="min-h-screen bg-[#0F172A] flex items-center justify-center p-4">
       <div className="w-full max-w-md space-y-6">
         {/* Logo */}
-        <div className="text-center">
-          <img
-            src="/Updatedlogo.png"
-            alt="TrainAI Logo"
-            className="w-24 sm:w-32 h-auto mx-auto mb-6"
-          />
+        <div className="flex justify-center items-center mt-12 mb-6">
+          <TrainAILogo size="large" />
         </div>
 
         {/* Login Container */}

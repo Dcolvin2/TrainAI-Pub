@@ -2,82 +2,92 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
+import Link from 'next/link';
+import TrainAILogo from '@/app/components/TrainAILogo';
 
 export default function SignUpPage() {
+  const [firstName, setFirstName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [firstName, setFirstName] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const router = useRouter();
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoading(true);
+    setErrorMsg('');
+
+    // Validate passwords match
     if (password !== confirmPassword) {
       setErrorMsg('Passwords do not match');
+      setLoading(false);
       return;
     }
 
-    setErrorMsg('');
-    setLoading(true);
-    const {
-      data: { user },
-      error: signUpError,
-    } = await supabase.auth.signUp({ email, password });
+    // Validate password length
+    if (password.length < 6) {
+      setErrorMsg('Password must be at least 6 characters long');
+      setLoading(false);
+      return;
+    }
 
-    if (signUpError) {
-      if (signUpError.message?.toLowerCase().includes('already') || signUpError.status === 400) {
-        setErrorMsg('An account with this email already exists. Forgot your password?');
-      } else {
-        setErrorMsg(signUpError.message);
+    try {
+      // Create user account
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            first_name: firstName,
+          },
+        },
+      });
+
+      if (error) {
+        console.error('Signup error:', error);
+        setErrorMsg(error.message);
+        setLoading(false);
+        return;
       }
+
+      // Create profile record
+      if (data.user) {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert([
+            {
+              id: data.user.id,
+              first_name: firstName,
+              email: email,
+            },
+          ]);
+
+        if (profileError) {
+          console.error('Profile creation error:', profileError);
+          setErrorMsg('Account created but profile setup failed. Please contact support.');
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Success → go to dashboard
+      router.push('/dashboard');
+    } catch (err) {
+      console.error('Unexpected error:', err);
+      setErrorMsg('An unexpected error occurred');
       setLoading(false);
-      return;
     }
-
-    if (!user) {
-      setErrorMsg('User object not returned.');
-      setLoading(false);
-      return;
-    }
-
-    // Set first_name in user metadata
-    const { error: metaError } = await supabase.auth.updateUser({ data: { first_name: firstName } });
-
-    if (metaError) {
-      setErrorMsg(metaError.message);
-      setLoading(false);
-      return;
-    }
-
-    // profiles.id is a FK to auth.users.id, so use id column directly
-    const { error: insertError } = await supabase
-      .from('profiles')
-      .insert({ id: user.id, first_name: firstName });
-
-    if (insertError) {
-      setErrorMsg(insertError.message);
-      setLoading(false);
-      return;
-    }
-
-    // Success → go to dashboard
-    router.push('/dashboard');
   };
 
   return (
     <div className="min-h-screen bg-[#0F172A] flex items-center justify-center p-4">
       <div className="w-full max-w-md space-y-6">
         {/* Logo */}
-        <div className="text-center">
-          <img
-            src="/Updatedlogo.png"
-            alt="TrainAI Logo"
-            className="w-24 sm:w-32 h-auto mx-auto mb-6"
-          />
+        <div className="flex justify-center items-center mt-12 mb-6">
+          <TrainAILogo size="large" />
         </div>
 
         {/* Signup Container */}

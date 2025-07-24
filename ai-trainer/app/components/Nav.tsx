@@ -1,26 +1,21 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
-import { useState } from 'react';
+import TrainAILogo from './TrainAILogo';
 
 export default function Nav() {
-  const { user, loading, signOut } = useAuth();
+  const { user, signOut } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  if (loading) return null; // avoid flicker
-
   return (
-    <nav className="w-full bg-[#1E293B] border-b border-border py-3 shadow-md">
+    <nav className="bg-[#1E293B] border-b border-border shadow-md sticky top-0 z-50 py-3">
       <div className="max-w-6xl mx-auto px-4">
         <div className="flex items-center justify-between">
           {/* Logo */}
           <Link href="/" className="flex items-center">
-            <img
-              src="/Updatedlogo.png"
-              alt="TrainAI Logo"
-              className="w-10 sm:w-14 h-auto"
-            />
+            <TrainAILogo size="medium" className="ml-2" />
           </Link>
 
           {/* Desktop Navigation */}
