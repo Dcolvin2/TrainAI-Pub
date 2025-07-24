@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { DailyWorkout } from '@/app/components/DailyWorkout'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -172,13 +173,21 @@ export default function Dashboard() {
     }
   }
 
+  if (!profile?.id) {
+    return (
+      <main className="bg-[#0F172A] min-h-screen p-6 text-white">
+        <div className="flex items-center justify-center h-full">
+          <p>Loading...</p>
+        </div>
+      </main>
+    )
+  }
+
   return (
     <main className="bg-[#0F172A] min-h-screen p-6 text-white">
       {/* Top Actions */}
       <div className="flex flex-col sm:flex-row gap-3 mb-6">
-        <button className="bg-[#22C55E] px-5 py-3 rounded-xl font-semibold hover:bg-[#16a34a]">
-          Start Custom Workout
-        </button>
+        <DailyWorkout userId={profile.id} />
         {program && (
           <button className="bg-[#1E293B] px-5 py-3 rounded-xl">
             Continue: Week {program.current_week}, Day {program.current_day}
