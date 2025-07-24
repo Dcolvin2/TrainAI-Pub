@@ -4,20 +4,18 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
-import Button from '@/app/components/ui/Button';
-import Input from '@/app/components/ui/Input';
-import Card from '@/app/components/ui/Card';
 
 export default function SignUpPage() {
-  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [firstName, setFirstName] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const router = useRouter();
 
-  const handleSignup = async () => {
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (password !== confirmPassword) {
       setErrorMsg('Passwords do not match');
       return;
@@ -71,81 +69,95 @@ export default function SignUpPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen bg-[#0F172A] flex items-center justify-center p-4">
+      <div className="w-full max-w-md space-y-6">
         {/* Logo */}
-        <div className="text-center mb-8">
+        <div className="text-center">
           <img
             src="/Updatedlogo.png"
             alt="TrainAI Logo"
-            className="w-32 h-auto mx-auto"
+            className="w-20 sm:w-28 h-auto mx-auto"
           />
         </div>
 
-        {/* Signup Card */}
-        <Card className="w-full">
-          <h1 className="text-2xl font-bold text-center mb-6">Join TrainAI</h1>
+        {/* Signup Container */}
+        <div className="bg-[#1E293B] rounded-2xl shadow-lg p-8">
+          <h1 className="text-xl font-semibold text-center mb-6 text-[#E2E8F0]">
+            Join TrainAI
+          </h1>
           
           {errorMsg && (
-            <div className="bg-error/10 border border-error/20 text-error px-4 py-3 rounded-lg mb-6">
-              <p className="text-sm">{errorMsg}</p>
+            <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-lg mb-6 text-sm">
+              <p>{errorMsg}</p>
               {errorMsg.toLowerCase().includes('already') && (
-                <Link href="/forgot-password" className="text-accent hover:text-primary transition-colors text-sm underline">
+                <Link href="/forgot-password" className="text-[#22C55E] hover:text-[#16a34a] transition-colors text-sm underline">
                   Reset your password
                 </Link>
               )}
             </div>
           )}
           
-          <form onSubmit={(e) => { e.preventDefault(); handleSignup(); }} className="space-y-4">
-            <Input
-              type="email"
-              placeholder="Email address"
-              value={email}
-              onChange={(e) => { setEmail(e.target.value); setErrorMsg(''); }}
-              required
-            />
+          <form onSubmit={handleSignup} className="space-y-4">
+            <div>
+              <input
+                type="text"
+                placeholder="First name"
+                value={firstName}
+                onChange={(e) => { setFirstName(e.target.value); setErrorMsg(''); }}
+                className="bg-[#0F172A] border border-[#334155] text-white px-4 py-3 rounded-lg w-full placeholder:text-muted focus:outline-none focus:border-[#22C55E] focus:ring-2 focus:ring-[#22C55E]/20 transition-all duration-200"
+                required
+              />
+            </div>
             
-            <Input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => { setPassword(e.target.value); setErrorMsg(''); }}
-              required
-            />
+            <div>
+              <input
+                type="email"
+                placeholder="Email address"
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); setErrorMsg(''); }}
+                className="bg-[#0F172A] border border-[#334155] text-white px-4 py-3 rounded-lg w-full placeholder:text-muted focus:outline-none focus:border-[#22C55E] focus:ring-2 focus:ring-[#22C55E]/20 transition-all duration-200"
+                required
+              />
+            </div>
             
-            <Input
-              type="password"
-              placeholder="Confirm Password"
-              value={confirmPassword}
-              onChange={(e) => { setConfirmPassword(e.target.value); setErrorMsg(''); }}
-              required
-            />
+            <div>
+              <input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); setErrorMsg(''); }}
+                className="bg-[#0F172A] border border-[#334155] text-white px-4 py-3 rounded-lg w-full placeholder:text-muted focus:outline-none focus:border-[#22C55E] focus:ring-2 focus:ring-[#22C55E]/20 transition-all duration-200"
+                required
+              />
+            </div>
             
-            <Input
-              type="text"
-              placeholder="First Name"
-              value={firstName}
-              onChange={(e) => { setFirstName(e.target.value); setErrorMsg(''); }}
-              required
-            />
+            <div>
+              <input
+                type="password"
+                placeholder="Confirm password"
+                value={confirmPassword}
+                onChange={(e) => { setConfirmPassword(e.target.value); setErrorMsg(''); }}
+                className="bg-[#0F172A] border border-[#334155] text-white px-4 py-3 rounded-lg w-full placeholder:text-muted focus:outline-none focus:border-[#22C55E] focus:ring-2 focus:ring-[#22C55E]/20 transition-all duration-200"
+                required
+              />
+            </div>
             
-            <Button
+            <button
               type="submit"
-              className="w-full"
               disabled={loading}
+              className="w-full bg-[#22C55E] hover:bg-[#16a34a] focus:bg-[#16a34a] text-white font-semibold rounded-xl py-3 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'Creating Account...' : 'Create Account'}
-            </Button>
+            </button>
           </form>
 
           {/* Links */}
-          <div className="mt-6 text-center">
-            <Link href="/login" className="text-accent hover:text-primary transition-colors text-sm">
+          <div className="mt-6 text-center space-y-3">
+            <Link href="/login" className="text-[#22C55E] hover:text-[#16a34a] transition-colors block text-sm">
               Already have an account? Sign in
             </Link>
           </div>
-        </Card>
+        </div>
       </div>
     </div>
   );
