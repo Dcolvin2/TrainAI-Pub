@@ -3,47 +3,14 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
-interface Profile {
-  id: string
-  first_name: string
-  weight?: number
-  goal_weight?: number
-}
-
-interface WeightLog {
-  id: string
-  weight: number
-  logged_at: string
-}
-
-interface Workout {
-  id: string
-  created_at: string
-  total_sets?: number
-  duration?: number
-  name?: string
-}
-
-interface TrainingProgram {
-  id: string
-  user_id: string
-  status: string
-  current_week: number
-  current_day: number
-}
-
-interface WeeklyStats {
-  thisWeek: number
-  lastWeek: number
-  streak: number
-}
-
 export default function Dashboard() {
-  const [profile, setProfile] = useState<Profile | null>(null)
-  const [weightLogs, setWeightLogs] = useState<WeightLog[]>([])
-  const [lastWorkout, setLastWorkout] = useState<Workout | null>(null)
-  const [program, setProgram] = useState<TrainingProgram | null>(null)
-  const [weeklyStats] = useState<WeeklyStats>({ thisWeek: 0, lastWeek: 0, streak: 0 })
+  const [profile, setProfile] = useState<any>(null)
+  const [weightLogs, setWeightLogs] = useState<any[]>([])
+  const [showWeightForm, setShowWeightForm] = useState(false)
+  const [newWeight, setNewWeight] = useState<string>('')
+  const [lastWorkout, setLastWorkout] = useState<any>(null)
+  const [program, setProgram] = useState<any>(null)
+  const [weeklyStats, setWeeklyStats] = useState({ thisWeek: 0, lastWeek: 0, streak: 0 })
 
   useEffect(() => {
     async function load() {
@@ -51,73 +18,70 @@ export default function Dashboard() {
       if (!user?.id) return
       
       const uid = user.id
-      const { data: prof } = await supabase.from('profiles').select('*').eq('id', uid).single()
+      const [{ data: prof }, { data: logs }, { data: wkt }, { data: prog }] = await Promise.all([
+        supabase.from('profiles').select('*').eq('id', uid).single(),
+        supabase.from('weight_logs').select('*').eq('user_id', uid).order('logged_at', { ascending: true }),
+        supabase.from('workouts').select('*').eq('user_id', uid).order('created_at', { ascending: false }).limit(1),
+        supabase.from('training_programs').select('*').eq('user_id', uid).eq('status', 'active').single(),
+      ])
       setProfile(prof)
-
-      const { data: logs } = await supabase
-        .from('weight_logs')
-        .select('*')
-        .eq('user_id', uid)
-        .order('logged_at', { ascending: true })
       setWeightLogs(logs || [])
-
-      const { data: wkt } = await supabase
-        .from('workouts')
-        .select('*')
-        .eq('user_id', uid)
-        .order('created_at', { ascending: false })
-        .limit(1)
       setLastWorkout(wkt?.[0] || null)
+      setProgram(prog || null)
 
-      const { data: prog } = await supabase
-        .from('training_programs')
-        .select('*')
-        .eq('user_id', uid)
-        .eq('status', 'active')
-        .single()
-      setProgram(prog)
-
-      // example weekly stats logic
-      // ...fetch and setWeeklyStats({ thisWeek: X, lastWeek: Y, streak: Z })
+      // you can fill weeklyStats here...
     }
     load()
   }, [])
 
-  // compute weight metrics
+  // Derived metrics
   const startW = weightLogs[0]?.weight
   const currentW = weightLogs[weightLogs.length - 1]?.weight
   const goalW = profile?.goal_weight
   const lost = startW && currentW ? (startW - currentW).toFixed(1) : null
 
+  // Handle weight submit
+  async function submitWeight() {
+    if (!profile?.id) return
+    
+    const { data, error } = await supabase
+      .from('weight_logs')
+      .insert([{ user_id: profile.id, weight: parseFloat(newWeight) }])
+    if (!error && data) {
+      setWeightLogs(prev => [...prev, data[0]])
+      setShowWeightForm(false)
+      setNewWeight('')
+    }
+  }
+
   return (
     <main className="bg-[#0F172A] min-h-screen p-6 text-white">
-
-      {/* — Top Action Bar — */}
-      <div className="flex flex-col sm:flex-row gap-3 justify-start mb-6">
-        <button className="bg-[#22C55E] text-white font-semibold py-3 px-5 rounded-xl hover:bg-[#16a34a]">
+      {/* Top Actions */}
+      <div className="flex flex-col sm:flex-row gap-3 mb-6">
+        <button className="bg-[#22C55E] px-5 py-3 rounded-xl font-semibold hover:bg-[#16a34a]">
           Start Custom Workout
         </button>
         {program && (
-          <button className="bg-[#1E293B] text-white py-3 px-5 rounded-xl">
+          <button className="bg-[#1E293B] px-5 py-3 rounded-xl">
             Continue: Week {program.current_week}, Day {program.current_day}
           </button>
         )}
       </div>
 
-      {/* — Dashboard Grid — */}
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6 auto-rows-min">
+      {/* Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
 
-        {/* Weight Tracker (horizontal, spans 2 cols on md+) */}
+        {/* Weight Tracker */}
         <section className="md:col-span-2 bg-[#1E293B] rounded-2xl p-4 shadow-md overflow-hidden">
           <div className="flex flex-col sm:flex-row gap-4">
+            {/* Metrics */}
             <div className="flex-1">
-              <h2 className="text-xl font-semibold mb-2">Weight Progress</h2>
-              {lost ? (
-                <p className="text-green-400 mb-2">You&apos;ve lost {lost} lbs</p>
-              ) : (
-                <p className="text-sm text-gray-400 mb-2">Log two weights to see progress</p>
-              )}
-              <div className="flex justify-between mb-4">
+              <h2 className="text-xl font-semibold">Weight Progress</h2>
+              {lost
+                ? <p className="text-green-400 mt-1">You&apos;ve lost {lost} lbs</p>
+                : <p className="text-sm text-gray-400 mt-1">Log two entries to see progress</p>
+              }
+              <div className="flex justify-between my-4">
                 <div>
                   <p className="text-sm text-gray-400">Current</p>
                   <p className="text-lg font-medium">{currentW ?? '—'} lbs</p>
@@ -127,68 +91,88 @@ export default function Dashboard() {
                   <p className="text-lg font-medium">{goalW ?? '—'} lbs</p>
                 </div>
               </div>
+              <button
+                onClick={() => setShowWeightForm(true)}
+                className="bg-[#22C55E] px-4 py-2 rounded-lg font-medium hover:bg-[#16a34a]"
+              >
+                Log My Weight
+              </button>
+
+              {/* Inline Form */}
+              {showWeightForm && (
+                <div className="mt-4 flex gap-2">
+                  <input
+                    type="number"
+                    value={newWeight}
+                    onChange={e => setNewWeight(e.target.value)}
+                    placeholder="Enter weight"
+                    className="flex-1 bg-[#0F172A] border border-[#334155] px-3 py-2 rounded-lg"
+                  />
+                  <button
+                    onClick={submitWeight}
+                    className="bg-[#22C55E] px-4 py-2 rounded-lg hover:bg-[#16a34a]"
+                  >
+                    Save
+                  </button>
+                </div>
+              )}
             </div>
-            <div className="flex-1 h-40 overflow-hidden bg-[#0F172A] rounded-lg flex items-center justify-center">
+
+            {/* Chart Placeholder */}
+            <div className="flex-1 h-40 bg-[#0F172A] rounded-lg flex items-center justify-center">
               <p className="text-sm text-gray-400">Weight chart will appear here</p>
             </div>
           </div>
-          <button className="mt-4 bg-[#22C55E] text-white py-2 px-4 rounded-lg">
-            Log My Weight
-          </button>
         </section>
 
-        {/* Last Workout (vertical, single col) */}
+        {/* Last Workout */}
         <section className="bg-[#1E293B] rounded-2xl p-4 shadow-md flex flex-col justify-between">
-          <h2 className="text-xl font-semibold mb-2">Last Workout</h2>
-          {lastWorkout ? (
-            <div>
-              <p className="text-sm">On {new Date(lastWorkout.created_at).toLocaleDateString()}</p>
-              {/* add details */}
-            </div>
-          ) : (
-            <button className="mt-4 bg-[#22C55E] text-white py-2 px-4 rounded-lg">
-              Start First Workout
-            </button>
-          )}
+          <h2 className="text-xl font-semibold">Last Workout</h2>
+          {lastWorkout
+            ? <p className="mt-2 text-sm">On {new Date(lastWorkout.created_at).toLocaleDateString()}</p>
+            : (
+              <button className="mt-4 bg-[#22C55E] px-4 py-2 rounded-lg font-medium hover:bg-[#16a34a]">
+                Start First Workout
+              </button>
+            )
+          }
         </section>
 
-        {/* Weekly Activity (compact horizontal stats) */}
+        {/* Weekly Activity */}
         <section className="bg-[#1E293B] rounded-2xl p-4 shadow-md">
-          <h2 className="text-xl font-semibold mb-3">Weekly Activity</h2>
-          <div className="flex justify-between text-sm">
-            <span>This Week: {weeklyStats.thisWeek}</span>
-            <span>Last Week: {weeklyStats.lastWeek}</span>
-            <span>Streak: {weeklyStats.streak} days</span>
-          </div>
+          <h2 className="text-xl font-semibold">Weekly Activity</h2>
+          <p className="text-sm mt-2">
+            This Week: {weeklyStats.thisWeek} · Last Week: {weeklyStats.lastWeek} · Streak: {weeklyStats.streak} days
+          </p>
         </section>
 
-        {/* AI Feedback (vertical) */}
+        {/* AI Feedback */}
         <section className="bg-[#1E293B] rounded-2xl p-4 shadow-md flex flex-col">
-          <h2 className="text-xl font-semibold mb-2">AI Training Feedback</h2>
-          <p className="text-sm text-gray-300 flex-1">
+          <h2 className="text-xl font-semibold">AI Training Feedback</h2>
+          <p className="text-sm text-gray-300 flex-1 mt-2">
             {program
               ? 'Your streak looks strong—keep it up!'
               : 'Complete a workout to get personalized tips.'}
           </p>
-          <button className="mt-4 bg-[#334155] text-white py-2 px-4 rounded-lg">
+          <button className="mt-4 bg-[#334155] px-4 py-2 rounded-lg font-medium hover:bg-[#3f4a5a]">
             Get Personalized Plan
           </button>
         </section>
 
-        {/* Top Lifts (compact) */}
+        {/* Top Lifts */}
         <section className="bg-[#1E293B] rounded-2xl p-4 shadow-md">
-          <h2 className="text-xl font-semibold mb-3">Top Lifts Progress</h2>
-          <p className="text-sm text-gray-400">No lift records yet</p>
-          <button className="mt-4 bg-[#22C55E] text-white py-2 px-4 rounded-lg">
+          <h2 className="text-xl font-semibold">Top Lifts Progress</h2>
+          <p className="text-sm text-gray-400 mt-2">No lift records yet</p>
+          <button className="mt-4 bg-[#22C55E] px-4 py-2 rounded-lg font-medium hover:bg-[#16a34a]">
             Log Your First Lift
           </button>
         </section>
 
-        {/* Milestones (compact) */}
+        {/* Milestones */}
         <section className="bg-[#1E293B] rounded-2xl p-4 shadow-md">
-          <h2 className="text-xl font-semibold mb-3">Milestones</h2>
-          <p className="text-sm text-gray-400">No milestones yet</p>
-          <button className="mt-4 bg-[#22C55E] text-white py-2 px-4 rounded-lg">
+          <h2 className="text-xl font-semibold">Milestones</h2>
+          <p className="text-sm text-gray-400 mt-2">No milestones yet</p>
+          <button className="mt-4 bg-[#22C55E] px-4 py-2 rounded-lg font-medium hover:bg-[#16a34a]">
             Set Your First Goal
           </button>
         </section>
