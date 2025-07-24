@@ -2,6 +2,25 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Tooltip,
+  Legend,
+} from 'chart.js'
+import { Line } from 'react-chartjs-2'
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Tooltip,
+  Legend
+)
 
 interface Profile {
   id: string
@@ -74,6 +93,25 @@ export default function Dashboard() {
   const currentW = weightLogs[weightLogs.length - 1]?.weight
   const goalW = profile?.goal_weight
   const lost = startW && currentW ? (startW - currentW).toFixed(1) : null
+
+  // Chart data
+  const chartData = {
+    labels: weightLogs.map(l => new Date(l.logged_at).toLocaleDateString()),
+    datasets: [{
+      label: 'Weight',
+      data: weightLogs.map(l => l.weight),
+      borderColor: '#22C55E',
+      pointBackgroundColor: '#22C55E',
+      tension: 0.3,
+    }]
+  }
+
+  const chartOpts = {
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: { y: { beginAtZero: false } },
+    plugins: { legend: { display: false } }
+  }
 
   // Handle weight submit
   async function submitWeight() {
@@ -153,9 +191,15 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* Chart Placeholder */}
-            <div className="flex-1 h-40 bg-[#0F172A] rounded-lg flex items-center justify-center">
-              <p className="text-sm text-gray-400">Weight chart will appear here</p>
+            {/* Chart */}
+            <div className="h-40">
+              {weightLogs.length > 0 ? (
+                <Line data={chartData} options={chartOpts} />
+              ) : (
+                <div className="flex items-center justify-center h-full text-gray-500">
+                  Weight chart will appear here
+                </div>
+              )}
             </div>
           </div>
         </section>
