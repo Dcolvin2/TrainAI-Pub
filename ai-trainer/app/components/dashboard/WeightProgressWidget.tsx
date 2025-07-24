@@ -20,37 +20,61 @@ interface WeightProgressWidgetProps {
 export default function WeightProgressWidget({ profile, weightLogs, onWeightLogged }: WeightProgressWidgetProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Calculate weight progress
-  const currentWeight = profile?.weight || 0;
-  const goalWeight = profile?.goal_weight || 0;
-  const startingWeight = weightLogs.length > 0 ? weightLogs[weightLogs.length - 1].weight : currentWeight;
+  // Sort weight logs by date (earliest to latest)
+  const weightEntries = [...weightLogs].sort((a, b) => 
+    new Date(a.logged_at).getTime() - new Date(b.logged_at).getTime()
+  );
 
-  // Weight change logic
-  const delta = startingWeight - currentWeight;
-  const goalDelta = startingWeight - goalWeight;
-  const percentComplete = goalDelta !== 0 ? (delta / goalDelta) * 100 : 0;
-  const remainingWeight = Math.abs(currentWeight - goalWeight);
+  // Calculate weight values
+  const goalWeight = profile?.goal_weight || null;
+  const startingWeight = weightEntries.length > 0 ? weightEntries[0].weight : null;
+  const currentWeight = weightEntries.length > 0 ? weightEntries[weightEntries.length - 1].weight : null;
+
+  // Calculate weight change
+  const weightLost = startingWeight && currentWeight ? (startingWeight - currentWeight).toFixed(1) : null;
+  const weightGained = startingWeight && currentWeight ? (currentWeight - startingWeight).toFixed(1) : null;
+  const hasLostWeight = startingWeight && currentWeight && currentWeight < startingWeight;
+  const hasGainedWeight = startingWeight && currentWeight && currentWeight > startingWeight;
+
+  // Calculate goal progress
+  const goalProgress = startingWeight && goalWeight && currentWeight
+    ? Math.min(100, Math.max(0, ((startingWeight - currentWeight) / (startingWeight - goalWeight)) * 100))
+    : null;
 
   // Determine progress bar color
   const getProgressColor = () => {
-    if (goalWeight === 0) return 'bg-[#22C55E]';
+    if (!goalWeight || !startingWeight || !currentWeight) return 'bg-[#22C55E]';
     
     const isLosing = goalWeight < startingWeight;
     const isGaining = goalWeight > startingWeight;
-    const isMovingTowardGoal = (isLosing && delta > 0) || (isGaining && delta < 0);
+    const isMovingTowardGoal = (isLosing && hasLostWeight) || (isGaining && hasGainedWeight);
     
     return isMovingTowardGoal ? 'bg-green-500' : 'bg-red-500';
   };
 
   // Get progress message
   const getProgressMessage = () => {
-    if (goalWeight === 0) return 'Set a goal weight to track progress';
-    if (weightLogs.length === 0) return 'No logs yet — tap above to track your progress';
+    if (!goalWeight) return 'Set a goal weight to track progress';
+    if (!startingWeight || !currentWeight) return 'No logs yet — tap above to track your progress';
     
     const direction = goalWeight < startingWeight ? 'lost' : 'gained';
+    const remainingWeight = Math.abs(currentWeight - goalWeight);
     const remainingDirection = goalWeight < startingWeight ? 'to lose' : 'to gain';
     
-    return `You've ${direction} ${Math.abs(delta).toFixed(1)} lbs — ${remainingWeight.toFixed(1)} lbs ${remainingDirection}`;
+    return `${Math.abs(Number(weightLost || weightGained || 0)).toFixed(1)} lbs ${direction} — ${remainingWeight.toFixed(1)} lbs ${remainingDirection}`;
+  };
+
+  // Get weight change display text
+  const getWeightChangeText = () => {
+    if (!startingWeight || !currentWeight) return null;
+    
+    if (hasLostWeight) {
+      return `You've lost ${weightLost} lbs`;
+    } else if (hasGainedWeight) {
+      return `You've gained ${weightGained} lbs`;
+    } else {
+      return 'No weight change';
+    }
   };
 
   return (
@@ -80,36 +104,43 @@ export default function WeightProgressWidget({ profile, weightLogs, onWeightLogg
           </div>
         ) : (
           <div className="space-y-4">
+            {/* Weight Change Display */}
+            {getWeightChangeText() && (
+              <div className="text-center">
+                <p className="text-sm text-[#22C55E] font-medium">{getWeightChangeText()}</p>
+              </div>
+            )}
+
+            {/* Current Stats */}
+            <div className="flex justify-around text-center text-white">
+              <div>
+                <p className="text-sm text-muted">Current</p>
+                <p className="text-lg font-semibold">{currentWeight || 0} lbs</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted">Goal</p>
+                <p className="text-lg font-semibold">{goalWeight || 0} lbs</p>
+              </div>
+            </div>
+
             {/* Progress Message */}
             <div className="text-center space-y-2">
               <p className="text-sm text-muted">Progress</p>
               <p className="text-sm font-medium text-white">{getProgressMessage()}</p>
             </div>
 
-            {/* Current Stats */}
-            <div className="flex justify-around text-center text-white">
-              <div>
-                <p className="text-sm text-muted">Current</p>
-                <p className="text-lg font-semibold">{currentWeight} lbs</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted">Goal</p>
-                <p className="text-lg font-semibold">{goalWeight} lbs</p>
-              </div>
-            </div>
-
             {/* Progress Bar */}
-            {goalWeight > 0 && (
+            {goalWeight && goalProgress !== null && (
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted">Progress</span>
-                  <span className="font-medium text-white">{Math.abs(percentComplete).toFixed(1)}%</span>
+                  <span className="font-medium text-white">{goalProgress.toFixed(1)}%</span>
                 </div>
                 <div className="w-full bg-[#334155] rounded-full h-2">
                   <div 
                     className={`${getProgressColor()} h-2 rounded-full transition-all duration-500`}
                     style={{ 
-                      width: `${Math.min(100, Math.max(0, Math.abs(percentComplete)))}%` 
+                      width: `${goalProgress}%` 
                     }}
                   ></div>
                 </div>
@@ -119,7 +150,7 @@ export default function WeightProgressWidget({ profile, weightLogs, onWeightLogg
             {/* Weight Chart */}
             <div className="mt-4">
               <h3 className="text-sm font-semibold text-white mb-3 tracking-wide">Weekly Trend</h3>
-              <div className="w-full h-[200px] overflow-hidden px-2 sm:px-4">
+              <div className="w-full h-[200px] overflow-hidden px-4">
                 <WeightChart weightLogs={weightLogs} />
               </div>
             </div>
@@ -131,7 +162,7 @@ export default function WeightProgressWidget({ profile, weightLogs, onWeightLogg
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onWeightLogged={onWeightLogged}
-        currentWeight={currentWeight}
+        currentWeight={currentWeight || undefined}
       />
     </>
   );
