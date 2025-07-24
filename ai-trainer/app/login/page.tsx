@@ -43,7 +43,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md space-y-6">
         {/* Logo */}
         <div className="flex justify-center items-center mt-12 mb-6">
-          <TrainAILogo size="large" />
+          <TrainAILogo size="xl" />
         </div>
 
         {/* Login Container */}

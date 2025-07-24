@@ -12,10 +12,10 @@ export default function TrainAILogo({
   showText = false 
 }: TrainAILogoProps) {
   const sizeClasses = {
-    small: 'w-8 h-8 sm:w-10 sm:h-10',
-    medium: 'w-10 h-10 sm:w-12 sm:h-12',
-    large: 'w-24 h-24 sm:w-28 sm:h-28',
-    xl: 'w-32 h-32 sm:w-40 sm:h-40'
+    small: 'h-12 w-auto sm:h-14', // 48px on mobile, 56px on desktop
+    medium: 'h-16 w-auto sm:h-20', // 64px on mobile, 80px on desktop
+    large: 'h-20 w-auto sm:h-24', // 80px on mobile, 96px on desktop
+    xl: 'h-24 w-auto sm:h-32' // 96px on mobile, 128px on desktop
   };
 
   const logoElement = (

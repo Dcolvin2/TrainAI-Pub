@@ -143,18 +143,6 @@ p {
   transform: scale(1.05);
 }
 
-/* Logo sizing for consistent appearance */
-.logo img {
-  height: 64px;
-  width: auto;
-}
-
-@media (max-width: 768px) {
-  .logo img {
-    height: 48px;
-  }
-}
-
 /* Gradient backgrounds */
 .gradient-bg {
   background: linear-gradient(135deg, var(--background) 0%, var(--card-bg) 100%);
