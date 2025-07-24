@@ -45,7 +45,7 @@ export default function LoginPage() {
           <img
             src="/Updatedlogo.png"
             alt="TrainAI Logo"
-            className="w-20 sm:w-28 h-auto mx-auto"
+            className="w-24 sm:w-32 h-auto mx-auto mb-6"
           />
         </div>
 

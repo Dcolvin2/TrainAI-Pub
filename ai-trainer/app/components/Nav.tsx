@@ -19,7 +19,7 @@ export default function Nav() {
             <img
               src="/Updatedlogo.png"
               alt="TrainAI Logo"
-              className="w-20 h-auto"
+              className="w-10 sm:w-14 h-auto"
             />
           </Link>
 

@@ -138,11 +138,11 @@ export default function Dashboard() {
       <div className="min-h-screen bg-background text-foreground p-4 sm:p-6">
         <div className="max-w-6xl mx-auto">
           <div className="animate-pulse space-y-6">
-            <div className="h-8 bg-[#1E293B] rounded-2xl w-1/3"></div>
-            <div className="h-12 bg-[#1E293B] rounded-2xl w-full max-w-md"></div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="h-8 bg-[#1E293B] rounded-xl w-1/3"></div>
+            <div className="h-12 bg-[#1E293B] rounded-xl w-full max-w-md"></div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {[...Array(6)].map((_, i) => (
-                <div key={i} className="h-48 bg-[#1E293B] rounded-2xl shadow-md"></div>
+                <div key={i} className="h-48 bg-[#1E293B] rounded-xl shadow-md"></div>
               ))}
             </div>
           </div>
@@ -166,7 +166,7 @@ export default function Dashboard() {
               {/* Start Custom Workout Button */}
               <Link href="/new-workout" className="flex-1 sm:flex-none">
                 <button 
-                  className="w-full sm:w-auto bg-primary hover:bg-primary-hover focus:bg-primary-hover text-white text-sm font-semibold py-3 px-6 rounded-xl shadow-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  className="w-full sm:w-auto bg-[#22C55E] hover:bg-[#16a34a] focus:bg-[#16a34a] text-white text-sm font-semibold py-3 px-6 rounded-xl shadow-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-green-500"
                   aria-label="Start a new custom workout"
                 >
                   Start Custom Workout
@@ -186,12 +186,24 @@ export default function Dashboard() {
                   )}
                 </button>
               </Link>
+
+              {/* Conditional Start First Workout Button */}
+              {!lastWorkout && (
+                <Link href="/new-workout" className="flex-1 sm:flex-none">
+                  <button 
+                    className="w-full sm:w-auto bg-[#334155] hover:bg-[#475569] text-foreground text-sm font-semibold py-3 px-6 rounded-xl shadow-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-accent/50"
+                    aria-label="Start your first workout"
+                  >
+                    Start First Workout
+                  </button>
+                </Link>
+              )}
             </div>
           </div>
         </div>
 
         {/* Dashboard Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {/* Weight Progress Widget */}
           <WeightProgressWidget
             profile={profile}
@@ -200,104 +212,90 @@ export default function Dashboard() {
           />
 
           {/* Last Workout Widget */}
-          <div className="bg-[#1E293B] rounded-2xl p-6 shadow-md">
-            <h2 className="text-lg font-semibold mb-4 tracking-wide">Last Workout</h2>
+          <div className="bg-[#1E293B] rounded-xl p-4 shadow-md">
+            <h2 className="text-lg font-semibold mb-3 tracking-wide text-white">Last Workout</h2>
             {lastWorkout ? (
-              <div className="space-y-3">
+              <div className="space-y-2">
                 <div className="flex justify-between">
                   <span className="text-muted text-sm">Date</span>
-                  <span className="font-medium">
+                  <span className="font-medium text-white">
                     {new Date(lastWorkout.created_at).toLocaleDateString()}
                   </span>
                 </div>
                 {lastWorkout.name && (
                   <div className="flex justify-between">
                     <span className="text-muted text-sm">Workout</span>
-                    <span className="font-medium">{lastWorkout.name}</span>
+                    <span className="font-medium text-white">{lastWorkout.name}</span>
                   </div>
                 )}
                 {lastWorkout.total_sets && (
                   <div className="flex justify-between">
                     <span className="text-muted text-sm">Sets</span>
-                    <span className="font-medium">{lastWorkout.total_sets}</span>
+                    <span className="font-medium text-white">{lastWorkout.total_sets}</span>
                   </div>
                 )}
                 {lastWorkout.duration && (
                   <div className="flex justify-between">
                     <span className="text-muted text-sm">Duration</span>
-                    <span className="font-medium">{lastWorkout.duration} mins</span>
+                    <span className="font-medium text-white">{lastWorkout.duration} mins</span>
                   </div>
                 )}
               </div>
             ) : (
-              <div className="text-center">
-                <p className="text-muted text-sm mb-4">No workouts logged yet</p>
-                <Link href="/new-workout">
-                  <button className="bg-primary hover:bg-primary-hover text-white font-medium px-4 py-2 rounded-xl shadow-md transition-all duration-200 text-sm">
-                    Start First Workout
-                  </button>
-                </Link>
+              <div className="text-center py-4">
+                <p className="text-muted text-sm">No workouts logged yet</p>
               </div>
             )}
           </div>
 
-          {/* Weekly Workout Frequency */}
-          <div className="bg-[#1E293B] rounded-2xl p-6 shadow-md">
-            <h2 className="text-lg font-semibold mb-4 tracking-wide">Weekly Activity</h2>
-            <div className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-muted text-sm">This Week</span>
-                <Link href="/dashboard" className="text-sm text-accent hover:underline">
-                  3 workouts
-                </Link>
+          {/* Weekly Activity Stats */}
+          <div className="bg-[#1E293B] rounded-xl p-4 shadow-md">
+            <h2 className="text-lg font-semibold mb-3 tracking-wide text-white">Weekly Activity</h2>
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div>
+                <p className="text-muted text-sm">This Week</p>
+                <p className="text-lg font-semibold text-[#22C55E]">3</p>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted text-sm">Last Week</span>
-                <span className="font-medium">4 workouts</span>
+              <div>
+                <p className="text-muted text-sm">Last Week</p>
+                <p className="text-lg font-semibold text-white">4</p>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted text-sm">Streak</span>
-                <span className="font-medium text-primary">5 days</span>
+              <div>
+                <p className="text-muted text-sm">Streak</p>
+                <p className="text-lg font-semibold text-[#22C55E]">5</p>
               </div>
             </div>
           </div>
 
-
-
-          {/* AI Suggestion Card */}
-          <div className="bg-[#1E293B] rounded-2xl p-6 shadow-md">
-            <h2 className="text-lg font-semibold mb-4 tracking-wide">AI Training Feedback</h2>
+          {/* Coaching Insights */}
+          <div className="bg-[#1E293B] rounded-xl p-4 shadow-md">
+            <h2 className="text-lg font-semibold mb-3 tracking-wide text-white">Coaching Insights</h2>
             <div className="space-y-3">
               <p className="text-sm text-muted">
-                Your streak looks strong!
+                Your streak looks strong! Try adding more leg days for better balance.
               </p>
-              <p className="text-sm text-muted">
-                Try adding more leg days for better balance and overall strength development.
-              </p>
-              <div className="mt-4">
-                <button className="bg-[#334155] hover:bg-[#475569] text-foreground font-medium px-4 py-2 rounded-xl shadow-md transition-all duration-200 text-sm w-full">
-                  Get Personalized Plan
-                </button>
-              </div>
+              <button className="bg-[#334155] hover:bg-[#475569] text-foreground font-medium px-4 py-2 rounded-lg shadow-md transition-all duration-200 text-sm w-full">
+                Get Personalized Plan
+              </button>
             </div>
           </div>
 
           {/* Lift Progress Chart */}
-          <div className="bg-[#1E293B] rounded-2xl p-6 shadow-md lg:col-span-2">
-            <h2 className="text-lg font-semibold mb-4 tracking-wide">Top Lifts Progress</h2>
+          <div className="bg-[#1E293B] rounded-xl p-4 shadow-md lg:col-span-2">
+            <h2 className="text-lg font-semibold mb-3 tracking-wide text-white">Top Lifts Progress</h2>
             <LiftChart liftRecords={liftRecords} />
           </div>
 
           {/* Milestones Timeline */}
-          <div className="bg-[#1E293B] rounded-2xl p-6 shadow-md">
-            <h2 className="text-lg font-semibold mb-4 tracking-wide">Milestones</h2>
+          <div className="bg-[#1E293B] rounded-xl p-4 shadow-md">
+            <h2 className="text-lg font-semibold mb-3 tracking-wide text-white">Milestones</h2>
             {milestones.length > 0 ? (
               <div className="space-y-3">
                 {milestones.slice(0, 3).map((milestone) => (
                   <div key={milestone.id} className="flex items-start space-x-3">
-                    <div className="w-2 h-2 bg-primary rounded-full mt-2 flex-shrink-0"></div>
+                    <div className="w-2 h-2 bg-[#22C55E] rounded-full mt-2 flex-shrink-0"></div>
                     <div className="flex-1">
-                      <p className="text-sm font-medium">{milestone.type}</p>
+                      <p className="text-sm font-medium text-white">{milestone.type}</p>
                       <p className="text-xs text-muted">
                         {new Date(milestone.achieved_on).toLocaleDateString()}
                       </p>
@@ -311,7 +309,7 @@ export default function Dashboard() {
             ) : (
               <div className="text-center">
                 <p className="text-muted text-sm mb-4">No milestones yet</p>
-                <button className="bg-[#334155] hover:bg-[#475569] text-foreground font-medium px-4 py-2 rounded-xl shadow-md transition-all duration-200 text-sm">
+                <button className="bg-[#334155] hover:bg-[#475569] text-foreground font-medium px-4 py-2 rounded-lg shadow-md transition-all duration-200 text-sm">
                   Set Your First Goal
                 </button>
               </div>
