@@ -20,6 +20,15 @@ export function DailyWorkout({ userId }: { userId: string }) {
     
     try {
       const response = await fetch(`/api/generateWorkout?userId=${userId}&minutes=${minutes}`)
+      
+      // Check if response is JSON
+      const contentType = response.headers.get('content-type')
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text()
+        console.error('Non-JSON response:', text)
+        throw new Error('Server returned an error page instead of JSON data')
+      }
+      
       const workoutData = await response.json()
       
       if (!response.ok) {
