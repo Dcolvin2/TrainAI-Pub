@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { WorkoutTimer } from './WorkoutTimer'
-import { WorkoutExerciseCard } from './WorkoutExerciseCard'
+import { WorkoutExerciseCard, LogSet } from './WorkoutExerciseCard'
 
 // Type declarations for Web Speech API
 declare global {
@@ -66,17 +66,9 @@ interface WorkoutExercise {
   rest: number
 }
 
-interface WorkoutSet {
+interface WorkoutSet extends LogSet {
   exerciseName: string
   setNumber: number
-  setNumberLabel: string
-  previousWeight: number | null
-  prescribedWeight: number
-  actualWeight: number | string
-  reps: number
-  restSeconds: number
-  rpe: number
-  done: boolean
 }
 
 interface UserContext {
@@ -122,9 +114,9 @@ export default function WorkoutChatBuilder({ userId }: { userId: string }) {
           exerciseName: exercise.exercise,
           setNumber: i,
           setNumberLabel: i <= 2 ? 'W' : i.toString(),
-          previousWeight: null,
+          previousWeight: undefined,
           prescribedWeight: exercise.weight,
-          actualWeight: '',
+          actualWeight: undefined,
           reps: exercise.reps,
           restSeconds: exercise.rest || defaultRest,
           rpe: 7,
@@ -491,8 +483,8 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
             <WorkoutExerciseCard
               key={exerciseName}
               exerciseName={exerciseName}
-              sets={sets}
-              updateSet={updateSet}
+              sets={sets as LogSet[]}
+              updateSet={(s, changes) => updateSet(s as WorkoutSet, changes)}
             />
           ))}
         </div>
