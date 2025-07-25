@@ -491,28 +491,29 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
                 </div>
               </div>
 
-              {/* Sets Table Header */}
-              <div className="grid grid-cols-[auto,1fr,auto,auto,auto] gap-3 items-center p-2 mb-2 text-xs text-gray-400 font-medium">
-                <span>Set</span>
-                <span>Previous</span>
-                <span className="text-center">lbs</span>
-                <span className="text-center">Reps</span>
-                <span className="text-center">Done</span>
-              </div>
-
               {/* Sets Table */}
-              <div className="space-y-2">
+              <div className="bg-gray-800 rounded-lg overflow-hidden">
+                {/* Table Header */}
+                <div className="grid grid-cols-[auto,1fr,auto,auto,auto] gap-3 items-center p-3 bg-gray-700 text-xs text-gray-300 font-medium border-b border-gray-600">
+                  <span>Set</span>
+                  <span>Previous</span>
+                  <span className="text-center">lbs</span>
+                  <span className="text-center">Reps</span>
+                  <span className="text-center">Done</span>
+                </div>
+
+                {/* Table Rows */}
                 {sets.map(set => (
                   <div
                     key={`${exerciseName}-${set.setNumber}`}
-                    className="grid grid-cols-[auto,1fr,auto,auto,auto] gap-3 items-center p-3 bg-gray-800 rounded-lg"
+                    className="grid grid-cols-[auto,1fr,auto,auto,auto] gap-3 items-center p-3 border-b border-gray-700 last:border-b-0"
                   >
                     {/* Set Number */}
                     <div className="flex items-center">
                       {set.setNumber <= 2 ? (
                         <span className="bg-orange-600 text-white px-2 py-1 rounded text-xs font-medium">W</span>
                       ) : (
-                        <span className="bg-gray-700 text-gray-300 px-2 py-1 rounded text-xs font-medium">{set.setNumber}</span>
+                        <span className="bg-gray-600 text-gray-200 px-2 py-1 rounded text-xs font-medium">{set.setNumber}</span>
                       )}
                     </div>
 
