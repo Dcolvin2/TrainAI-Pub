@@ -5,6 +5,7 @@ interface WorkoutData {
   warmup: string[]
   workout: string[]
   cooldown: string[]
+  prompt?: string
 }
 
 export function DailyWorkout({ userId }: { userId: string }) {
@@ -60,10 +61,26 @@ export function DailyWorkout({ userId }: { userId: string }) {
       )}
 
       {data && (
-        <div className="bg-[#1E293B] p-4 rounded-2xl space-y-3">
-          <Section title="Warm-Up" items={data.warmup} />
-          <Section title="Workout" items={data.workout} />
-          <Section title="Cool-Down" items={data.cooldown} />
+        <div className="space-y-4">
+          {/* Prompt Display */}
+          {data.prompt && (
+            <div className="bg-[#1E293B] p-4 rounded-2xl">
+              <h3 className="text-lg font-semibold text-white mb-3">ChatGPT Prompt Used:</h3>
+              <textarea
+                value={data.prompt}
+                readOnly
+                className="w-full h-32 bg-[#0F172A] border border-[#334155] rounded-lg p-3 text-sm text-gray-300 font-mono resize-none"
+                placeholder="Prompt will appear here..."
+              />
+            </div>
+          )}
+          
+          {/* Workout Display */}
+          <div className="bg-[#1E293B] p-4 rounded-2xl space-y-3">
+            <Section title="Warm-Up" items={data.warmup} />
+            <Section title="Workout" items={data.workout} />
+            <Section title="Cool-Down" items={data.cooldown} />
+          </div>
         </div>
       )}
     </div>

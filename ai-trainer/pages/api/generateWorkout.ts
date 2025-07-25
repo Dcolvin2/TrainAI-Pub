@@ -61,7 +61,10 @@ Return JSON with: { warmup: string[], workout: string[], cooldown: string[] }.
   })
 
   const args = JSON.parse(chat.choices[0].message.function_call!.arguments!)
-  res.status(200).json(args)
+  res.status(200).json({
+    ...args,
+    prompt: systemPrompt
+  })
 }
 
 export default handler 
