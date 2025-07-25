@@ -12,7 +12,7 @@ const handler: NextApiHandler = async (req, res) => {
     
     // Test if tables exist by trying to query them
     const tables = ['equipment', 'user_goals']
-    const results: Record<string, any> = {}
+    const results: Record<string, { exists: boolean; accessible: boolean; error: string | null; sampleData: any }> = {}
     
     for (const table of tables) {
       try {
