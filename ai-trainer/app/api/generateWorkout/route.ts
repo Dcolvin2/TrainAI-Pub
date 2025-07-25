@@ -59,7 +59,7 @@ Return JSON: { warmup: string[], workout: string[], cooldown: string[] }.
     // Call OpenAI API
     console.log('🔍 Calling OpenAI API...')
     const resp = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
+      model: 'gpt-4o-mini',  // upgraded from gpt-3.5-turbo
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage }
@@ -117,7 +117,7 @@ Return JSON: { warmup: string[], workout: string[], cooldown: string[] }.
           minutes,
           prompt: systemPrompt,
           plan,
-          used_model: 'gpt-3.5-turbo'
+          used_model: 'gpt-4o-mini'
         }])
       
       console.log('🔍 Workout saved to database')
