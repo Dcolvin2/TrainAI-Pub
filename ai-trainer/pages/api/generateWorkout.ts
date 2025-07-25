@@ -33,11 +33,17 @@ const handler: NextApiHandler = async (req, res) => {
   }
 
   try {
+    console.log('Starting workout generation for user:', userId, 'with', timeAvailable, 'minutes')
+    
     // 1) Fetch user context
+    console.log('Fetching user equipment and goals...')
     const [{ data: equip }, { data: goals }] = await Promise.all([
       supabase.from('equipment').select('name').eq('user_id', userId),
       supabase.from('user_goals').select('description').eq('user_id', userId),
     ])
+    
+    console.log('Equipment found:', equip?.length || 0, 'items')
+    console.log('Goals found:', goals?.length || 0, 'items')
 
     // 2) Build prompt with timeAvailable
     const systemPrompt = `
@@ -49,6 +55,7 @@ Design a balanced workout (5–10min warm-up, main session, 5min cool-down) that
 Return JSON with: { warmup: string[], workout: string[], cooldown: string[] }.
 `.trim()
 
+    console.log('Calling OpenAI API...')
     // 3) Call OpenAI with function schema
     const chat = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
@@ -72,16 +79,21 @@ Return JSON with: { warmup: string[], workout: string[], cooldown: string[] }.
       function_call: { name: 'generate_workout' }
     })
 
+    console.log('OpenAI response received, parsing...')
     const args = JSON.parse(chat.choices[0].message.function_call!.arguments!)
+    console.log('Workout generated successfully')
+    
     res.status(200).json({
       ...args,
       prompt: systemPrompt
     })
   } catch (error) {
     console.error('Error generating workout:', error)
+    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace')
     res.status(500).json({ 
       error: 'Failed to generate workout',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      details: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
     })
   }
 }
