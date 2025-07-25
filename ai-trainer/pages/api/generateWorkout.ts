@@ -2,7 +2,15 @@ import { NextApiHandler } from 'next'
 import { createClient } from '@supabase/supabase-js'
 import OpenAI from 'openai'
 
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!)
+// Verify environment variables are loaded (remove this after testing)
+console.log('OpenAI API Key loaded:', process.env.OPENAI_API_KEY ? 'Yes' : 'No')
+console.log('Supabase URL loaded:', process.env.NEXT_PUBLIC_SUPABASE_URL ? 'Yes' : 'No')
+console.log('Supabase Service Key loaded:', process.env.SUPABASE_SERVICE_KEY ? 'Yes' : 'No')
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_KEY!
+)
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! })
 
 const handler: NextApiHandler = async (req, res) => {
