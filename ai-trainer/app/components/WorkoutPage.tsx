@@ -12,13 +12,31 @@ interface WorkoutSection {
   exercises?: Array<{ name: string; sets: LogSet[] }>;
 }
 
+interface WorkoutExercise {
+  name: string;
+  sets: Array<{
+    previous: number;
+    prescribed: number;
+    reps: number;
+    rest: number;
+    rpe: number;
+  }>;
+}
+
+interface WorkoutData {
+  warmup?: string[];
+  details?: WorkoutExercise[];
+  workout?: string[];
+  cooldown?: string[];
+}
+
 export default function WorkoutPage() {
   const [sections, setSections] = useState<WorkoutSection[]>([]);
 
   useEffect(() => {
     fetch('/api/currentWorkout')
       .then(res => res.json())
-      .then(workout => {
+      .then((workout: WorkoutData) => {
         const secs: WorkoutSection[] = [];
         if (workout.warmup?.length) {
           secs.push({ title: 'Warm‑Up', steps: workout.warmup });
@@ -27,13 +45,13 @@ export default function WorkoutPage() {
           // structured workout details with sets
           secs.push({
             title: 'Main Workout',
-            exercises: workout.details.map((ex: any) => ({
+            exercises: workout.details.map((ex: WorkoutExercise) => ({
               name: ex.name,
-              sets: ex.sets.map((st: any, idx: number) => ({
+              sets: ex.sets.map((st, idx: number) => ({
                 setNumberLabel: String(idx + 1),
                 previousWeight: st.previous,
                 prescribedWeight: st.prescribed,
-                actualWeight: null,
+                actualWeight: undefined,
                 reps: st.reps,
                 done: false,
                 restSeconds: st.rest ?? 60,
