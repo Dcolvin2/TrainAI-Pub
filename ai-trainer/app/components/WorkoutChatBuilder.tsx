@@ -1,5 +1,6 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createClient } from '@supabase/supabase-js'
 
 // Type declarations for Web Speech API
 declare global {
@@ -68,6 +69,19 @@ interface WorkoutPlan {
   cooldown: string[]
 }
 
+interface UserContext {
+  name: string
+  goals: string[]
+  currentWeight: string
+  equipment: string[]
+  recentWorkouts: string[]
+}
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
 export default function WorkoutChatBuilder({ userId }: { userId: string }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
@@ -75,6 +89,57 @@ export default function WorkoutChatBuilder({ userId }: { userId: string }) {
   const [transcript, setTranscript] = useState('')
   const [plan, setPlan] = useState<WorkoutPlan | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [userContext, setUserContext] = useState<UserContext | null>(null)
+  const [editableWorkout, setEditableWorkout] = useState<WorkoutExercise[]>([])
+
+  // Fetch user context on mount
+  useEffect(() => {
+    const fetchUserContext = async () => {
+      try {
+        const [
+          { data: profile }, 
+          { data: equipment }, 
+          { data: goals }, 
+          { data: logs },
+          { data: weightLogs }
+        ] = await Promise.all([
+          supabase.from('profiles').select('*').eq('id', userId).single(),
+          supabase.from('equipment').select('name').eq('user_id', userId),
+          supabase.from('user_goals').select('description').eq('user_id', userId),
+          supabase.from('workouts').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(5),
+          supabase.from('weight_logs').select('weight').eq('user_id', userId).order('created_at', { ascending: false }).limit(1)
+        ])
+
+        const context: UserContext = {
+          name: profile?.first_name || 'Unknown',
+          goals: goals?.map(g => g.description) || [],
+          currentWeight: weightLogs?.[0]?.weight?.toString() || 'Not logged',
+          equipment: equipment?.map(e => e.name) || [],
+          recentWorkouts: logs?.map(w => `${new Date(w.created_at).toLocaleDateString()} - ${w.type}`) || []
+        }
+
+        setUserContext(context)
+
+        // Initialize with system message
+        const systemMessage: ChatMessage = {
+          role: 'system',
+          content: `You are TrainAI. 
+
+User goals: ${context.goals.join(', ') || 'None'}.
+Current weight: ${context.currentWeight} lbs.
+Equipment: ${context.equipment.join(', ') || 'None'}.
+Recent workouts: ${context.recentWorkouts.join(', ') || 'None'}.
+Now ask me: "What day is today and how much time do you have?"`
+        }
+
+        setMessages([systemMessage])
+      } catch (error) {
+        console.error('Error fetching user context:', error)
+      }
+    }
+
+    fetchUserContext()
+  }, [userId])
 
   // Speech recognition functionality
   const startListening = () => {
@@ -139,8 +204,17 @@ export default function WorkoutChatBuilder({ userId }: { userId: string }) {
         throw new Error(data.error || 'Failed to send message')
       }
 
-      setMessages(msgs => [...msgs, data.assistant])
-      if (data.plan) setPlan(data.plan)
+      // Add assistant message to chat
+      setMessages(msgs => [...msgs, { 
+        role: 'assistant', 
+        content: data.assistantMessage 
+      }])
+
+      // Set plan and editable workout
+      if (data.plan) {
+        setPlan(data.plan)
+        setEditableWorkout(data.plan.workout || [])
+      }
     } catch (error) {
       console.error('Chat error:', error)
       setMessages(msgs => [...msgs, { 
@@ -152,13 +226,34 @@ export default function WorkoutChatBuilder({ userId }: { userId: string }) {
     }
   }
 
+  const addExercise = () => {
+    const newExercise: WorkoutExercise = {
+      exercise: '',
+      sets: 0,
+      reps: 0,
+      weight: 0,
+      rest: 0
+    }
+    setEditableWorkout([...editableWorkout, newExercise])
+  }
+
+  const updateExercise = (index: number, field: keyof WorkoutExercise, value: string | number) => {
+    const updated = [...editableWorkout]
+    updated[index] = { ...updated[index], [field]: value }
+    setEditableWorkout(updated)
+  }
+
+  const removeExercise = (index: number) => {
+    setEditableWorkout(editableWorkout.filter((_, i) => i !== index))
+  }
+
   return (
     <div className="space-y-6">
       {/* Chat window */}
       <div className="bg-[#1E293B] p-4 rounded-xl shadow h-64 overflow-auto">
         {messages.length === 0 && (
           <div className="text-gray-400 text-center py-8">
-            Start a conversation to build your workout!
+            Loading your profile...
           </div>
         )}
         {messages.map((m, i) => (
@@ -166,6 +261,8 @@ export default function WorkoutChatBuilder({ userId }: { userId: string }) {
             <span className={`inline-block p-3 rounded-lg max-w-xs break-words ${
               m.role === 'user' 
                 ? 'bg-[#22C55E] text-white' 
+                : m.role === 'system'
+                ? 'bg-[#475569] text-white text-sm'
                 : 'bg-[#334155] text-white'
             }`}>
               {m.content}
@@ -216,10 +313,16 @@ export default function WorkoutChatBuilder({ userId }: { userId: string }) {
       </div>
 
       {/* Workout Table */}
-      {plan && (
+      {editableWorkout.length > 0 && (
         <div className="bg-[#1E293B] rounded-xl overflow-hidden shadow-md">
-          <div className="p-4 border-b border-[#334155]">
-            <h3 className="text-lg font-semibold text-white">Generated Workout Plan</h3>
+          <div className="p-4 border-b border-[#334155] flex justify-between items-center">
+            <h3 className="text-lg font-semibold text-white">Your Workout Plan</h3>
+            <button
+              onClick={addExercise}
+              className="bg-[#22C55E] px-3 py-1 rounded text-white text-sm hover:bg-[#16a34a] transition-colors"
+            >
+              + Add Exercise
+            </button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -230,40 +333,62 @@ export default function WorkoutChatBuilder({ userId }: { userId: string }) {
                   <th className="p-3 text-left text-white font-medium">Reps</th>
                   <th className="p-3 text-left text-white font-medium">Weight</th>
                   <th className="p-3 text-left text-white font-medium">Rest (s)</th>
+                  <th className="p-3 text-left text-white font-medium">Action</th>
                 </tr>
               </thead>
               <tbody>
-                {plan.workout.map((item, i) => {
-                  return (
-                    <tr key={i} className="border-b border-[#334155]/50">
-                      <td className="p-3 text-white">{item.exercise}</td>
-                      <td className="p-3">
-                        <input 
-                          defaultValue={item.sets.toString()} 
-                          className="w-12 bg-[#0F172A] border border-[#334155] px-2 py-1 rounded text-white text-center"
-                        />
-                      </td>
-                      <td className="p-3">
-                        <input 
-                          defaultValue={item.reps.toString()} 
-                          className="w-12 bg-[#0F172A] border border-[#334155] px-2 py-1 rounded text-white text-center"
-                        />
-                      </td>
-                      <td className="p-3">
-                        <input 
-                          defaultValue={item.weight.toString()} 
-                          className="w-16 bg-[#0F172A] border border-[#334155] px-2 py-1 rounded text-white text-center"
-                        />
-                      </td>
-                      <td className="p-3">
-                        <input 
-                          defaultValue={item.rest.toString()} 
-                          className="w-16 bg-[#0F172A] border border-[#334155] px-2 py-1 rounded text-white text-center"
-                        />
-                      </td>
-                    </tr>
-                  )
-                })}
+                {editableWorkout.map((item, i) => (
+                  <tr key={i} className="border-b border-[#334155]/50">
+                    <td className="p-3">
+                      <input 
+                        value={item.exercise}
+                        onChange={(e) => updateExercise(i, 'exercise', e.target.value)}
+                        className="w-full bg-[#0F172A] border border-[#334155] px-2 py-1 rounded text-white"
+                        placeholder="Exercise name"
+                      />
+                    </td>
+                    <td className="p-3">
+                      <input 
+                        type="number"
+                        value={item.sets}
+                        onChange={(e) => updateExercise(i, 'sets', parseInt(e.target.value) || 0)}
+                        className="w-16 bg-[#0F172A] border border-[#334155] px-2 py-1 rounded text-white text-center"
+                      />
+                    </td>
+                    <td className="p-3">
+                      <input 
+                        type="number"
+                        value={item.reps}
+                        onChange={(e) => updateExercise(i, 'reps', parseInt(e.target.value) || 0)}
+                        className="w-16 bg-[#0F172A] border border-[#334155] px-2 py-1 rounded text-white text-center"
+                      />
+                    </td>
+                    <td className="p-3">
+                      <input 
+                        type="number"
+                        value={item.weight}
+                        onChange={(e) => updateExercise(i, 'weight', parseInt(e.target.value) || 0)}
+                        className="w-16 bg-[#0F172A] border border-[#334155] px-2 py-1 rounded text-white text-center"
+                      />
+                    </td>
+                    <td className="p-3">
+                      <input 
+                        type="number"
+                        value={item.rest}
+                        onChange={(e) => updateExercise(i, 'rest', parseInt(e.target.value) || 0)}
+                        className="w-16 bg-[#0F172A] border border-[#334155] px-2 py-1 rounded text-white text-center"
+                      />
+                    </td>
+                    <td className="p-3">
+                      <button
+                        onClick={() => removeExercise(i)}
+                        className="text-red-400 hover:text-red-300 text-sm"
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
