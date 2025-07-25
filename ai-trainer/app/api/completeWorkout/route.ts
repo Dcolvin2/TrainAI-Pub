@@ -8,7 +8,7 @@ const supabase = createClient(
 
 export async function POST(req: Request) {
   try {
-    const { userId, exerciseName, sets } = await req.json();
+    const { userId, logSets } = await req.json();
 
     // 1) Create or reuse a session
     const { data: session, error: sessionError } = await supabase
@@ -22,10 +22,10 @@ export async function POST(req: Request) {
     }
 
     // 2) Upsert each set
-    for (const s of sets) {
+    for (const s of logSets) {
       await supabase.from('workout_sets').upsert({
         session_id: session.id,
-        exercise_name: exerciseName,
+        exercise_name: s.exerciseName,
         set_number: s.setNumber,
         previous_weight: s.previousWeight,
         prescribed_weight: s.prescribedWeight,
