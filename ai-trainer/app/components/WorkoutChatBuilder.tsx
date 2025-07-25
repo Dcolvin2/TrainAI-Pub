@@ -87,9 +87,7 @@ export default function WorkoutChatBuilder({ userId }: { userId: string }) {
   const [input, setInput] = useState('')
   const [isListening, setIsListening] = useState(false)
   const [transcript, setTranscript] = useState('')
-  const [plan, setPlan] = useState<WorkoutPlan | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const [userContext, setUserContext] = useState<UserContext | null>(null)
   const [editableWorkout, setEditableWorkout] = useState<WorkoutExercise[]>([])
 
   // Fetch user context on mount
@@ -117,8 +115,6 @@ export default function WorkoutChatBuilder({ userId }: { userId: string }) {
           equipment: equipment?.map(e => e.name) || [],
           recentWorkouts: logs?.map(w => `${new Date(w.created_at).toLocaleDateString()} - ${w.type}`) || []
         }
-
-        setUserContext(context)
 
         // Initialize with system message
         const systemMessage: ChatMessage = {
@@ -210,9 +206,8 @@ Now ask me: "What day is today and how much time do you have?"`
         content: data.assistantMessage 
       }])
 
-      // Set plan and editable workout
+      // Set editable workout
       if (data.plan) {
-        setPlan(data.plan)
         setEditableWorkout(data.plan.workout || [])
       }
     } catch (error) {
