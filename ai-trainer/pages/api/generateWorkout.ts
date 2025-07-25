@@ -33,15 +33,19 @@ const handler: NextApiHandler = async (req, res) => {
   }
 
   try {
-    console.log('Starting workout generation for user:', userId, 'with', timeAvailable, 'minutes')
+    console.log('=== WORKOUT GENERATION START ===')
+    console.log('User ID:', userId)
+    console.log('Time Available:', timeAvailable, 'minutes')
     
     // 1) Fetch user context
-    console.log('Fetching user equipment and goals...')
-    const [{ data: equip }, { data: goals }] = await Promise.all([
+    console.log('Step 1: Fetching user equipment and goals...')
+    const [{ data: equip, error: equipError }, { data: goals, error: goalsError }] = await Promise.all([
       supabase.from('equipment').select('name').eq('user_id', userId),
       supabase.from('user_goals').select('description').eq('user_id', userId),
     ])
     
+    console.log('Equipment query result:', { data: equip, error: equipError })
+    console.log('Goals query result:', { data: goals, error: goalsError })
     console.log('Equipment found:', equip?.length || 0, 'items')
     console.log('Goals found:', goals?.length || 0, 'items')
 
@@ -55,7 +59,9 @@ Design a balanced workout (5–10min warm-up, main session, 5min cool-down) that
 Return JSON with: { warmup: string[], workout: string[], cooldown: string[] }.
 `.trim()
 
-    console.log('Calling OpenAI API...')
+    console.log('Step 2: Built system prompt:', systemPrompt)
+
+    console.log('Step 3: Calling OpenAI API...')
     // 3) Call OpenAI with function schema
     const chat = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
@@ -79,17 +85,33 @@ Return JSON with: { warmup: string[], workout: string[], cooldown: string[] }.
       function_call: { name: 'generate_workout' }
     })
 
-    console.log('OpenAI response received, parsing...')
+    console.log('Step 4: OpenAI response received')
+    console.log('Response structure:', {
+      hasChoices: !!chat.choices,
+      choicesLength: chat.choices?.length,
+      hasMessage: !!chat.choices?.[0]?.message,
+      hasFunctionCall: !!chat.choices?.[0]?.message?.function_call
+    })
+
     const args = JSON.parse(chat.choices[0].message.function_call!.arguments!)
-    console.log('Workout generated successfully')
+    console.log('Step 5: Parsed function arguments:', args)
+    console.log('=== WORKOUT GENERATION SUCCESS ===')
     
     res.status(200).json({
       ...args,
       prompt: systemPrompt
     })
   } catch (error) {
-    console.error('Error generating workout:', error)
+    console.error('=== WORKOUT GENERATION ERROR ===')
+    console.error('Error type:', typeof error)
+    console.error('Error message:', error instanceof Error ? error.message : error)
     console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace')
+    
+    // Check if it's an OpenAI API error
+    if (error instanceof Error && error.message.includes('OpenAI')) {
+      console.error('This appears to be an OpenAI API error')
+    }
+    
     res.status(500).json({ 
       error: 'Failed to generate workout',
       details: error instanceof Error ? error.message : 'Unknown error',
