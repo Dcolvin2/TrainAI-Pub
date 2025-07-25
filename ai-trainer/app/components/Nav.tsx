@@ -25,8 +25,8 @@ export default function Nav() {
                 <Link href="/dashboard" className="text-sm font-medium text-foreground hover:text-primary transition-colors">
                   Dashboard
                 </Link>
-                <Link href="/new-workout" className="text-sm font-medium text-foreground hover:text-primary transition-colors">
-                  New Workout
+                <Link href="/workout/builder" className="text-sm font-medium text-foreground hover:text-primary transition-colors">
+                  Workout Builder
                 </Link>
                 <Link href="/equipment" className="text-sm font-medium text-foreground hover:text-primary transition-colors">
                   Equipment
@@ -86,11 +86,11 @@ export default function Nav() {
                     Dashboard
                   </Link>
                   <Link 
-                    href="/new-workout" 
+                    href="/workout/builder" 
                     className="text-sm font-medium text-foreground hover:text-primary transition-colors"
                     onClick={() => setIsMenuOpen(false)}
                   >
-                    New Workout
+                    Workout Builder
                   </Link>
                   <Link 
                     href="/equipment" 

@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
-import { DailyWorkout } from '@/app/components/DailyWorkout'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -187,7 +187,11 @@ export default function Dashboard() {
     <main className="bg-[#0F172A] min-h-screen p-6 text-white">
       {/* Top Actions */}
       <div className="flex flex-col sm:flex-row gap-3 mb-6">
-        <DailyWorkout userId={profile.id} />
+        <Link href="/workout/builder">
+          <button className="bg-[#22C55E] px-5 py-3 rounded-xl text-white font-semibold hover:bg-[#16a34a] transition-colors">
+            Create New Workout
+          </button>
+        </Link>
         {program && (
           <button className="bg-[#1E293B] px-5 py-3 rounded-xl">
             Continue: Week {program.current_week}, Day {program.current_day}

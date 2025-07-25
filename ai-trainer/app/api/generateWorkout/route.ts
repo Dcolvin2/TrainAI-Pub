@@ -8,16 +8,15 @@ const supabase = createClient(
 )
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! })
 
-export async function GET(req: Request) {
+export async function POST(req: Request) {
   try {
     console.log('🔍 Starting workout generation with fresh API credits...')
     
-    // Parse URL parameters
-    const url = new URL(req.url)
-    const userId = url.searchParams.get('userId')
-    const minutes = Number(url.searchParams.get('minutes')) || 30
+    // Parse request body
+    const body = await req.json()
+    const { userId, minutes = 30, prompt: userPrompt } = body
     
-    console.log('🔍 After URL parsing:', { userId, minutes })
+    console.log('🔍 After body parsing:', { userId, minutes, hasUserPrompt: !!userPrompt })
     
     if (!userId) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
@@ -51,15 +50,19 @@ Generate a workout with a 5–10min warm-up, main session, and 5min cool-down, f
 Return JSON: { warmup: string[], workout: string[], cooldown: string[] }.
 `.trim()
 
-    console.log('🔍 After building prompt:', { systemPrompt })
+    const userMessage = userPrompt 
+      ? `Generate today's workout based on this request: ${userPrompt}`
+      : 'Generate today\'s workout.'
+
+    console.log('🔍 After building prompt:', { systemPrompt, userMessage })
 
     // Call OpenAI API
     console.log('🔍 Calling OpenAI API...')
     const resp = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: 'gpt-3.5-turbo',
       messages: [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: 'Generate today\'s workout.' }
+        { role: 'user', content: userMessage }
       ],
       functions: [{
         name: 'generate_workout',
@@ -104,6 +107,25 @@ Return JSON: { warmup: string[], workout: string[], cooldown: string[] }.
     }
 
     console.log('🔍 Workout generation successful!')
+    
+    // Save the generated workout to Supabase
+    try {
+      await supabase
+        .from('generated_workouts')
+        .insert([{
+          user_id: profile.id,
+          minutes,
+          prompt: systemPrompt,
+          plan,
+          used_model: 'gpt-3.5-turbo'
+        }])
+      
+      console.log('🔍 Workout saved to database')
+    } catch (dbError) {
+      console.error('🔍 Database save error:', dbError)
+      // Don't fail the request if database save fails
+    }
+    
     return NextResponse.json({
       ...plan,
       prompt: systemPrompt
