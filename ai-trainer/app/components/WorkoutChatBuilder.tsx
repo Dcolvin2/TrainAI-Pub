@@ -64,6 +64,15 @@ interface WorkoutExercise {
   rest: number
 }
 
+interface WorkoutSet {
+  exerciseName: string
+  setNumber: number
+  reps: number
+  weight: number
+  rest: number
+  done: boolean
+}
+
 interface UserContext {
   name: string
   goals: string[]
@@ -84,6 +93,35 @@ export default function WorkoutChatBuilder({ userId }: { userId: string }) {
   const [transcript, setTranscript] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [editableWorkout, setEditableWorkout] = useState<WorkoutExercise[]>([])
+  const [workoutSets, setWorkoutSets] = useState<WorkoutSet[]>([])
+
+  // Convert exercises to sets when editableWorkout changes
+  useEffect(() => {
+    const newSets: WorkoutSet[] = [];
+    editableWorkout.forEach(exercise => {
+      for (let i = 1; i <= exercise.sets; i++) {
+        // Determine rest time based on exercise type
+        const isStrengthExercise = exercise.exercise.toLowerCase().includes('squat') || 
+                                  exercise.exercise.toLowerCase().includes('deadlift') || 
+                                  exercise.exercise.toLowerCase().includes('bench') || 
+                                  exercise.exercise.toLowerCase().includes('press') ||
+                                  exercise.exercise.toLowerCase().includes('row') ||
+                                  exercise.exercise.toLowerCase().includes('pull');
+        
+        const defaultRest = isStrengthExercise ? 180 : 90; // 3 min for strength, 1.5 min for accessory
+        
+        newSets.push({
+          exerciseName: exercise.exercise,
+          setNumber: i,
+          reps: exercise.reps,
+          weight: exercise.weight,
+          rest: exercise.rest || defaultRest,
+          done: false
+        });
+      }
+    });
+    setWorkoutSets(newSets);
+  }, [editableWorkout]);
   const chatContainerRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll to bottom when messages change
@@ -248,6 +286,20 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
     setEditableWorkout(editableWorkout.filter((_, i) => i !== index))
   }
 
+  const updateSet = (originalSet: WorkoutSet, changes: Partial<WorkoutSet>) => {
+    setWorkoutSets(prev => prev.map(set => 
+      set.exerciseName === originalSet.exerciseName && set.setNumber === originalSet.setNumber
+        ? { ...set, ...changes }
+        : set
+    ));
+  };
+
+  // Group sets by exercise name
+  const groupedSets = workoutSets.reduce((acc, set) => {
+    (acc[set.exerciseName] ||= []).push(set);
+    return acc;
+  }, {} as Record<string, WorkoutSet[]>);
+
   return (
     <div className="space-y-6">
       {/* Chat window */}
@@ -345,8 +397,8 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
         </div>
       </div>
 
-      {/* Workout Table */}
-      {editableWorkout.length > 0 && (
+      {/* Workout Plan - One Row Per Set */}
+      {workoutSets.length > 0 && (
         <div className="bg-[#1E293B] rounded-xl overflow-hidden shadow-md">
           <div className="p-4 border-b border-[#334155] flex justify-between items-center">
             <h3 className="text-lg font-semibold text-white">Your Workout Plan</h3>
@@ -357,73 +409,57 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
               + Add Exercise
             </button>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-[#0F172A]">
-                <tr>
-                  <th className="p-3 text-left text-white font-medium">Exercise</th>
-                  <th className="p-3 text-left text-white font-medium">Sets</th>
-                  <th className="p-3 text-left text-white font-medium">Reps</th>
-                  <th className="p-3 text-left text-white font-medium">Weight</th>
-                  <th className="p-3 text-left text-white font-medium">Rest (s)</th>
-                  <th className="p-3 text-left text-white font-medium">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {editableWorkout.map((item, i) => (
-                  <tr key={i} className="border-b border-[#334155]/50">
-                    <td className="p-3">
-                      <input 
-                        value={item.exercise}
-                        onChange={(e) => updateExercise(i, 'exercise', e.target.value)}
-                        className="w-full bg-[#0F172A] border border-[#334155] px-2 py-1 rounded text-white"
-                        placeholder="Exercise name"
-                      />
-                    </td>
-                    <td className="p-3">
-                      <input 
+          <div className="p-4 space-y-6">
+            {Object.entries(groupedSets).map(([exerciseName, sets]) => (
+              <div key={exerciseName}>
+                <h4 className="text-lg font-semibold mb-3 flex justify-between text-white">
+                  {exerciseName}
+                  <span className="text-gray-400">
+                    💪 {sets.reduce((sum, s) => sum + (s.weight * s.reps), 0)} lb
+                  </span>
+                </h4>
+                <div className="flex flex-col gap-2">
+                  {sets.map(set => (
+                    <div
+                      key={`${exerciseName}-${set.setNumber}`}
+                      className="grid grid-cols-[auto,repeat(4,1fr),auto] gap-2 items-center p-2 bg-[#0F172A] rounded"
+                    >
+                      <span className="text-gray-300 text-sm">{set.setNumber}</span>
+                      <input
                         type="number"
-                        value={item.sets}
-                        onChange={(e) => updateExercise(i, 'sets', parseInt(e.target.value) || 0)}
-                        className="w-16 bg-[#0F172A] border border-[#334155] px-2 py-1 rounded text-white text-center"
+                        value={set.reps}
+                        onChange={e => updateSet(set, { reps: +e.target.value })}
+                        className="bg-transparent text-center text-white text-sm"
+                        placeholder="Reps"
                       />
-                    </td>
-                    <td className="p-3">
-                      <input 
+                      <input
                         type="number"
-                        value={item.reps}
-                        onChange={(e) => updateExercise(i, 'reps', parseInt(e.target.value) || 0)}
-                        className="w-16 bg-[#0F172A] border border-[#334155] px-2 py-1 rounded text-white text-center"
+                        value={set.weight}
+                        onChange={e => updateSet(set, { weight: +e.target.value })}
+                        className="bg-transparent text-center text-white text-sm"
+                        placeholder="Weight"
                       />
-                    </td>
-                    <td className="p-3">
-                      <input 
+                      <input
                         type="number"
-                        value={item.weight}
-                        onChange={(e) => updateExercise(i, 'weight', parseInt(e.target.value) || 0)}
-                        className="w-16 bg-[#0F172A] border border-[#334155] px-2 py-1 rounded text-white text-center"
+                        value={set.rest}
+                        onChange={e => updateSet(set, { rest: +e.target.value })}
+                        className="bg-transparent text-center text-white text-sm"
+                        placeholder="Rest (s)"
                       />
-                    </td>
-                    <td className="p-3">
-                      <input 
-                        type="number"
-                        value={item.rest}
-                        onChange={(e) => updateExercise(i, 'rest', parseInt(e.target.value) || 0)}
-                        className="w-16 bg-[#0F172A] border border-[#334155] px-2 py-1 rounded text-white text-center"
+                      <input
+                        type="checkbox"
+                        checked={set.done}
+                        onChange={() => updateSet(set, { done: !set.done })}
+                        className="h-4 w-4"
                       />
-                    </td>
-                    <td className="p-3">
-                      <button
-                        onClick={() => removeExercise(i)}
-                        className="text-red-400 hover:text-red-300 text-sm"
-                      >
-                        Remove
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      <span className="text-xs text-gray-400">
+                        {Math.floor(set.rest / 60)}:{(set.rest % 60).toString().padStart(2, '0')}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
