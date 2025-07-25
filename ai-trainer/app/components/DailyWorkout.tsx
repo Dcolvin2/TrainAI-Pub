@@ -20,14 +20,17 @@ export function DailyWorkout({ userId }: { userId: string }) {
     
     try {
       const response = await fetch(`/api/generateWorkout?userId=${userId}&minutes=${minutes}`)
-      if (!response.ok) {
-        throw new Error('Failed to generate workout')
-      }
       const workoutData = await response.json()
+      
+      if (!response.ok) {
+        throw new Error(workoutData.error || workoutData.details || 'Failed to generate workout')
+      }
+      
       setData(workoutData)
     } catch (err) {
       console.error('Workout generation error:', err)
-      setError('Failed to generate workout. Please try again.')
+      const errorMessage = err instanceof Error ? err.message : 'Failed to generate workout. Please try again.'
+      setError(errorMessage)
     } finally {
       setIsValidating(false)
     }
