@@ -28,6 +28,9 @@ export default function Nav() {
                 <Link href="/workout/builder" className="text-sm font-medium text-foreground hover:text-primary transition-colors">
                   Workout Builder
                 </Link>
+                <Link href="/workout/chat" className="text-sm font-medium text-foreground hover:text-primary transition-colors">
+                  AI Chat
+                </Link>
                 <Link href="/equipment" className="text-sm font-medium text-foreground hover:text-primary transition-colors">
                   Equipment
                 </Link>
@@ -91,6 +94,13 @@ export default function Nav() {
                     onClick={() => setIsMenuOpen(false)}
                   >
                     Workout Builder
+                  </Link>
+                  <Link 
+                    href="/workout/chat" 
+                    className="text-sm font-medium text-foreground hover:text-primary transition-colors"
+                    onClick={() => setIsMenuOpen(false)}
+                  >
+                    AI Chat
                   </Link>
                   <Link 
                     href="/equipment" 
