@@ -491,6 +491,15 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
                 </div>
               </div>
 
+              {/* Sets Table Header */}
+              <div className="grid grid-cols-[auto,1fr,auto,auto,auto] gap-3 items-center p-2 mb-2 text-xs text-gray-400 font-medium">
+                <span>Set</span>
+                <span>Previous</span>
+                <span className="text-center">lbs</span>
+                <span className="text-center">Reps</span>
+                <span className="text-center">Done</span>
+              </div>
+
               {/* Sets Table */}
               <div className="space-y-2">
                 {sets.map(set => (
@@ -507,7 +516,7 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
                       )}
                     </div>
 
-                    {/* Previous Performance */}
+                    {/* Previous Workout lb x rep */}
                     <div className="text-sm text-gray-400">
                       {set.weight > 0 ? `${set.weight} lb x ${set.reps}` : 'No previous data'}
                     </div>
