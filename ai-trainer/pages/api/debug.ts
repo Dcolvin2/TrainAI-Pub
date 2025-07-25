@@ -7,44 +7,26 @@ const supabase = createClient(
 )
 
 const handler: NextApiHandler = async (req, res) => {
-  try {
-    // Test database connection
-    console.log('Testing database connection...')
-    
-    // Test equipment table
-    const { data: equip, error: equipError } = await supabase
-      .from('equipment')
-      .select('count')
-      .limit(1)
-    
-    // Test user_goals table  
-    const { data: goals, error: goalsError } = await supabase
-      .from('user_goals')
-      .select('count')
-      .limit(1)
-    
-    res.status(200).json({
-      message: 'Database test results',
-      equipment: {
-        accessible: !equipError,
-        error: equipError?.message
-      },
-      user_goals: {
-        accessible: !goalsError,
-        error: goalsError?.message
-      },
-      env: {
-        hasSupabaseURL: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
-        hasServiceKey: !!process.env.SUPABASE_SERVICE_KEY
-      }
-    })
-  } catch (error) {
-    console.error('Debug API error:', error)
-    res.status(500).json({
-      error: 'Debug failed',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    })
+  const userId = req.query.userId as string
+  const tables = ['profiles', 'equipment', 'weight_logs', 'user_goals', 'training_programs']
+  const tableChecks: Record<string, any> = {}
+
+  for (const table of tables) {
+    const { count, error } = await supabase
+      .from(table)
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+    tableChecks[table] = { count, error: error?.message || null }
   }
+
+  return res.status(200).json({
+    env: {
+      hasOpenAI: !!process.env.OPENAI_API_KEY,
+      hasSupabaseURL: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+      hasServiceKey: !!process.env.SUPABASE_SERVICE_KEY
+    },
+    tables: tableChecks
+  })
 }
 
 export default handler 
