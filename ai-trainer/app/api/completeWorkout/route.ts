@@ -1,6 +1,18 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
+interface LogSet {
+  exerciseName: string;
+  setNumber: number;
+  previousWeight: number;
+  prescribedWeight: number;
+  actualWeight: number | string;
+  reps: number;
+  restSeconds: number;
+  rpe: number;
+  done: boolean;
+}
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -54,13 +66,13 @@ export async function POST(req: Request) {
       .eq('id', session.id);
 
     // Track personal bests
-    const byExercise = logSets.reduce((acc: Record<string, any[]>, s: any) => {
+    const byExercise = logSets.reduce((acc: Record<string, LogSet[]>, s: LogSet) => {
       (acc[s.exerciseName] ||= []).push(s);
       return acc;
     }, {});
 
     for (const [exerciseName, setsArr] of Object.entries(byExercise)) {
-      const newMax = Math.max(...(setsArr as any[]).map((s: any) => Number(s.actualWeight) || 0));
+      const newMax = Math.max(...(setsArr as LogSet[]).map((s: LogSet) => Number(s.actualWeight) || 0));
       
       if (newMax > 0) {
         // fetch existing max
