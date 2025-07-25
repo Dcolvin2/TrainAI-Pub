@@ -7,9 +7,44 @@ import { useRouter } from 'next/navigation'
 // Type declarations for Web Speech API
 declare global {
   interface Window {
-    SpeechRecognition: any
-    webkitSpeechRecognition: any
+    SpeechRecognition: new () => SpeechRecognition;
+    webkitSpeechRecognition: new () => SpeechRecognition;
   }
+}
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onstart: (() => void) | null;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+  abort(): void;
+}
+interface SpeechRecognitionEvent extends Event {
+  readonly results: SpeechRecognitionResultList;
+}
+interface SpeechRecognitionResultList {
+  length: number;
+  item(index: number): SpeechRecognitionResult;
+  [index: number]: SpeechRecognitionResult;
+}
+interface SpeechRecognitionResult {
+  length: number;
+  isFinal: boolean;
+  item(index: number): SpeechRecognitionAlternative;
+  [index: number]: SpeechRecognitionAlternative;
+}
+interface SpeechRecognitionAlternative {
+  transcript: string;
+  confidence: number;
+}
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+  message: string;
 }
 
 interface WorkoutRow {
@@ -53,41 +88,37 @@ export default function WorkoutBuilderPage() {
   // Handle speech recognition
   const startListening = () => {
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      setIsListening(true)
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-      const recognition = new SpeechRecognition()
-      
-      recognition.continuous = false
-      recognition.interimResults = false
-      recognition.lang = 'en-US'
-      
-      recognition.onstart = () => {
-        setIsListening(true)
-      }
-      
-      recognition.onresult = (event: any) => {
+      setIsListening(true);
+      const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const recognition: SpeechRecognition = new SpeechRecognitionCtor();
+
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => setIsListening(true);
+
+      recognition.onresult = (event: SpeechRecognitionEvent) => {
         const transcript = Array.from(event.results)
-          .map((result: any) => result[0])
-          .map((result: any) => result.transcript)
-          .join('')
-        setTranscript(transcript)
-        setPrompt(transcript) // Replace instead of append for better UX
-      }
-      
-      recognition.onerror = (event: any) => {
-        console.error('Speech recognition error:', event.error)
-        setIsListening(false)
-      }
-      
-      recognition.onend = () => {
-        setIsListening(false)
-      }
-      
-      recognition.start()
+          .map((result: SpeechRecognitionResult) => result[0])
+          .map((alt: SpeechRecognitionAlternative) => alt.transcript)
+          .join('');
+        setTranscript(transcript);
+        setPrompt(transcript); // Replace instead of append for better UX
+      };
+
+      recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+        console.error('Speech recognition error:', event.error);
+        setIsListening(false);
+      };
+
+      recognition.onend = () => setIsListening(false);
+
+      recognition.start();
     } else {
-      alert('Speech recognition is not supported in this browser. Please use Chrome, Edge, or Safari over HTTPS.')
+      alert('Speech recognition is not supported in this browser. Please use Chrome, Edge, or Safari over HTTPS.');
     }
-  }
+  };
 
   // Reset transcript
   const resetTranscript = () => {
