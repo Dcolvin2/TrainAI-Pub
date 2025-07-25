@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
+// TypeScript-safe workout completion handler
 interface LogSet {
   exerciseName: string;
   setNumber: number;
