@@ -96,19 +96,28 @@ export default function WorkoutChatBuilder({ userId }: { userId: string }) {
           { data: logs },
           { data: weightLogs }
         ] = await Promise.all([
-          supabase.from('profiles').select('*').eq('id', userId).single(),
-          supabase.from('equipment').select('name').eq('user_id', userId),
-          supabase.from('user_goals').select('description').eq('user_id', userId),
+          supabase.from('profiles').select('*').eq('user_id', userId).single(),
+          supabase.from('user_equipment').select('equipment_id, custom_name').eq('user_id', userId),
+          supabase.from('goals').select('goal_type').eq('user_id', userId),
           supabase.from('workouts').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(5),
           supabase.from('weight_logs').select('weight').eq('user_id', userId).order('created_at', { ascending: false }).limit(1)
         ])
 
+        // Debug logging
+        console.log('Fetched data:', {
+          profile: profile?.first_name,
+          goals: goals?.map(g => g.goal_type),
+          equipment: equipment?.map(e => e.custom_name || e.equipment_id),
+          weightLogs: weightLogs,
+          logs: logs?.map(w => `${new Date(w.created_at).toLocaleDateString()} - ${w.workout_title || 'Workout'}`)
+        })
+
         const context: UserContext = {
           name: profile?.first_name || 'Unknown',
-          goals: goals?.map(g => g.description) || [],
+          goals: goals?.map(g => g.goal_type) || [],
           currentWeight: weightLogs?.[0]?.weight?.toString() || 'Not logged',
-          equipment: equipment?.map(e => e.name) || [],
-          recentWorkouts: logs?.map(w => `${new Date(w.created_at).toLocaleDateString()} - ${w.type}`) || []
+          equipment: equipment?.map(e => e.custom_name || e.equipment_id) || [],
+          recentWorkouts: logs?.map(w => `${new Date(w.created_at).toLocaleDateString()} - ${w.workout_title || 'Workout'}`) || []
         }
 
         // Initialize with system message

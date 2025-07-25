@@ -24,18 +24,18 @@ export async function POST(req: Request) {
       { data: logs },
       { data: weightLogs }
     ] = await Promise.all([
-      supabase.from('profiles').select('*').eq('id', userId).single(),
-      supabase.from('equipment').select('name').eq('user_id', userId),
-      supabase.from('user_goals').select('description').eq('user_id', userId),
+      supabase.from('profiles').select('*').eq('user_id', userId).single(),
+      supabase.from('user_equipment').select('equipment_id, custom_name').eq('user_id', userId),
+      supabase.from('goals').select('goal_type').eq('user_id', userId),
       supabase.from('workouts').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(5),
       supabase.from('weight_logs').select('weight').eq('user_id', userId).order('created_at', { ascending: false }).limit(1)
     ])
 
     // B) Build dynamic system message with real user context
     const currentWeight = weightLogs?.[0]?.weight || 'Not logged'
-    const goalsList = goals?.map(g => g.description).join(', ') || 'No goals set'
-    const equipmentList = equipment?.map(e => e.name).join(', ') || 'Bodyweight only'
-    const recentWorkouts = logs?.map(w => `${new Date(w.created_at).toLocaleDateString()} - ${w.type}`).join('; ') || 'None'
+    const goalsList = goals?.map(g => g.goal_type).join(', ') || 'No goals set'
+    const equipmentList = equipment?.map(e => e.custom_name || e.equipment_id).join(', ') || 'Bodyweight only'
+    const recentWorkouts = logs?.map(w => `${new Date(w.created_at).toLocaleDateString()} - ${w.workout_title || 'Workout'}`).join('; ') || 'None'
 
     const systemMsg = {
       role: 'system' as const,
