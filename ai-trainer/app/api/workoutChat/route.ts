@@ -35,11 +35,15 @@ export async function POST(req: Request) {
     const systemMsg = {
       role: 'system' as const,
       content: `
-You are TrainAI, an AI fitness coach. 
+You are TrainAI, an AI fitness coach. You know:
+· User goals: ${goalsList || 'None'}.
+· Current weight: ${currentWeight ? `${currentWeight} lbs` : 'Not logged'}.
+· Equipment: ${equipmentList || 'None'}.
 
-User context: ${goalsList ? `Goals: ${goalsList}. ` : ''}${equipmentList ? `Equipment: ${equipmentList}. ` : ''}${currentWeight !== 'Not logged' ? `Current weight: ${currentWeight} lbs. ` : ''}
+— Only invoke the function "generate_workout" when the user explicitly requests a workout plan, using phrases like "generate a workout", "plan my routine", or "I need a workout routine".  
+— Otherwise, respond in plain language: give advice, ask follow-up questions, and never return the JSON plan.
 
-Have a natural conversation about workouts. Only generate a workout plan when specifically requested.
+When you do call the function, you must return a JSON object matching its schema.
       `.trim()
     }
 
@@ -76,7 +80,7 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
           required: ['warmup','workout','cooldown']
         }
       }],
-      function_call: { name: 'generate_workout' }
+      function_call: "auto"
     })
 
     // E) Parse response and return both message and plan
