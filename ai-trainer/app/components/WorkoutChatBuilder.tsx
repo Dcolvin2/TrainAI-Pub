@@ -331,35 +331,37 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
   }, {} as Record<string, WorkoutSet[]>);
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-black text-white">
       {/* Header Section */}
-      <div className="bg-white border-b border-gray-200 p-4">
+      <div className="bg-black p-4">
         <div className="flex justify-between items-center mb-4">
-          <button className="p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors">
-            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <button className="p-2 rounded-full bg-gray-800 hover:bg-gray-700 transition-colors">
+            <svg className="w-5 h-5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           </button>
-          <button
-            onClick={finishWorkout}
-            className="bg-[#22C55E] px-6 py-2 rounded-lg text-white font-medium hover:bg-[#16a34a] transition-colors"
-          >
-            Finish
-          </button>
+          {isWorkoutActive && (
+            <button
+              onClick={finishWorkout}
+              className="bg-[#22C55E] px-6 py-2 rounded-lg text-white font-medium hover:bg-[#16a34a] transition-colors"
+            >
+              Finish
+            </button>
+          )}
         </div>
         
         {/* Timer and Date */}
         <div className="text-center mb-4">
-          <div className="text-2xl font-mono font-bold text-gray-800 mb-2">
+          <div className="text-3xl font-mono font-bold text-white mb-2">
             {formatTime(workoutTimer)}
           </div>
-          <div className="flex items-center justify-center gap-2 text-gray-600">
+          <div className="flex items-center justify-center gap-2 text-gray-400">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
             <span>{new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
           </div>
-          <div className="flex items-center justify-center gap-2 text-gray-600 mt-1">
+          <div className="flex items-center justify-center gap-2 text-gray-400 mt-1">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
@@ -469,19 +471,19 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
 
       {/* Workout Logging Section */}
       {workoutSets.length > 0 && (
-        <div className="p-4 space-y-6">
+        <div className="p-4 space-y-4">
           {Object.entries(groupedSets).map(([exerciseName, sets]) => (
-            <div key={exerciseName} className="bg-white rounded-lg border border-gray-200 p-4">
+            <div key={exerciseName} className="bg-gray-900 rounded-lg p-4">
               {/* Exercise Header */}
               <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-semibold text-blue-600">{exerciseName}</h3>
+                <h3 className="text-lg font-semibold text-blue-400">{exerciseName}</h3>
                 <div className="flex gap-2">
-                  <button className="p-1 text-gray-400 hover:text-gray-600">
+                  <button className="p-1 text-gray-400 hover:text-gray-300">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                     </svg>
                   </button>
-                  <button className="p-1 text-gray-400 hover:text-gray-600">
+                  <button className="p-1 text-gray-400 hover:text-gray-300">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
                     </svg>
@@ -494,19 +496,19 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
                 {sets.map(set => (
                   <div
                     key={`${exerciseName}-${set.setNumber}`}
-                    className="grid grid-cols-[auto,1fr,auto,auto,auto] gap-3 items-center p-3 bg-gray-50 rounded-lg"
+                    className="grid grid-cols-[auto,1fr,auto,auto,auto] gap-3 items-center p-3 bg-gray-800 rounded-lg"
                   >
                     {/* Set Number */}
                     <div className="flex items-center">
                       {set.setNumber <= 2 ? (
-                        <span className="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs font-medium">W</span>
+                        <span className="bg-orange-600 text-white px-2 py-1 rounded text-xs font-medium">W</span>
                       ) : (
-                        <span className="bg-gray-200 text-gray-700 px-2 py-1 rounded text-xs font-medium">{set.setNumber}</span>
+                        <span className="bg-gray-700 text-gray-300 px-2 py-1 rounded text-xs font-medium">{set.setNumber}</span>
                       )}
                     </div>
 
                     {/* Previous Performance */}
-                    <div className="text-sm text-gray-500">
+                    <div className="text-sm text-gray-400">
                       {set.weight > 0 ? `${set.weight} lb x ${set.reps}` : 'No previous data'}
                     </div>
 
@@ -515,7 +517,7 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
                       type="number"
                       value={set.weight}
                       onChange={e => updateSet(set, { weight: +e.target.value })}
-                      className="w-16 p-2 text-center bg-white border border-gray-300 rounded text-sm"
+                      className="w-16 p-2 text-center bg-gray-700 border border-gray-600 rounded text-white text-sm"
                       placeholder="lbs"
                     />
 
@@ -524,7 +526,7 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
                       type="number"
                       value={set.reps}
                       onChange={e => updateSet(set, { reps: +e.target.value })}
-                      className="w-16 p-2 text-center bg-white border border-gray-300 rounded text-sm"
+                      className="w-16 p-2 text-center bg-gray-700 border border-gray-600 rounded text-white text-sm"
                       placeholder="Reps"
                     />
 
@@ -534,7 +536,7 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
                       className={`w-6 h-6 rounded border-2 flex items-center justify-center ${
                         set.done 
                           ? 'bg-[#22C55E] border-[#22C55E]' 
-                          : 'bg-white border-gray-300'
+                          : 'bg-gray-700 border-gray-600'
                       }`}
                     >
                       {set.done && (
@@ -548,7 +550,7 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
               </div>
 
               {/* Add Set Button */}
-              <button className="mt-3 text-sm text-gray-600 hover:text-gray-800 font-medium">
+              <button className="mt-3 text-sm text-gray-400 hover:text-gray-300 font-medium">
                 + Add Set
               </button>
             </div>
@@ -561,7 +563,7 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
         <div className="p-4">
           <button
             onClick={startWorkout}
-            className="w-full bg-[#22C55E] py-3 rounded-lg text-white font-medium hover:bg-[#16a34a] transition-colors"
+            className="w-full bg-[#22C55E] py-4 rounded-lg text-white font-medium hover:bg-[#16a34a] transition-colors text-lg"
           >
             Start Workout
           </button>
