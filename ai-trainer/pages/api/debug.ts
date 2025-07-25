@@ -9,7 +9,7 @@ const supabase = createClient(
 const handler: NextApiHandler = async (req, res) => {
   const userId = req.query.userId as string
   const tables = ['profiles', 'equipment', 'weight_logs', 'user_goals', 'training_programs']
-  const tableChecks: Record<string, any> = {}
+  const tableChecks: Record<string, { count: number | null; error: string | null }> = {}
 
   for (const table of tables) {
     const { count, error } = await supabase
