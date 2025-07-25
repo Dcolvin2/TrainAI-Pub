@@ -59,7 +59,20 @@ After they answer, respond ONLY with a JSON object under a \`generate_workout\` 
           type: 'object',
           properties: {
             warmup: { type: 'array', items: { type: 'string' } },
-            workout: { type: 'array', items: { type: 'string' } },
+            workout: { 
+              type: 'array', 
+              items: { 
+                type: 'object',
+                properties: {
+                  exercise: { type: 'string' },
+                  sets: { type: 'number' },
+                  reps: { type: 'number' },
+                  weight: { type: 'number' },
+                  rest: { type: 'number' }
+                },
+                required: ['exercise', 'sets', 'reps', 'weight', 'rest']
+              }
+            },
             cooldown: { type: 'array', items: { type: 'string' } }
           },
           required: ['warmup','workout','cooldown']

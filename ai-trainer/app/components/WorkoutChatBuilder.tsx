@@ -54,9 +54,17 @@ interface ChatMessage {
   content: string
 }
 
+interface WorkoutExercise {
+  exercise: string
+  sets: number
+  reps: number
+  weight: number
+  rest: number
+}
+
 interface WorkoutPlan {
   warmup: string[]
-  workout: string[]
+  workout: WorkoutExercise[]
   cooldown: string[]
 }
 
@@ -72,7 +80,7 @@ export default function WorkoutChatBuilder({ userId }: { userId: string }) {
   const startListening = () => {
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       setIsListening(true)
-      const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition
+      const SpeechRecognitionCtor: new () => SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
       const recognition = new SpeechRecognitionCtor()
 
       recognition.continuous = false
@@ -226,38 +234,30 @@ export default function WorkoutChatBuilder({ userId }: { userId: string }) {
               </thead>
               <tbody>
                 {plan.workout.map((item, i) => {
-                  // Parse workout string: "Back Squat: 3x8 @ 100lb rest 90s"
-                  const [name, restPart] = item.split(' rest ')
-                  const [setsReps, weightPart] = name.split(' @ ')
-                  const [sets, reps] = setsReps.split('x')
-                  const weight = weightPart?.replace(/lb/, '') || ''
-                  const rest = restPart?.replace('s', '') || ''
-                  const exerciseName = name.split(':')[0]
-                  
                   return (
                     <tr key={i} className="border-b border-[#334155]/50">
-                      <td className="p-3 text-white">{exerciseName}</td>
+                      <td className="p-3 text-white">{item.exercise}</td>
                       <td className="p-3">
                         <input 
-                          defaultValue={sets} 
+                          defaultValue={item.sets.toString()} 
                           className="w-12 bg-[#0F172A] border border-[#334155] px-2 py-1 rounded text-white text-center"
                         />
                       </td>
                       <td className="p-3">
                         <input 
-                          defaultValue={reps} 
+                          defaultValue={item.reps.toString()} 
                           className="w-12 bg-[#0F172A] border border-[#334155] px-2 py-1 rounded text-white text-center"
                         />
                       </td>
                       <td className="p-3">
                         <input 
-                          defaultValue={weight} 
+                          defaultValue={item.weight.toString()} 
                           className="w-16 bg-[#0F172A] border border-[#334155] px-2 py-1 rounded text-white text-center"
                         />
                       </td>
                       <td className="p-3">
                         <input 
-                          defaultValue={rest} 
+                          defaultValue={item.rest.toString()} 
                           className="w-16 bg-[#0F172A] border border-[#334155] px-2 py-1 rounded text-white text-center"
                         />
                       </td>
