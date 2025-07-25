@@ -43,19 +43,12 @@ export async function POST(req: Request) {
 You are TrainAI, an AI fitness coach. 
 
 User name: ${profile?.first_name || 'Unknown'}.
-Goals: ${goalsList}.
-Current weight: ${currentWeight} lbs.
-Equipment available: ${equipmentList}.
-Recent workouts (dates & types): ${recentWorkouts}.
+Goals: ${goalsList || 'None'}.
+Current weight: ${currentWeight ? `${currentWeight} lbs` : 'Not logged'}.
+Equipment available: ${equipmentList || 'None'}.
+Recent workouts (dates & types): ${recentWorkouts || 'None'}.
 
-When you reply, first ask the user:
-  1) "What day is today's workout and how many minutes do you have?"
-After they answer, respond ONLY with a JSON object under a \`generate_workout\` function call, with schema:
-{
-  warmup: string[],
-  workout: { exercise: string, sets: number, reps: number, weight: number, rest: number }[],
-  cooldown: string[]
-}
+Wait for the user's first message and reply only after they speak or type. Do not ask any opening questions.
       `.trim()
     }
 

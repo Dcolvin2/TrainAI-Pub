@@ -132,6 +132,13 @@ Now ask me: "What day is today and how much time do you have?"`
     fetchUserContext()
   }, [userId])
 
+  // Send initial message to kick off the conversation
+  useEffect(() => {
+    if (messages.length === 1 && messages[0].role === 'system') {
+      sendMessage('Hi TrainAI, let\'s build today\'s workout.')
+    }
+  }, [messages])
+
   // Speech recognition functionality
   const startListening = () => {
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
