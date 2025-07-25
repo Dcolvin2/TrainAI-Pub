@@ -2,6 +2,8 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@supabase/supabase-js'
+import { WorkoutTimer } from './WorkoutTimer'
+import { WorkoutExerciseCard } from './WorkoutExerciseCard'
 
 // Type declarations for Web Speech API
 declare global {
@@ -67,9 +69,13 @@ interface WorkoutExercise {
 interface WorkoutSet {
   exerciseName: string
   setNumber: number
+  setNumberLabel: string
+  previousWeight: number | null
+  prescribedWeight: number
+  actualWeight: number | string
   reps: number
-  weight: number
-  rest: number
+  restSeconds: number
+  rpe: number
   done: boolean
 }
 
@@ -115,9 +121,13 @@ export default function WorkoutChatBuilder({ userId }: { userId: string }) {
         newSets.push({
           exerciseName: exercise.exercise,
           setNumber: i,
+          setNumberLabel: i <= 2 ? 'W' : i.toString(),
+          previousWeight: null,
+          prescribedWeight: exercise.weight,
+          actualWeight: '',
           reps: exercise.reps,
-          weight: exercise.weight,
-          rest: exercise.rest || defaultRest,
+          restSeconds: exercise.rest || defaultRest,
+          rpe: 7,
           done: false
         });
       }
@@ -469,101 +479,21 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
         </div>
       )}
 
+      {/* Workout Timer */}
+      {isWorkoutActive && (
+        <WorkoutTimer />
+      )}
+
       {/* Workout Logging Section */}
       {workoutSets.length > 0 && (
         <div className="p-4 space-y-4">
           {Object.entries(groupedSets).map(([exerciseName, sets]) => (
-            <div key={exerciseName} className="bg-gray-900 rounded-lg p-4">
-              {/* Exercise Header */}
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-semibold text-blue-400">{exerciseName}</h3>
-                <div className="flex gap-2">
-                  <button className="p-1 text-gray-400 hover:text-gray-300">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                    </svg>
-                  </button>
-                  <button className="p-1 text-gray-400 hover:text-gray-300">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
-              {/* Sets Table */}
-              <div className="bg-gray-800 rounded-lg overflow-hidden">
-                {/* Table Header */}
-                <div className="grid grid-cols-[auto,1fr,auto,auto,auto] gap-3 items-center p-3 bg-gray-700 text-xs text-gray-300 font-medium border-b border-gray-600">
-                  <span>Set</span>
-                  <span>Previous</span>
-                  <span className="text-center">lbs</span>
-                  <span className="text-center">Reps</span>
-                  <span className="text-center">Done</span>
-                </div>
-
-                {/* Table Rows */}
-                {sets.map(set => (
-                  <div
-                    key={`${exerciseName}-${set.setNumber}`}
-                    className="grid grid-cols-[auto,1fr,auto,auto,auto] gap-3 items-center p-3 border-b border-gray-700 last:border-b-0"
-                  >
-                    {/* Set Number */}
-                    <div className="flex items-center">
-                      {set.setNumber <= 2 ? (
-                        <span className="bg-orange-600 text-white px-2 py-1 rounded text-xs font-medium">W</span>
-                      ) : (
-                        <span className="bg-gray-600 text-gray-200 px-2 py-1 rounded text-xs font-medium">{set.setNumber}</span>
-                      )}
-                    </div>
-
-                    {/* Previous Workout lb x rep */}
-                    <div className="text-sm text-gray-400">
-                      {set.weight > 0 ? `${set.weight} lb x ${set.reps}` : 'No previous data'}
-                    </div>
-
-                    {/* Weight Input */}
-                    <input
-                      type="number"
-                      value={set.weight}
-                      onChange={e => updateSet(set, { weight: +e.target.value })}
-                      className="w-16 p-2 text-center bg-gray-700 border border-gray-600 rounded text-white text-sm"
-                      placeholder="lbs"
-                    />
-
-                    {/* Reps Input */}
-                    <input
-                      type="number"
-                      value={set.reps}
-                      onChange={e => updateSet(set, { reps: +e.target.value })}
-                      className="w-16 p-2 text-center bg-gray-700 border border-gray-600 rounded text-white text-sm"
-                      placeholder="Reps"
-                    />
-
-                    {/* Completion Checkbox */}
-                    <button
-                      onClick={() => updateSet(set, { done: !set.done })}
-                      className={`w-6 h-6 rounded border-2 flex items-center justify-center ${
-                        set.done 
-                          ? 'bg-[#22C55E] border-[#22C55E]' 
-                          : 'bg-gray-700 border-gray-600'
-                      }`}
-                    >
-                      {set.done && (
-                        <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                      )}
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              {/* Add Set Button */}
-              <button className="mt-3 text-sm text-gray-400 hover:text-gray-300 font-medium">
-                + Add Set
-              </button>
-            </div>
+            <WorkoutExerciseCard
+              key={exerciseName}
+              exerciseName={exerciseName}
+              sets={sets}
+              updateSet={updateSet}
+            />
           ))}
         </div>
       )}
