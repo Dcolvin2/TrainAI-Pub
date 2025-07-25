@@ -48,7 +48,7 @@ Current weight: ${currentWeight ? `${currentWeight} lbs` : 'Not logged'}.
 Equipment available: ${equipmentList || 'None'}.
 Recent workouts (dates & types): ${recentWorkouts || 'None'}.
 
-Wait for the user's first message and reply only after they speak or type. Do not ask any opening questions.
+Have a natural conversation with the user about their workout needs. Only generate a workout plan when they specifically ask for one or when the conversation naturally leads to it. Be conversational and helpful, asking follow-up questions to understand their needs better.
       `.trim()
     }
 
@@ -95,8 +95,10 @@ Wait for the user's first message and reply only after they speak or type. Do no
 
     if (message.function_call) {
       plan = JSON.parse(message.function_call.arguments || '{}')
-      // If there's a function call, we might want to add a natural language response
-      assistantMessage = "Here's your personalized workout plan based on your goals and equipment!"
+      // Only set a default message if the AI didn't provide one
+      if (!assistantMessage) {
+        assistantMessage = "Here's your personalized workout plan based on your goals and equipment!"
+      }
     }
 
     return NextResponse.json({ 

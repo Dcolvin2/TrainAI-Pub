@@ -120,7 +120,8 @@ User goals: ${context.goals.join(', ') || 'None'}.
 Current weight: ${context.currentWeight} lbs.
 Equipment: ${context.equipment.join(', ') || 'None'}.
 Recent workouts: ${context.recentWorkouts.join(', ') || 'None'}.
-Now ask me: "What day is today and how much time do you have?"`
+
+Have a natural conversation with the user about their workout needs. Only generate a workout plan when they specifically ask for one or when the conversation naturally leads to it. Be conversational and helpful, asking follow-up questions to understand their needs better.`
         }
 
         setMessages([systemMessage])
@@ -132,12 +133,7 @@ Now ask me: "What day is today and how much time do you have?"`
     fetchUserContext()
   }, [userId])
 
-  // Send initial message to kick off the conversation
-  useEffect(() => {
-    if (messages.length === 1 && messages[0].role === 'system') {
-      sendMessage('Hi TrainAI, let\'s build today\'s workout.')
-    }
-  }, [messages])
+
 
   // Speech recognition functionality
   const startListening = () => {
