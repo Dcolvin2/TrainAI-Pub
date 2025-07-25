@@ -333,9 +333,7 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
   }, {} as Record<string, WorkoutSet[]>);
 
   return (
-    <div className="pt-16 pb-6 px-2 max-w-lg mx-auto min-h-screen bg-black text-white">
-      {/* Fixed Timer */}
-      {isWorkoutActive && <WorkoutTimer />}
+    <div className="pt-4 pb-6 px-4 max-w-lg mx-auto min-h-screen bg-black text-white">
       {/* Header Section */}
       <div className="bg-black p-4">
         <div className="flex justify-between items-center mb-4">
@@ -466,9 +464,12 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
 
 
 
+      {/* Workout Timer */}
+      {isWorkoutActive && <WorkoutTimer />}
+
       {/* Workout Logging Section */}
       {workoutSets.length > 0 && (
-        <div className="p-4 space-y-4">
+        <div className="space-y-4">
           {Object.entries(groupedSets).map(([exerciseName, sets]) => (
             <WorkoutExerciseCard
               key={exerciseName}
