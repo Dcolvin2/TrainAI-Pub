@@ -279,13 +279,11 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
             </div>
           </div>
         )}
-        {messages.map((m, i) => (
+        {messages.filter(m => m.role !== 'system').map((m, i) => (
           <div key={i} className={`mb-3 ${m.role === 'user' ? 'text-right' : 'text-left'}`}>
             <span className={`inline-block p-3 rounded-lg max-w-xs break-words ${
               m.role === 'user' 
                 ? 'bg-[#22C55E] text-white' 
-                : m.role === 'system'
-                ? 'bg-[#475569] text-white text-sm'
                 : 'bg-[#334155] text-white'
             }`}>
               {m.content}
