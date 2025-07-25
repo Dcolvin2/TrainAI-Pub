@@ -81,15 +81,15 @@ Return JSON: { warmup: string[], workout: string[], cooldown: string[] }.
       ...plan,
       prompt: systemPrompt
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('=== WORKOUT GENERATION ERROR ===')
     console.error('Error type:', typeof error)
-    console.error('Error message:', error.message)
-    console.error('Error stack:', error.stack)
+    console.error('Error message:', error instanceof Error ? error.message : String(error))
+    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace')
     
     return NextResponse.json({ 
       error: 'Failed to generate workout',
-      details: error.message 
+      details: error instanceof Error ? error.message : String(error)
     }, { status: 500 })
   }
 } 
