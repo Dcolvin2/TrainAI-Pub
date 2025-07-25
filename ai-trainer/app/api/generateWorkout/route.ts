@@ -10,7 +10,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! })
 
 export async function GET(req: Request) {
   try {
-    console.log('🔍 Starting workout generation...')
+    console.log('🔍 Starting workout generation with fresh API credits...')
     
     // Parse URL parameters
     const url = new URL(req.url)
