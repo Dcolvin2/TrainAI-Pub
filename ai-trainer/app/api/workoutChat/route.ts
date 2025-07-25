@@ -20,17 +20,20 @@ export async function POST(req: Request) {
     const [
       { data: equipment }, 
       { data: goals }, 
-      { data: weightLogs }
+      { data: weightLogs },
+      { data: maxes }
     ] = await Promise.all([
       supabase.from('user_equipment').select('equipment_id, custom_name').eq('user_id', userId),
       supabase.from('goals').select('goal_type').eq('user_id', userId),
-      supabase.from('weight_logs').select('weight').eq('user_id', userId).order('created_at', { ascending: false }).limit(1)
+      supabase.from('weight_logs').select('weight').eq('user_id', userId).order('created_at', { ascending: false }).limit(1),
+      supabase.from('user_maxes').select('exercise_name, max_weight').eq('user_id', userId)
     ])
 
     // B) Build dynamic system message with real user context
     const currentWeight = weightLogs?.[0]?.weight || 'Not logged'
     const goalsList = goals?.map(g => g.goal_type).join(', ') || 'No goals set'
     const equipmentList = equipment?.map(e => e.custom_name || e.equipment_id).join(', ') || 'Bodyweight only'
+    const maxesList = maxes?.map(m => `${m.exercise_name}: ${m.max_weight} lbs`).join('\n') || 'No personal bests recorded'
 
     const systemMsg = {
       role: 'system' as const,
@@ -40,8 +43,12 @@ You are TrainAI, an AI fitness coach. You know:
 · Current weight: ${currentWeight ? `${currentWeight} lbs` : 'Not logged'}.
 · Equipment: ${equipmentList || 'None'}.
 
+Personal bests:
+${maxesList}
+
 — Only invoke the function "generate_workout" when the user explicitly requests a workout plan, using phrases like "generate a workout", "plan my routine", or "I need a workout routine".  
 — Otherwise, respond in plain language: give advice, ask follow-up questions, and never return the JSON plan.
+— When generating workouts, always respect these personal bests and equipment constraints.
 
 When you do call the function, you must return a JSON object matching its schema.
       `.trim()

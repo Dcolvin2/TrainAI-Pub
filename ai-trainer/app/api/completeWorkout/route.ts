@@ -53,6 +53,36 @@ export async function POST(req: Request) {
       .update({ total_volume: totalVolume })
       .eq('id', session.id);
 
+    // Track personal bests
+    const byExercise = logSets.reduce((acc: Record<string, any[]>, s: any) => {
+      (acc[s.exerciseName] ||= []).push(s);
+      return acc;
+    }, {});
+
+    for (const [exerciseName, setsArr] of Object.entries(byExercise)) {
+      const newMax = Math.max(...(setsArr as any[]).map((s: any) => Number(s.actualWeight) || 0));
+      
+      if (newMax > 0) {
+        // fetch existing max
+        const { data: existing } = await supabase
+          .from('user_maxes')
+          .select('max_weight')
+          .eq('user_id', userId)
+          .eq('exercise_name', exerciseName)
+          .single();
+
+        if (!existing || newMax > existing.max_weight) {
+          // upsert the new PR
+          await supabase.from('user_maxes').upsert([{
+            user_id: userId,
+            exercise_name: exerciseName,
+            max_weight: newMax,
+            updated_at: new Date().toISOString()
+          }]);
+        }
+      }
+    }
+
     return NextResponse.json({ sessionId: session.id, total_volume: totalVolume });
   } catch (error) {
     console.error('Complete workout error:', error);
