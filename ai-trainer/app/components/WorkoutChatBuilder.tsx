@@ -103,14 +103,7 @@ export default function WorkoutChatBuilder({ userId }: { userId: string }) {
           supabase.from('weight_logs').select('weight').eq('user_id', userId).order('created_at', { ascending: false }).limit(1)
         ])
 
-        // Debug logging
-        console.log('Fetched data:', {
-          profile: profile?.first_name,
-          goals: goals?.map(g => g.goal_type),
-          equipment: equipment?.map(e => e.custom_name || e.equipment_id),
-          weightLogs: weightLogs,
-          logs: logs?.map(w => `${new Date(w.created_at).toLocaleDateString()} - ${w.workout_title || 'Workout'}`)
-        })
+
 
         const context: UserContext = {
           name: profile?.first_name || 'Unknown',
@@ -123,14 +116,11 @@ export default function WorkoutChatBuilder({ userId }: { userId: string }) {
         // Initialize with system message
         const systemMessage: ChatMessage = {
           role: 'system',
-          content: `You are TrainAI. 
+          content: `You are TrainAI, an AI fitness coach. 
 
-User goals: ${context.goals.join(', ') || 'None'}.
-Current weight: ${context.currentWeight} lbs.
-Equipment: ${context.equipment.join(', ') || 'None'}.
-Recent workouts: ${context.recentWorkouts.join(', ') || 'None'}.
+User context: ${context.goals.length > 0 ? `Goals: ${context.goals.join(', ')}. ` : ''}${context.equipment.length > 0 ? `Equipment: ${context.equipment.join(', ')}. ` : ''}${context.currentWeight !== 'Not logged' ? `Current weight: ${context.currentWeight} lbs. ` : ''}
 
-Have a natural conversation with the user about their workout needs. Only generate a workout plan when they specifically ask for one or when the conversation naturally leads to it. Be conversational and helpful, asking follow-up questions to understand their needs better.`
+Have a natural conversation about workouts. Only generate a workout plan when specifically requested.`
         }
 
         setMessages([systemMessage])
@@ -256,6 +246,37 @@ Have a natural conversation with the user about their workout needs. Only genera
         {messages.length === 0 && (
           <div className="text-gray-400 text-center py-8">
             Loading your profile...
+          </div>
+        )}
+        {messages.length === 1 && messages[0].role === 'system' && (
+          <div className="text-center py-4">
+            <p className="text-white mb-4">Tell me what you want to do today:</p>
+            <div className="flex flex-wrap gap-2 justify-center">
+              <button
+                onClick={() => sendMessage('I want a strength workout')}
+                className="bg-[#22C55E] px-4 py-2 rounded-lg text-white hover:bg-[#16a34a] transition-colors"
+              >
+                💪 Strength
+              </button>
+              <button
+                onClick={() => sendMessage('I want a HIIT workout')}
+                className="bg-[#22C55E] px-4 py-2 rounded-lg text-white hover:bg-[#16a34a] transition-colors"
+              >
+                🔥 HIIT
+              </button>
+              <button
+                onClick={() => sendMessage('I want an endurance workout')}
+                className="bg-[#22C55E] px-4 py-2 rounded-lg text-white hover:bg-[#16a34a] transition-colors"
+              >
+                🏃 Endurance
+              </button>
+              <button
+                onClick={() => sendMessage('I want a general fitness workout')}
+                className="bg-[#22C55E] px-4 py-2 rounded-lg text-white hover:bg-[#16a34a] transition-colors"
+              >
+                🎯 General Fitness
+              </button>
+            </div>
           </div>
         )}
         {messages.map((m, i) => (

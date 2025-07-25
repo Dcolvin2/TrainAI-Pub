@@ -42,13 +42,9 @@ export async function POST(req: Request) {
       content: `
 You are TrainAI, an AI fitness coach. 
 
-User name: ${profile?.first_name || 'Unknown'}.
-Goals: ${goalsList || 'None'}.
-Current weight: ${currentWeight ? `${currentWeight} lbs` : 'Not logged'}.
-Equipment available: ${equipmentList || 'None'}.
-Recent workouts (dates & types): ${recentWorkouts || 'None'}.
+User context: ${goalsList ? `Goals: ${goalsList}. ` : ''}${equipmentList ? `Equipment: ${equipmentList}. ` : ''}${currentWeight !== 'Not logged' ? `Current weight: ${currentWeight} lbs. ` : ''}
 
-Have a natural conversation with the user about their workout needs. Only generate a workout plan when they specifically ask for one or when the conversation naturally leads to it. Be conversational and helpful, asking follow-up questions to understand their needs better.
+Have a natural conversation about workouts. Only generate a workout plan when specifically requested.
       `.trim()
     }
 
