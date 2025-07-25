@@ -1,6 +1,6 @@
 'use client'
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
 // Type declarations for Web Speech API
@@ -84,6 +84,15 @@ export default function WorkoutChatBuilder({ userId }: { userId: string }) {
   const [transcript, setTranscript] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [editableWorkout, setEditableWorkout] = useState<WorkoutExercise[]>([])
+  const chatContainerRef = useRef<HTMLDivElement>(null)
+
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    chatContainerRef.current?.scrollTo({
+      top: chatContainerRef.current.scrollHeight,
+      behavior: 'smooth'
+    });
+  }, [messages]);
 
   // Fetch user context on mount
   useEffect(() => {
@@ -242,7 +251,10 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
   return (
     <div className="space-y-6">
       {/* Chat window */}
-      <div className="bg-[#1E293B] p-4 rounded-xl shadow h-64 overflow-auto">
+      <div 
+        ref={chatContainerRef}
+        className="h-[400px] max-h-[60vh] overflow-y-auto space-y-2 p-4 bg-[#1E293B] rounded-xl"
+      >
         {messages.length === 0 && (
           <div className="text-gray-400 text-center py-8">
             Loading your profile...
