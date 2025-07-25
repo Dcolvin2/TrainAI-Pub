@@ -64,12 +64,6 @@ interface WorkoutExercise {
   rest: number
 }
 
-interface WorkoutPlan {
-  warmup: string[]
-  workout: WorkoutExercise[]
-  cooldown: string[]
-}
-
 interface UserContext {
   name: string
   goals: string[]
