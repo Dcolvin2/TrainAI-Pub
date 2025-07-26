@@ -186,11 +186,15 @@ const convertWorkoutToSets = (workout: GeneratedWorkout | NikeWorkout): WorkoutS
     workout.exercises.forEach((exercise: NikeExercise) => {
       // Determine section based on exercise type
       let section: 'warmup' | 'workout' | 'cooldown' = 'workout';
-      if (exercise.exercise_type.toLowerCase().includes('warmup') ||
-          exercise.exercise_type.toLowerCase().includes('mobility')) {
+      const exerciseType = exercise.exercise_type.toLowerCase();
+      
+      if (exerciseType.includes('warmup') ||
+          (exerciseType.includes('mobility') && !exerciseType.includes('cool down'))) {
         section = 'warmup';
-      } else if (exercise.exercise_type.toLowerCase().includes('cooldown') ||
-                 exercise.exercise_type.toLowerCase().includes('stretch')) {
+      } else if (exerciseType.includes('cooldown') ||
+                 exerciseType.includes('cool down') ||
+                 exerciseType.includes('mobility cool down') ||
+                 exerciseType.includes('stretch')) {
         section = 'cooldown';
       }
       
