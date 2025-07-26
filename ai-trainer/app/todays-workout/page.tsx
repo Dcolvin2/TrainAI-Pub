@@ -17,6 +17,20 @@ interface WorkoutData {
   prompt?: string;
 }
 
+interface FlahertyExercise {
+  Workout: number;
+  'Upper / Lower body': string;
+  Sets: number;
+  Reps: string;
+  Exercise: string;
+  'Exercise Type': string;
+}
+
+interface FlahertyWorkout {
+  exercises: FlahertyExercise[];
+  workoutNumber: number;
+}
+
 
 
 
@@ -74,7 +88,7 @@ export default function TodaysWorkoutPage() {
   // Chat agent state
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [workoutData, setWorkoutData] = useState<WorkoutData | null>(null);
+  const [workoutData, setWorkoutData] = useState<WorkoutData | FlahertyWorkout | null>(null);
   const [chatMessages, setChatMessages] = useState<Array<{sender: 'user' | 'assistant', text: string, timestamp?: string}>>([]);
   const [waitingForFlahertyConfirmation, setWaitingForFlahertyConfirmation] = useState(false);
   const [inputText, setInputText] = useState('');
@@ -122,11 +136,11 @@ export default function TodaysWorkoutPage() {
         console.log('✅ Flaherty Workout 1:', data);
         // Convert to FlahertyWorkout format and set as workout data
         if (data && data.length > 0) {
-          const flahertyWorkout = {
-            exercises: data,
+          const flahertyWorkout: FlahertyWorkout = {
+            exercises: data as FlahertyExercise[],
             workoutNumber: 1
           };
-          setWorkoutData(flahertyWorkout as any); // Type assertion for now
+          setWorkoutData(flahertyWorkout);
         }
       }
     };
@@ -443,46 +457,7 @@ export default function TodaysWorkoutPage() {
           </div>
         </div>
 
-        {/* Generated Workout Display */}
-        {workoutData && (
-          <div className="bg-[#1E293B] rounded-xl p-4 shadow-md space-y-3 mb-4">
-            <h3 className="text-md font-semibold text-white">Your Generated Workout</h3>
-            
-            {workoutData.prompt && (
-              <div className="bg-[#0F172A] p-3 rounded-lg">
-                <h4 className="text-xs font-medium text-gray-400 mb-1">Your Request:</h4>
-                <p className="text-white text-xs">{workoutData.prompt}</p>
-              </div>
-            )}
 
-            <div className="grid grid-cols-1 gap-3">
-              <div>
-                <h4 className="text-white font-medium mb-1 text-sm">Warm-up</h4>
-                <ul className="space-y-1">
-                  {workoutData.warmup.map((item, i) => (
-                    <li key={i} className="text-gray-300 text-xs">• {item}</li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <h4 className="text-white font-medium mb-1 text-sm">Main Workout</h4>
-                <ul className="space-y-1">
-                  {workoutData.workout.map((item, i) => (
-                    <li key={i} className="text-gray-300 text-xs">• {item}</li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <h4 className="text-white font-medium mb-1 text-sm">Cool-down</h4>
-                <ul className="space-y-1">
-                  {workoutData.cooldown.map((item, i) => (
-                    <li key={i} className="text-gray-300 text-xs">• {item}</li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          </div>
-        )}
       </section>
 
       {/* Workout Table Section */}
