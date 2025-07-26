@@ -3,6 +3,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import WorkoutTable from '../components/WorkoutTable';
+import ChatBox from '../components/ChatBox';
+import ChatBubble from '../components/ChatBubble';
 
 // Type declarations for Web Speech API
 declare global {
@@ -117,14 +119,10 @@ export default function TodaysWorkoutPage() {
   const [restTimerDuration] = useState(60);
   
   // Chat agent state
-  const [prompt, setPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [workoutData, setWorkoutData] = useState<WorkoutData | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [isListening, setIsListening] = useState(false);
-  const [transcript, setTranscript] = useState('');
-  const [chatMessages, setChatMessages] = useState<Array<{role: 'user' | 'assistant', content: string}>>([]);
+  const [chatMessages, setChatMessages] = useState<Array<{sender: 'user' | 'assistant', text: string, timestamp?: string}>>([]);
   const [waitingForFlahertyConfirmation, setWaitingForFlahertyConfirmation] = useState(false);
 
 
@@ -157,55 +155,127 @@ export default function TodaysWorkoutPage() {
 
 
 
-  // Handle speech recognition
-  const startListening = () => {
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      setIsListening(true);
-      const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
-      const recognition: SpeechRecognition = new SpeechRecognitionCtor();
+  // Handle chat messages
+  const handleChatMessage = async (message: string) => {
+    if (!user?.id) {
+      setError('Please log in to use the chat');
+      return;
+    }
 
-      recognition.continuous = false;
-      recognition.interimResults = false;
-      recognition.lang = 'en-US';
+    const timestamp = new Date().toLocaleTimeString();
+    
+    // Add user message to chat
+    setChatMessages(prev => [...prev, { 
+      sender: 'user', 
+      text: message, 
+      timestamp 
+    }]);
 
-      recognition.onstart = () => setIsListening(true);
-
-      recognition.onresult = (event: SpeechRecognitionEvent) => {
-        const transcript = Array.from(event.results)
-          .map((result: SpeechRecognitionResult) => result[0])
-          .map((alt: SpeechRecognitionAlternative) => alt.transcript)
-          .join('');
-        setTranscript(transcript);
-        setPrompt(transcript);
-      };
-
-      recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-        console.error('Speech recognition error:', event.error);
-        setIsListening(false);
-      };
-
-      recognition.onend = () => setIsListening(false);
-
-      recognition.start();
+    // Check for Flaherty keyword
+    const isFlaherty = message.toLowerCase().includes('flaherty');
+    
+    if (isFlaherty) {
+      await handleFlahertyWorkout(message);
     } else {
-      alert('Speech recognition is not supported in this browser. Please use Chrome, Edge, or Safari over HTTPS.');
+      await generateWorkoutFromMessage(message);
     }
   };
 
-  const resetTranscript = () => {
-    setTranscript('');
-    setPrompt('');
+  // Handle Flaherty workout generation
+  const handleFlahertyWorkout = async (message: string) => {
+    if (!user?.id) return;
+    
+    const timestamp = new Date().toLocaleTimeString();
+    
+    // Get user's last Flaherty workout for confirmation
+    const profileResponse = await fetch('/api/getFlahertyProgress', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        userId: user.id
+      })
+    });
+    
+    if (profileResponse.ok) {
+      const profileData = await profileResponse.json();
+      const lastWorkout = profileData.lastWorkout || 0;
+      const nextWorkout = lastWorkout + 1;
+      
+      // Add assistant response to chat
+      setChatMessages(prev => [...prev, { 
+        sender: 'assistant', 
+        text: `You last completed Flaherty workout ${lastWorkout}. Would you like to do workout ${nextWorkout} today? (yes/no)`,
+        timestamp 
+      }]);
+      
+      setWaitingForFlahertyConfirmation(true);
+    }
   };
 
-  // Generate workout with intelligent logic
+  // Generate workout from chat message
+  const generateWorkoutFromMessage = async (message: string) => {
+    if (!user?.id) return;
+    
+    setIsLoading(true);
+    setError('');
+    
+    try {
+      const timestamp = new Date().toLocaleTimeString();
+      
+      const response = await fetch('/api/generateWorkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          minutes: timeAvailable,
+          prompt: message
+        })
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to generate workout');
+      }
+
+      setWorkoutData(data);
+      setChatMessages(prev => [...prev, { 
+        sender: 'assistant', 
+        text: 'Your workout has been generated! Check the workout table below.',
+        timestamp 
+      }]);
+      
+    } catch (err) {
+      console.error('Workout generation error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to generate workout');
+      setChatMessages(prev => [...prev, { 
+        sender: 'assistant', 
+        text: 'Sorry, there was an error generating your workout. Please try again.',
+        timestamp: new Date().toLocaleTimeString()
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Handle Flaherty confirmation response
   const handleFlahertyConfirmation = async (response: string) => {
     if (!user?.id) return;
     
     const isYes = response.toLowerCase().includes('yes') || response.toLowerCase().includes('y');
+    const timestamp = new Date().toLocaleTimeString();
     
     if (isYes) {
       // Add user response to chat
-      setChatMessages(prev => [...prev, { role: 'user', content: response }]);
+      setChatMessages(prev => [...prev, { 
+        sender: 'user', 
+        text: response,
+        timestamp 
+      }]);
       
       // Generate the Flaherty workout
       setIsLoading(true);
@@ -231,12 +301,20 @@ export default function TodaysWorkoutPage() {
         }
 
         setWorkoutData(data);
-        setChatMessages(prev => [...prev, { role: 'assistant', content: 'Great! Your Flaherty workout has been generated. Check the workout table below.' }]);
+        setChatMessages(prev => [...prev, { 
+          sender: 'assistant', 
+          text: 'Great! Your Flaherty workout has been generated. Check the workout table below.',
+          timestamp 
+        }]);
         
       } catch (err) {
         console.error('Workout generation error:', err);
         setError(err instanceof Error ? err.message : 'Failed to generate workout');
-        setChatMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, there was an error generating your workout. Please try again.' }]);
+        setChatMessages(prev => [...prev, { 
+          sender: 'assistant', 
+          text: 'Sorry, there was an error generating your workout. Please try again.',
+          timestamp 
+        }]);
       } finally {
         setIsLoading(false);
       }
@@ -244,94 +322,14 @@ export default function TodaysWorkoutPage() {
       // User declined
       setChatMessages(prev => [
         ...prev, 
-        { role: 'user', content: response },
-        { role: 'assistant', content: 'No problem! You can ask for a different type of workout anytime.' }
+        { sender: 'user', text: response, timestamp },
+        { sender: 'assistant', text: 'No problem! You can ask for a different type of workout anytime.', timestamp }
       ]);
       setWaitingForFlahertyConfirmation(false);
     }
   };
 
-  const generateWorkout = async () => {
-    if (!user?.id) {
-      setError('Please log in to generate a workout');
-      return;
-    }
-    
-    setIsLoading(true);
-    setError('');
-    
-    try {
-      const finalPrompt = transcript || prompt;
-      if (!finalPrompt.trim()) {
-        throw new Error('Please enter a prompt or use voice input');
-      }
 
-      // Check for Flaherty keyword and handle confirmation
-      const isFlaherty = finalPrompt.toLowerCase().includes('flaherty');
-      
-      if (isFlaherty) {
-        // Get user's last Flaherty workout for confirmation
-        const profileResponse = await fetch('/api/getFlahertyProgress', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            userId: user.id
-          })
-        });
-        
-        if (profileResponse.ok) {
-          const profileData = await profileResponse.json();
-          const lastWorkout = profileData.lastWorkout || 0;
-          const nextWorkout = lastWorkout + 1;
-          
-          // Add user message and assistant response to chat
-          setChatMessages(prev => [
-            ...prev,
-            { role: 'user', content: finalPrompt },
-            { role: 'assistant', content: `You last completed Flaherty workout ${lastWorkout}. Would you like to do workout ${nextWorkout} today? (yes/no)` }
-          ]);
-          
-          setWaitingForFlahertyConfirmation(true);
-          setIsLoading(false);
-          setPrompt('');
-          setTranscript('');
-          return;
-        }
-      }
-
-      // Add user message to chat
-      setChatMessages(prev => [...prev, { role: 'user', content: finalPrompt }]);
-      
-      const response = await fetch('/api/generateWorkout', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          userId: user.id,
-          minutes: timeAvailable,
-          prompt: finalPrompt
-        })
-      });
-
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to generate workout');
-      }
-
-      setWorkoutData(data);
-      setChatMessages(prev => [...prev, { role: 'assistant', content: 'Your workout has been generated! Check the workout table below.' }]);
-      
-    } catch (err) {
-      console.error('Workout generation error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to generate workout');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
 
 
@@ -364,13 +362,7 @@ export default function TodaysWorkoutPage() {
           >
             {mainTimerRunning ? 'Pause' : 'Start'}
           </button>
-          <button 
-            onClick={startListening} 
-            className="p-2 bg-transparent"
-            aria-label="Voice input"
-          >
-            🎤
-          </button>
+
         </div>
       </header>
 
@@ -423,83 +415,33 @@ export default function TodaysWorkoutPage() {
           </div>
         )}
 
-        {/* Prompt Box */}
-        <div className="bg-[#1E293B] rounded-xl p-4 shadow-md mb-4">
-          <div className="relative">
-            <textarea
-              ref={textareaRef}
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Tell me what workout you want to do today. For example: 'I want a chest and triceps workout with dumbbells' or 'Give me a 30-minute cardio session' or type 'Flaherty' for the next workout in the program..."
-              className="w-full h-24 bg-[#0F172A] border border-[#334155] rounded-lg p-3 text-white resize-none focus:border-[#22C55E] focus:outline-none text-sm"
-            />
-            <button
-              onClick={startListening}
-              disabled={isListening}
-              className={`absolute bottom-3 right-3 p-1 rounded transition-colors ${
-                isListening 
-                  ? 'bg-red-500 text-white' 
-                  : 'bg-[#22C55E] text-white hover:bg-[#16a34a]'
-              }`}
-              title="Voice input"
-            >
-              🎤
-            </button>
-          </div>
-          
-          {(transcript || prompt) && (
-            <div className="mt-2 flex items-center gap-2">
-              <button
-                onClick={resetTranscript}
-                className="text-gray-400 hover:text-white text-xs transition-colors"
-              >
-                Clear
-              </button>
-            </div>
-          )}
-
-          <button
-            onClick={waitingForFlahertyConfirmation ? () => handleFlahertyConfirmation(prompt) : generateWorkout}
-            disabled={isLoading || (!prompt.trim() && !transcript)}
-            className="mt-3 bg-[#22C55E] px-4 py-2 rounded-lg text-white font-semibold hover:bg-[#16a34a] disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
-          >
-            {isLoading ? (
-              <span className="flex items-center gap-2">
-                <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
-                Creating workout...
-              </span>
-            ) : waitingForFlahertyConfirmation ? (
-              'Confirm'
-            ) : (
-              'Generate My Workout'
-            )}
-          </button>
-        </div>
-
-        {/* Chat Messages */}
+        {/* Chat History */}
         {chatMessages.length > 0 && (
           <div className="bg-[#1E293B] rounded-xl p-4 shadow-md mb-4 max-h-64 overflow-y-auto">
             <h3 className="text-md font-semibold text-white mb-3">Chat History</h3>
             <div className="space-y-3">
               {chatMessages.map((message, index) => (
-                <div
-                  key={index}
-                  className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`max-w-xs px-3 py-2 rounded-lg text-sm ${
-                      message.role === 'user'
-                        ? 'bg-[#22C55E] text-white'
-                        : 'bg-[#334155] text-white'
-                    }`}
-                  >
-                    {message.content}
-                  </div>
-                </div>
+                <ChatBubble 
+                  key={index} 
+                  sender={message.sender} 
+                  message={message.text}
+                  timestamp={message.timestamp}
+                />
               ))}
             </div>
           </div>
         )}
+
+        {/* Chat Input */}
+        <ChatBox
+          onSendMessage={waitingForFlahertyConfirmation ? handleFlahertyConfirmation : handleChatMessage}
+          placeholder={waitingForFlahertyConfirmation 
+            ? "Type 'yes' or 'no' to confirm..." 
+            : "Ask me to modify your workout, e.g., 'only have 30 minutes' or type 'Flaherty' for the next workout in the program..."
+          }
+          sendOnEnter={true}
+          disabled={isLoading}
+        />
 
         {/* Generated Workout Display */}
         {workoutData && (
