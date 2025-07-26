@@ -267,7 +267,7 @@ export default function TodaysWorkoutPage() {
         timestamp
       }]);
       
-    } catch (error) {
+    } catch {
       setChatMessages(prev => [...prev, {
         sender: 'assistant',
         text: `I couldn't find specific instructions for ${exerciseName}. Please consult a fitness professional for proper form guidance.`,
