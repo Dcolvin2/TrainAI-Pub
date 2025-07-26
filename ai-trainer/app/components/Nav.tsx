@@ -28,14 +28,8 @@ export default function Nav() {
                 <Link href="/todays-workout" className="text-sm font-medium text-foreground hover:text-primary transition-colors">
                   Today&apos;s Workout
                 </Link>
-                <Link href="/workout/builder" className="text-sm font-medium text-foreground hover:text-primary transition-colors">
-                  Workout Builder
-                </Link>
                 <Link href="/workout/chat" className="text-sm font-medium text-foreground hover:text-primary transition-colors">
                   AI Chat
-                </Link>
-                <Link href="/workout/active" className="text-sm font-medium text-foreground hover:text-primary transition-colors">
-                  Active Workout
                 </Link>
                 <Link href="/equipment" className="text-sm font-medium text-foreground hover:text-primary transition-colors">
                   Equipment
@@ -102,25 +96,11 @@ export default function Nav() {
                     Today&apos;s Workout
                   </Link>
                   <Link 
-                    href="/workout/builder" 
-                    className="text-sm font-medium text-foreground hover:text-primary transition-colors"
-                    onClick={() => setIsMenuOpen(false)}
-                  >
-                    Workout Builder
-                  </Link>
-                  <Link 
                     href="/workout/chat" 
                     className="text-sm font-medium text-foreground hover:text-primary transition-colors"
                     onClick={() => setIsMenuOpen(false)}
                   >
                     AI Chat
-                  </Link>
-                  <Link 
-                    href="/workout/active" 
-                    className="text-sm font-medium text-foreground hover:text-primary transition-colors"
-                    onClick={() => setIsMenuOpen(false)}
-                  >
-                    Active Workout
                   </Link>
                   <Link 
                     href="/equipment" 
