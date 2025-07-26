@@ -277,7 +277,8 @@ export default function WorkoutTable({ workout, onFinishWorkout }: WorkoutTableP
       });
 
       if (!sessionResponse.ok) {
-        throw new Error('Failed to save workout session');
+        const errorData = await sessionResponse.json();
+        throw new Error(`Failed to save workout session: ${errorData.details || errorData.error || 'Unknown error'}`);
       }
 
       // Save individual sets
@@ -296,7 +297,8 @@ export default function WorkoutTable({ workout, onFinishWorkout }: WorkoutTableP
         });
 
         if (!setsResponse.ok) {
-          throw new Error('Failed to save workout sets');
+          const errorData = await setsResponse.json();
+          throw new Error(`Failed to save workout sets: ${errorData.details || errorData.error || 'Unknown error'}`);
         }
       }
 

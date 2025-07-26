@@ -47,7 +47,11 @@ export async function POST(req: Request) {
 
     if (error) {
       console.error('Supabase error:', error);
-      return NextResponse.json({ error: 'Failed to save workout sets' }, { status: 500 });
+      return NextResponse.json({ 
+        error: 'Failed to save workout sets', 
+        details: error.message,
+        code: error.code 
+      }, { status: 500 });
     }
 
     return NextResponse.json({ success: true, data });
