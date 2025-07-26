@@ -52,7 +52,7 @@ You know:
 · Equipment: ${equipmentList || 'None'}.
 · Personal bests: ${maxesList || 'None'}.
 
-— Only invoke the function "generate_workout" when the user explicitly requests a workout plan, using phrases like "generate a workout", "plan my routine", "I need a workout routine", "flaherty workout", or day-of-week cues like "It's Tuesday".
+— Only invoke the function "generate_workout" when the user explicitly requests a workout plan, using phrases like "generate a workout", "plan my routine", "I need a workout routine", "nike workout", or day-of-week cues like "It's Tuesday".
 — Otherwise, respond in plain language: give advice, ask follow-up questions, and never return the JSON plan.
 — When generating workouts, always respect these personal bests and equipment constraints.
 

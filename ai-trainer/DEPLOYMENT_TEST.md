@@ -23,4 +23,4 @@ This deployment will test:
 - `ChatBubble` - Message display
 - `WorkoutTable` - Dynamic workout tracking
 - `WorkoutTimer` - Count-up timer
-- AI chat agent - Flaherty and custom workouts 
+- AI chat agent - Nike and custom workouts 
