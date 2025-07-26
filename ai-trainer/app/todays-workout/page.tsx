@@ -165,32 +165,70 @@ export default function TodaysWorkoutPage() {
 
     // 2. Handle Nike workout request
     if (lower.includes('nike')) {
-      const { data, error } = await supabase
-        .from('nike_workouts')
-        .select('Workout, Exercise, Sets, Reps, "Exercise Type"')
-        .eq('Workout', 1); // TEMP: hardcoded for testing. Replace with dynamic later.
-
-      if (error || !data || data.length === 0) {
+      if (!user?.id) {
         setChatMessages(prev => [
           ...prev,
-          { sender: 'assistant', text: "Sorry, I couldn't load your Nike workout.", timestamp: new Date().toLocaleTimeString() },
+          { sender: 'assistant', text: "Please log in to access your Nike workout.", timestamp: new Date().toLocaleTimeString() },
         ]);
         return;
       }
 
-      // Format and reply with summary
-      const summary = data
-        .map((ex) => `• ${ex.Exercise}: ${ex.Sets}x${ex.Reps} (${ex['Exercise Type']})`)
-        .join('\n');
+      try {
+        // 1. Query profiles.last_nike_workout to find the last one completed
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('last_nike_workout')
+          .eq('id', user.id)
+          .single();
 
-      setChatMessages(prev => [
-        ...prev,
-        {
-          sender: 'assistant',
-          text: `Here is your Nike Workout:\n${summary}`,
-          timestamp: new Date().toLocaleTimeString()
-        },
-      ]);
+        const lastWorkout = profile?.last_nike_workout || 0;
+        const nextWorkout = lastWorkout + 1;
+
+        // 2. Query nike_workouts where Workout = nextWorkout
+        const { data: rows, error } = await supabase
+          .from('nike_workouts')
+          .select('Workout, Exercise, Sets, Reps, "Exercise Type", "Upper / Lower body"')
+          .eq('Workout', nextWorkout);
+
+        if (error || !rows || rows.length === 0) {
+          setChatMessages(prev => [
+            ...prev,
+            { sender: 'assistant', text: "Sorry, I couldn't load your Nike workout.", timestamp: new Date().toLocaleTimeString() },
+          ]);
+          return;
+        }
+
+        // 3. Extract workout_type from first row: "Upper / Lower body"
+        const workoutType = rows[0]['Upper / Lower body'] || 'Workout';
+
+        // 4. Display in chat with progression info
+        const summary = rows
+          .map((ex) => `• ${ex.Exercise}: ${ex.Sets}x${ex.Reps} (${ex['Exercise Type']})`)
+          .join('\n');
+
+        setChatMessages(prev => [
+          ...prev,
+          {
+            sender: 'assistant',
+            text: `You last completed Nike workout #${lastWorkout}. Here's #${nextWorkout}: ${workoutType}\n\n${summary}`,
+            timestamp: new Date().toLocaleTimeString()
+          },
+        ]);
+
+        // Set workout data for the table
+        const nikeWorkout: NikeWorkout = {
+          exercises: rows as NikeExercise[],
+          workoutNumber: nextWorkout
+        };
+        setWorkoutData(nikeWorkout);
+
+      } catch (err) {
+        console.error('Error loading Nike workout:', err);
+        setChatMessages(prev => [
+          ...prev,
+          { sender: 'assistant', text: "Sorry, there was an error loading your Nike workout.", timestamp: new Date().toLocaleTimeString() },
+        ]);
+      }
       return;
     }
 
@@ -379,6 +417,7 @@ export default function TodaysWorkoutPage() {
             onStopTimer={() => {
               setMainTimerRunning(false);
             }}
+            elapsedTime={elapsedTime}
           />
         )}
       </section>

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabaseClient';
 
 interface GeneratedWorkout {
   warmup: string[];
@@ -46,6 +47,7 @@ interface WorkoutTableProps {
   workout: GeneratedWorkout | NikeWorkout;
   onFinishWorkout?: () => void;
   onStopTimer?: () => void;
+  elapsedTime?: number;
 }
 
 // Parse workout string into structured data
@@ -251,7 +253,7 @@ const convertWorkoutToSets = (workout: GeneratedWorkout | NikeWorkout): WorkoutS
   return sets;
 };
 
-export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer }: WorkoutTableProps) {
+export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer, elapsedTime = 0 }: WorkoutTableProps) {
   const { user } = useAuth();
   const router = useRouter();
   
@@ -350,18 +352,39 @@ export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer }: 
         }
       }
 
-      // Update user's Nike progress if this was a Nike workout
-      const workoutPrompt = 'prompt' in workout ? workout.prompt : `Nike Workout ${('workoutNumber' in workout ? workout.workoutNumber : 0)}`;
-      if (workoutPrompt?.toLowerCase().includes('nike')) {
-        await fetch('/api/updateNikeProgress', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            userId: user.id
-          })
-        });
+      // Handle Nike workout completion
+      if ('workoutNumber' in workout) {
+        // This is a Nike workout - save to workouts table and update progress
+        const today = new Date().toISOString().split('T')[0];
+        const workoutType = workout.exercises[0]?.['Upper / Lower body'] || 'Workout';
+        const timerMinutes = Math.floor(elapsedTime / 60); // Convert seconds to minutes
+        
+        // 1. Save to workouts table
+        const { error: workoutError } = await supabase
+          .from('workouts')
+          .insert({
+            user_id: user.id,
+            date: today,
+            program_name: 'Nike',
+            program_workout_number: workout.workoutNumber,
+            workout_type: workoutType,
+            duration_minutes: timerMinutes,
+            sets: JSON.stringify(workout.exercises) // Full set plan
+          });
+
+        if (workoutError) {
+          console.error('Error saving to workouts table:', workoutError);
+        }
+
+        // 2. Update last_nike_workout on profile
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({ last_nike_workout: workout.workoutNumber })
+          .eq('id', user.id);
+
+        if (profileError) {
+          console.error('Error updating Nike progress:', profileError);
+        }
       }
 
       console.log('Workout completed and saved successfully');
