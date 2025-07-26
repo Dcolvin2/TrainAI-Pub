@@ -14,27 +14,27 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
     }
 
-    // Get user's last completed Flaherty workout
+    // Get user's last completed Nike workout
     const { data: profile, error } = await supabase
       .from('profiles')
-      .select('last_flaherty_workout')
+      .select('last_nike_workout')
       .eq('id', userId)
       .single();
 
     if (error) {
       console.error('Supabase error:', error);
-      return NextResponse.json({ error: 'Failed to get Flaherty progress' }, { status: 500 });
+      return NextResponse.json({ error: 'Failed to get Nike progress' }, { status: 500 });
     }
 
     return NextResponse.json({ 
       success: true, 
-      lastWorkout: profile?.last_flaherty_workout || 0,
-      nextWorkout: (profile?.last_flaherty_workout || 0) + 1
+      lastWorkout: profile?.last_nike_workout || 0,
+      nextWorkout: (profile?.last_nike_workout || 0) + 1
     });
   } catch (error) {
-    console.error('Get Flaherty progress error:', error);
+    console.error('Get Nike progress error:', error);
     return NextResponse.json({
-      error: error instanceof Error ? error.message : 'Failed to get Flaherty progress'
+      error: error instanceof Error ? error.message : 'Failed to get Nike progress'
     }, { status: 500 });
   }
 } 

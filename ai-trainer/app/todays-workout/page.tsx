@@ -474,7 +474,7 @@ export default function TodaysWorkoutPage() {
               {chatMessages.length === 0 ? (
                 <div className="text-center text-gray-400 py-8">
                   <p>Ask your coach anything...</p>
-                  <p className="text-sm mt-2">Try: &quot;I only have 30 minutes&quot; or &quot;Flaherty&quot;</p>
+                  <p className="text-sm mt-2">Try: &quot;I only have 30 minutes&quot; or &quot;Nike&quot;</p>
                 </div>
               ) : (
                 <div className="space-y-3 p-4">

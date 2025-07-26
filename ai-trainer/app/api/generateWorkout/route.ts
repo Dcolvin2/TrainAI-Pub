@@ -88,40 +88,40 @@ export async function POST(req: Request) {
 
     let systemPrompt = '';
     let userPrompt = prompt;
-    let isFlaherty = false;
+    let isNike = false;
 
-    // Check for Flaherty keyword
-    if (prompt.toLowerCase().includes('flaherty')) {
-      isFlaherty = true;
+    // Check for Nike keyword
+    if (prompt.toLowerCase().includes('nike')) {
+      isNike = true;
       
-      // Get user's last completed Flaherty workout
+      // Get user's last completed Nike workout
       const { data: userProfile } = await supabase
         .from('profiles')
-        .select('last_flaherty_workout')
+        .select('last_nike_workout')
         .eq('id', userId)
         .single();
 
-      const lastWorkout = userProfile?.last_flaherty_workout || 0;
+      const lastWorkout = userProfile?.last_nike_workout || 0;
       const nextWorkoutNumber = lastWorkout + 1;
 
-      // Get the next Flaherty workout with correct column names
-      const { data: flahertyRaw } = await supabase
-        .from('flaherty_workouts')
+      // Get the next Nike workout with correct column names
+      const { data: nikeRaw } = await supabase
+        .from('nike_workouts')
         .select('workout, exercise_name, sets, reps, weight, rest_seconds, section')
         .eq('workout', nextWorkoutNumber);
 
-      if (flahertyRaw && flahertyRaw.length > 0) {
-        // Extract exercise names from Flaherty data
-        const flahertyExercises = flahertyRaw.map(row => row.exercise_name);
+      if (nikeRaw && nikeRaw.length > 0) {
+        // Extract exercise names from Nike data
+        const nikeExercises = nikeRaw.map(row => row.exercise_name);
 
         // Cross-reference with exercise table to get metadata
         const { data: matchedExercises } = await supabase
           .from('exercise')
           .select('*')
-          .in('name', flahertyExercises);
+          .in('name', nikeExercises);
 
-        // Merge Flaherty data with exercise metadata
-        const enrichedFlaherty = flahertyRaw.map(row => {
+        // Merge Nike data with exercise metadata
+        const enrichedNike = nikeRaw.map(row => {
           const match = matchedExercises?.find(ex => ex.name === row.exercise_name);
           return {
             ...row,
@@ -132,11 +132,11 @@ export async function POST(req: Request) {
         });
 
 
-        // Get available exercises for Flaherty workout
+        // Get available exercises for Nike workout
         const availableExercises = await getAvailableExercises(equipmentList);
         const exerciseOptions = availableExercises.map(ex => `${ex.name} (${ex.category})`).join('\n');
         
-        systemPrompt = `You are TrainAI, an expert fitness coach. The user is following the Flaherty workout program.
+        systemPrompt = `You are TrainAI, an expert fitness coach. The user is following the Nike workout program.
         
         User profile: ${profile?.first_name || 'Unknown'}.
         Goals: ${goals?.map(g => g.description).join(', ') || 'None'}.
@@ -145,23 +145,23 @@ export async function POST(req: Request) {
         Available exercises for this user:
         ${exerciseOptions}
         
-        The user last completed Flaherty workout #${lastWorkout}. This is workout #${nextWorkoutNumber}.`;
+        The user last completed Nike workout #${lastWorkout}. This is workout #${nextWorkoutNumber}.`;
         
-        userPrompt = `Create a workout plan based on the Flaherty program workout #${nextWorkoutNumber}. 
-        Workout data: ${JSON.stringify(enrichedFlaherty)}. 
+        userPrompt = `Create a workout plan based on the Nike program workout #${nextWorkoutNumber}. 
+        Workout data: ${JSON.stringify(enrichedNike)}. 
         Format the response as a structured workout with warm-up, main workout, and cool-down sections.
         Total workout time should be ${minutes} minutes.
         
         IMPORTANT: Use the exact exercise names from the data. Do NOT add "(bodyweight)" to any exercise names unless it's explicitly part of the exercise name in the data.`;
       } else {
-        // Fallback to regular AI generation for Flaherty
-        systemPrompt = `You are TrainAI, an expert fitness coach. The user wants a Flaherty-style workout.
+        // Fallback to regular AI generation for Nike
+        systemPrompt = `You are TrainAI, an expert fitness coach. The user wants a Nike-style workout.
         
         User profile: ${profile?.first_name || 'Unknown'}.
         Goals: ${goals?.map(g => g.description).join(', ') || 'None'}.
         Equipment: ${equipmentList.join(', ') || 'None'}.
         
-        Create a Flaherty-style workout that focuses on compound movements, progressive overload, and functional fitness.
+        Create a Nike-style workout that focuses on compound movements, progressive overload, and functional fitness.
         Total workout time should be ${minutes} minutes.
         
         IMPORTANT: Use exact exercise names. Do NOT add "(bodyweight)" to exercise names unless it's explicitly part of the exercise name.`;
@@ -254,8 +254,8 @@ export async function POST(req: Request) {
       prompt: prompt,
       plan: plan,
       used_model: 'gpt-3.5-turbo',
-      is_flaherty: isFlaherty,
-      workout_type: isFlaherty ? 'flaherty' : null,
+              is_nike: isNike,
+        workout_type: isNike ? 'nike' : null,
       day_of_week: null
     });
 
