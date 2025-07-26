@@ -6,53 +6,7 @@ import WorkoutTable from '../components/WorkoutTable';
 
 import ChatBubble from '../components/ChatBubble';
 
-// Type declarations for Web Speech API
-declare global {
-  interface Window {
-    SpeechRecognition: new () => SpeechRecognition;
-    webkitSpeechRecognition: new () => SpeechRecognition;
-  }
-}
 
-interface SpeechRecognition extends EventTarget {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  onstart: (() => void) | null;
-  onresult: ((event: SpeechRecognitionEvent) => void) | null;
-  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
-  onend: (() => void) | null;
-  start(): void;
-  stop(): void;
-  abort(): void;
-}
-
-interface SpeechRecognitionEvent extends Event {
-  readonly results: SpeechRecognitionResultList;
-}
-
-interface SpeechRecognitionResultList {
-  length: number;
-  item(index: number): SpeechRecognitionResult;
-  [index: number]: SpeechRecognitionResult;
-}
-
-interface SpeechRecognitionResult {
-  length: number;
-  isFinal: boolean;
-  item(index: number): SpeechRecognitionAlternative;
-  [index: number]: SpeechRecognitionAlternative;
-}
-
-interface SpeechRecognitionAlternative {
-  transcript: string;
-  confidence: number;
-}
-
-interface SpeechRecognitionErrorEvent extends Event {
-  error: string;
-  message: string;
-}
 
 
 
@@ -115,8 +69,7 @@ export default function TodaysWorkoutPage() {
   const [elapsedTime, setElapsedTime] = useState(0); // seconds
   const [timeAvailable, setTimeAvailable] = useState(45); // minutes, default
   const [mainTimerRunning, setMainTimerRunning] = useState(false);
-  const [restTimerRunning, setRestTimerRunning] = useState(false);
-  const [restTimerDuration, setRestTimerDuration] = useState(60);
+
   
   // Chat agent state
   const [isLoading, setIsLoading] = useState(false);
@@ -383,21 +336,7 @@ export default function TodaysWorkoutPage() {
         className="mb-6" 
       />
 
-      {/* Rest Timer */}
-      {restTimerRunning && (
-        <div className="bg-[#1E293B] rounded-xl p-6 shadow-md border-l-4 border-orange-500 mb-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold text-white">Rest Timer</h2>
-            <span className="text-orange-400 font-medium">Take a break!</span>
-          </div>
-          <div className="text-center">
-            <div className="text-4xl font-bold text-orange-400 mb-2">
-              {Math.floor(restTimerDuration / 60)}:{(restTimerDuration % 60).toString().padStart(2, '0')}
-            </div>
-            <p className="text-gray-400">Next set coming up...</p>
-          </div>
-        </div>
-      )}
+
 
       {/* AI Chat Agent Section */}
       <section className="mb-6">
