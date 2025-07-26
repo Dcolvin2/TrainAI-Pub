@@ -183,11 +183,15 @@ export default function TodaysWorkoutPage() {
         const lastWorkout = profile?.last_nike_workout || 0;
         const nextWorkout = lastWorkout + 1;
 
+        console.log('🔍 Nike workout query:', { lastWorkout, nextWorkout, userId: user.id });
+
         // 2. Query nike_workouts where Workout = nextWorkout
         const { data: rows, error } = await supabase
           .from('nike_workouts')
           .select('Workout, Exercise, Sets, Reps, "Exercise Type", "Upper / Lower body"')
           .eq('Workout', nextWorkout);
+
+        console.log('📊 Nike workout result:', { rows: rows?.length, error, nextWorkout });
 
         if (error || !rows || rows.length === 0) {
           setChatMessages(prev => [
