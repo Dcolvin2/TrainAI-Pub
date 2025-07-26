@@ -133,7 +133,7 @@ function WorkoutTimer({ duration, running, onExpire, className = '' }: {
 }
 
 // Simple WorkoutChat Component
-function WorkoutChat({ sessionId, concise = false }: { sessionId: string; concise?: boolean }) {
+function WorkoutChat({ concise = false }: { concise?: boolean }) {
   const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([
     { role: 'assistant', content: 'Ready to help with your workout! How are you feeling today?' }
   ]);
@@ -220,13 +220,13 @@ export default function TodaysWorkoutPage() {
   // Workout tracking state
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [currentSet, setCurrentSet] = useState<{ exIdx: number; setIdx: number }>({ exIdx: 0, setIdx: 0 });
+
   const [isLoadingWorkout, setIsLoadingWorkout] = useState(true);
   const [workoutError, setWorkoutError] = useState('');
   const [mainTimerRunning, setMainTimerRunning] = useState(false);
   const [restTimerRunning, setRestTimerRunning] = useState(false);
   const [restTimerDuration, setRestTimerDuration] = useState(60);
-  const [duration, setDuration] = useState(45 * 60); // 45 minutes default
+  const [duration] = useState(45 * 60); // 45 minutes default
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -395,22 +395,7 @@ export default function TodaysWorkoutPage() {
     }
   };
 
-  // Advance to next set or finish
-  const nextSet = (): void => {
-    setCurrentSet(({ exIdx, setIdx }) => {
-      const currentExercise = exercises[exIdx];
-      if (!currentExercise) return { exIdx, setIdx };
-      
-      if (setIdx + 1 < currentExercise.sets) {
-        return { exIdx, setIdx: setIdx + 1 };
-      }
-      if (exIdx + 1 < exercises.length) {
-        return { exIdx: exIdx + 1, setIdx: 0 };
-      }
-      setMainTimerRunning(false);
-      return { exIdx, setIdx };
-    });
-  };
+
 
   // Log a set and start rest timer
   const logSet = (exIdx: number, setIdx: number, weight: number, reps: number, rpe = 8): void => {
@@ -432,8 +417,6 @@ export default function TodaysWorkoutPage() {
     setRestTimerDuration(ex.restSeconds);
     setRestTimerRunning(true);
     setMainTimerRunning(false);
-    
-    nextSet();
   };
 
   // Add a set to an exercise
@@ -757,7 +740,7 @@ export default function TodaysWorkoutPage() {
       {/* WorkoutChat Section */}
       <section className="bg-[#1F2937] p-4 rounded-lg">
         <h2 className="text-xl font-semibold text-white mb-2">Your Generated Workout</h2>
-        <WorkoutChat sessionId={user?.id ?? ''} concise />
+        <WorkoutChat concise />
       </section>
     </div>
   );
