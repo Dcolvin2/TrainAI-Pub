@@ -85,8 +85,7 @@ export default function TodaysWorkoutPage() {
   const [mainTimerRunning, setMainTimerRunning] = useState(false);
 
   
-  // Chat agent state
-  const [isLoading, setIsLoading] = useState(false);
+
   const [workoutData, setWorkoutData] = useState<WorkoutData | NikeWorkout | null>(null);
   const [chatMessages, setChatMessages] = useState<Array<{sender: 'user' | 'assistant', text: string, timestamp?: string}>>([]);
 
@@ -384,14 +383,13 @@ export default function TodaysWorkoutPage() {
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && inputText.trim() && !isLoading) {
+                  if (e.key === 'Enter' && inputText.trim()) {
                     const message = inputText.trim();
                     setInputText('');
                     handleChatMessage(message);
                   }
                 }}
                 placeholder="Ask your coach anything..."
-                disabled={isLoading}
                 className="w-full bg-[#0F172A] border border-[#334155] rounded-lg p-2 text-sm text-white focus:border-[#22C55E] focus:outline-none disabled:opacity-50"
               />
             </div>
