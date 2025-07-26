@@ -77,7 +77,7 @@ export async function POST(req: Request) {
         .eq('workout', nextWorkoutNumber);
 
       if (flahertyRows && flahertyRows.length > 0) {
-        // Group exercises by name to create summary
+        // Group exercises by name for reference
         const groupedExercises = flahertyRows.reduce((acc, row) => {
           if (!acc[row.exercise_name]) {
             acc[row.exercise_name] = [];
@@ -85,12 +85,6 @@ export async function POST(req: Request) {
           acc[row.exercise_name].push(row);
           return acc;
         }, {} as Record<string, typeof flahertyRows>);
-
-        let summary = `Here's your Flaherty workout ${nextWorkoutNumber}:\n`;
-        for (const [name, entries] of Object.entries(groupedExercises)) {
-          const { reps, sets } = entries[0];
-          summary += `- ${name}: ${sets} sets of ${reps}\n`;
-        }
 
         systemPrompt = `You are TrainAI, an expert fitness coach. The user is following the Flaherty workout program.
         
