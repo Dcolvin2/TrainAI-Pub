@@ -428,19 +428,19 @@ export default function TodaysWorkoutPage() {
 
         {/* Integrated Chat Container */}
         <div className="bg-[#1E293B] rounded-xl shadow-md mb-4">
-          <div className="p-4 border-b border-[#334155]">
-            <h3 className="text-md font-semibold text-white">AI Workout Coach</h3>
+          <div className="p-3 border-b border-[#334155]">
+            <h3 className="text-sm font-semibold text-white">AI Workout Coach</h3>
           </div>
           
-          <div className="chat-container">
-            <div className="chat-history" ref={chatHistoryRef}>
+          <div className="chat-wrapper max-h-[300px] flex flex-col">
+            <div className="chat-history flex-1 overflow-y-auto p-3" ref={chatHistoryRef}>
               {chatMessages.length === 0 ? (
-                <div className="text-center text-gray-400 py-8">
-                  <p>Ask your coach anything...</p>
-                  <p className="text-sm mt-2">Try: &quot;I only have 30 minutes&quot; or &quot;Nike&quot;</p>
+                <div className="text-center text-gray-400 py-4">
+                  <p className="text-sm">Ask your coach anything...</p>
+                  <p className="text-xs mt-1">Try: &quot;I only have 30 minutes&quot; or &quot;Nike&quot;</p>
                 </div>
               ) : (
-                <div className="space-y-3 p-4">
+                <div className="space-y-2">
                   {chatMessages.map((message, index) => (
                     <ChatBubble 
                       key={index} 
@@ -453,7 +453,7 @@ export default function TodaysWorkoutPage() {
               )}
             </div>
 
-            <div className="p-4 border-t border-[#334155]">
+            <div className="p-3 border-t border-[#334155] flex-shrink-0">
               <input
                 type="text"
                 value={inputText}
@@ -467,7 +467,7 @@ export default function TodaysWorkoutPage() {
                 }}
                 placeholder="Ask your coach anything..."
                 disabled={isLoading}
-                className="w-full bg-[#0F172A] border border-[#334155] rounded-lg p-3 text-white focus:border-[#22C55E] focus:outline-none disabled:opacity-50"
+                className="w-full bg-[#0F172A] border border-[#334155] rounded-lg p-2 text-sm text-white focus:border-[#22C55E] focus:outline-none disabled:opacity-50"
               />
             </div>
           </div>

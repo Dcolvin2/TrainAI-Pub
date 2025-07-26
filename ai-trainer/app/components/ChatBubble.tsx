@@ -12,10 +12,10 @@ export default function ChatBubble({ sender, message, timestamp }: ChatBubblePro
   const isUser = sender === 'user';
   
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-3`}>
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-2`}>
       <div className="max-w-xs lg:max-w-md">
         <div
-          className={`px-4 py-3 rounded-lg text-sm ${
+          className={`px-3 py-2 rounded-lg text-sm ${
             isUser
               ? 'bg-[#22C55E] text-white rounded-br-md'
               : 'bg-[#334155] text-white rounded-bl-md'
