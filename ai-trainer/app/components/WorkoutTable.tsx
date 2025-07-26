@@ -11,6 +11,19 @@ interface GeneratedWorkout {
   prompt?: string;
 }
 
+interface FlahertyExercise {
+  Workout: number;
+  Exercise: string;
+  Sets: number;
+  Reps: number;
+  'Exercise Type': string;
+}
+
+interface FlahertyWorkout {
+  exercises: FlahertyExercise[];
+  workoutNumber: number;
+}
+
 interface WorkoutSet {
   id: string;
   exerciseName: string;
@@ -29,7 +42,7 @@ interface WorkoutSet {
 
 
 interface WorkoutTableProps {
-  workout: GeneratedWorkout;
+  workout: GeneratedWorkout | FlahertyWorkout;
   onFinishWorkout?: () => void;
   onStopTimer?: () => void;
 }
@@ -158,12 +171,43 @@ const getDefaultSetCount = (section: 'warmup' | 'workout' | 'cooldown', exercise
   return 4;
 };
 
+// Convert Flaherty workout to GeneratedWorkout format
+const convertFlahertyToGenerated = (flahertyWorkout: FlahertyWorkout): GeneratedWorkout => {
+  const warmup: string[] = [];
+  const workout: string[] = [];
+  const cooldown: string[] = [];
+  
+  flahertyWorkout.exercises.forEach(exercise => {
+    const exerciseString = `${exercise.Exercise}: ${exercise.Sets}x${exercise.Reps}`;
+    
+    // Categorize based on exercise type
+    if (exercise['Exercise Type'].toLowerCase().includes('warmup') || 
+        exercise['Exercise Type'].toLowerCase().includes('mobility')) {
+      warmup.push(exerciseString);
+    } else if (exercise['Exercise Type'].toLowerCase().includes('cooldown') || 
+               exercise['Exercise Type'].toLowerCase().includes('stretch')) {
+      cooldown.push(exerciseString);
+    } else {
+      workout.push(exerciseString);
+    }
+  });
+  
+  return {
+    warmup,
+    workout,
+    cooldown,
+    prompt: `Flaherty Workout ${flahertyWorkout.workoutNumber}`
+  };
+};
+
 // Convert workout arrays to structured sets with proper set counts
-const convertWorkoutToSets = (workout: GeneratedWorkout): WorkoutSet[] => {
+const convertWorkoutToSets = (workout: GeneratedWorkout | FlahertyWorkout): WorkoutSet[] => {
+  // Convert Flaherty workout to GeneratedWorkout format if needed
+  const generatedWorkout = 'exercises' in workout ? convertFlahertyToGenerated(workout) : workout;
   const sets: WorkoutSet[] = [];
   
   // Process warmup
-  workout.warmup.forEach((item) => {
+  generatedWorkout.warmup.forEach((item: string) => {
     const baseSet = parseWorkoutString(item, 'warmup');
     const setCount = getDefaultSetCount('warmup', baseSet.exerciseName);
     
@@ -176,7 +220,7 @@ const convertWorkoutToSets = (workout: GeneratedWorkout): WorkoutSet[] => {
   });
   
   // Process main workout
-  workout.workout.forEach((item) => {
+  generatedWorkout.workout.forEach((item: string) => {
     const baseSet = parseWorkoutString(item, 'workout');
     const setCount = getDefaultSetCount('workout', baseSet.exerciseName);
     
@@ -189,7 +233,7 @@ const convertWorkoutToSets = (workout: GeneratedWorkout): WorkoutSet[] => {
   });
   
   // Process cooldown
-  workout.cooldown.forEach((item) => {
+  generatedWorkout.cooldown.forEach((item: string) => {
     const baseSet = parseWorkoutString(item, 'cooldown');
     const setCount = getDefaultSetCount('cooldown', baseSet.exerciseName);
     
@@ -304,7 +348,8 @@ export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer }: 
       }
 
       // Update user's Flaherty progress if this was a Flaherty workout
-      if (workout.prompt?.toLowerCase().includes('flaherty')) {
+      const workoutPrompt = 'prompt' in workout ? workout.prompt : `Flaherty Workout ${('workoutNumber' in workout ? workout.workoutNumber : 0)}`;
+      if (workoutPrompt?.toLowerCase().includes('flaherty')) {
         await fetch('/api/updateFlahertyProgress', {
           method: 'POST',
           headers: {

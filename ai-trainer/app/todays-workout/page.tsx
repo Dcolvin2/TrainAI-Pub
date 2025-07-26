@@ -108,9 +108,9 @@ export default function TodaysWorkoutPage() {
     }
   }, [user, router]);
 
-  // TEST: Fetch and log Flaherty workout 1
+  // Load Flaherty workout data
   useEffect(() => {
-    const testFlahertyWorkout = async () => {
+    const loadFlahertyWorkout = async () => {
       const { data, error } = await supabase
         .from('flaherty_workouts')
         .select('Workout, Exercise, Sets, Reps, Exercise Type')
@@ -120,10 +120,18 @@ export default function TodaysWorkoutPage() {
         console.error('❌ Error querying flaherty_workouts:', error);
       } else {
         console.log('✅ Flaherty Workout 1:', data);
+        // Convert to FlahertyWorkout format and set as workout data
+        if (data && data.length > 0) {
+          const flahertyWorkout = {
+            exercises: data,
+            workoutNumber: 1
+          };
+          setWorkoutData(flahertyWorkout as any); // Type assertion for now
+        }
       }
     };
 
-    testFlahertyWorkout();
+    loadFlahertyWorkout();
   }, []);
 
   // Auto-scroll chat to bottom when new messages are added
