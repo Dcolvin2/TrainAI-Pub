@@ -14,11 +14,12 @@ interface GeneratedWorkout {
 
 interface NikeExercise {
   workout: number;
-  'Upper / Lower body': string;
-  Sets: number;
-  Reps: string;
-  Exercise: string;
-  'Exercise Type': string;
+  workout_type: string;
+  sets: number;
+  reps: string;
+  exercise: string;
+  exercise_type: string;
+  instructions?: string;
 }
 
 interface NikeWorkout {
@@ -180,22 +181,22 @@ const convertNikeToGenerated = (nikeWorkout: NikeWorkout): GeneratedWorkout => {
   const workout: string[] = [];
   const cooldown: string[] = [];
   
-  nikeWorkout.exercises.forEach((exercise: NikeExercise) => {
-    // Handle different rep formats (numbers vs "30 seconds")
-    const repsDisplay = exercise.Reps === '-' ? '1' : exercise.Reps;
-    const exerciseString = `${exercise.Exercise}: ${exercise.Sets}x${repsDisplay}`;
-    
-    // Categorize based on exercise type
-    if (exercise['Exercise Type'].toLowerCase().includes('warmup') || 
-        exercise['Exercise Type'].toLowerCase().includes('mobility')) {
-      warmup.push(exerciseString);
-    } else if (exercise['Exercise Type'].toLowerCase().includes('cooldown') || 
-               exercise['Exercise Type'].toLowerCase().includes('stretch')) {
-      cooldown.push(exerciseString);
-    } else {
-      workout.push(exerciseString);
-    }
-  });
+            nikeWorkout.exercises.forEach((exercise: NikeExercise) => {
+            // Handle different rep formats (numbers vs "30 seconds")
+            const repsDisplay = exercise.reps === '-' ? '1' : exercise.reps;
+            const exerciseString = `${exercise.exercise}: ${exercise.sets}x${repsDisplay}`;
+
+            // Categorize based on exercise type
+            if (exercise.exercise_type.toLowerCase().includes('warmup') ||
+                exercise.exercise_type.toLowerCase().includes('mobility')) {
+              warmup.push(exerciseString);
+            } else if (exercise.exercise_type.toLowerCase().includes('cooldown') ||
+                       exercise.exercise_type.toLowerCase().includes('stretch')) {
+              cooldown.push(exerciseString);
+            } else {
+              workout.push(exerciseString);
+            }
+          });
   
   return {
     warmup,
@@ -356,7 +357,7 @@ export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer, el
       if ('workoutNumber' in workout) {
         // This is a Nike workout - save to workouts table and update progress
         const today = new Date().toISOString().split('T')[0];
-        const workoutType = workout.exercises[0]?.['Upper / Lower body'] || 'Workout';
+        const workoutType = workout.exercises[0]?.workout_type || 'Workout';
         const timerMinutes = Math.floor(elapsedTime / 60); // Convert seconds to minutes
         
         // 1. Save to workouts table

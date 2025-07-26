@@ -19,11 +19,12 @@ interface WorkoutData {
 
 interface NikeExercise {
   workout: number;
-  'Upper / Lower body': string;
-  Sets: number;
-  Reps: string;
-  Exercise: string;
-  'Exercise Type': string;
+  workout_type: string;
+  sets: number;
+  reps: string;
+  exercise: string;
+  exercise_type: string;
+  instructions?: string;
 }
 
 interface NikeWorkout {
@@ -125,7 +126,7 @@ export default function TodaysWorkoutPage() {
     const loadNikeWorkout = async () => {
       const { data, error } = await supabase
         .from('nike_workouts')
-        .select(`"workout", "Upper / Lower body", "Sets", "Reps", "Exercise", "Exercise Type"`)
+        .select('workout, workout_type, sets, reps, exercise, instructions, exercise_type')
         .eq('workout', 1);
 
       if (error) {
@@ -188,7 +189,7 @@ export default function TodaysWorkoutPage() {
         // 2. Query nike_workouts where workout = nextWorkout
         const { data: rows, error } = await supabase
           .from('nike_workouts')
-          .select(`"workout", "Exercise", "Sets", "Reps", "Exercise Type", "Upper / Lower body"`)
+          .select('workout, workout_type, sets, reps, exercise, instructions, exercise_type')
           .eq('workout', nextWorkout);
 
         console.log('📊 Nike workout result:', { rows: rows?.length, error, nextWorkout });
@@ -201,12 +202,12 @@ export default function TodaysWorkoutPage() {
           return;
         }
 
-        // 3. Extract workout_type from first row: "Upper / Lower body"
-        const workoutType = rows[0]['Upper / Lower body'] || 'Workout';
+        // 3. Extract workout_type from first row
+        const workoutType = rows[0].workout_type || 'Workout';
 
         // 4. Display in chat with progression info
         const summary = rows
-          .map((ex) => `• ${ex.Exercise}: ${ex.Sets}x${ex.Reps} (${ex['Exercise Type']})`)
+          .map((ex) => `• ${ex.exercise}: ${ex.sets}x${ex.reps} (${ex.exercise_type})`)
           .join('\n');
 
         setChatMessages(prev => [
