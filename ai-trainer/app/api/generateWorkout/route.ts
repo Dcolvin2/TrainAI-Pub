@@ -35,34 +35,7 @@ const getCardioEquipmentWorkout = (equipmentList: string[]) => {
   return available.length > 0 ? available[0] : "bodyweight circuit";
 };
 
-// Get next Flaherty workout
-const getNextFlahertyWorkout = async (userId: string) => {
-  try {
-    // Get the last completed workout index
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("last_flaherty_workout")
-      .eq("id", userId)
-      .single();
 
-    const nextWorkoutNumber = (profile?.last_flaherty_workout || 0) + 1;
-
-    const { data: nextWorkoutRows, error } = await supabase
-      .from("flaherty_workouts")
-      .select("*")
-      .eq("workout", nextWorkoutNumber);
-
-    if (error) {
-      console.error('Error fetching Flaherty workout:', error);
-      return null;
-    }
-
-    return { nextWorkoutRows, nextWorkoutNumber };
-  } catch (error) {
-    console.error('Error in getNextFlahertyWorkout:', error);
-    return null;
-  }
-};
 
 export async function POST(req: Request) {
   try {
@@ -82,7 +55,6 @@ export async function POST(req: Request) {
     let systemPrompt = '';
     let userPrompt = prompt;
     let isFlaherty = false;
-    let nextFlahertyWorkout = null;
 
     // Check for Flaherty keyword
     if (prompt.toLowerCase().includes('flaherty')) {
@@ -105,7 +77,6 @@ export async function POST(req: Request) {
         .eq('workout', nextWorkoutNumber);
 
       if (flahertyWorkout && flahertyWorkout.length > 0) {
-        nextFlahertyWorkout = flahertyWorkout;
         systemPrompt = `You are TrainAI, an expert fitness coach. The user is following the Flaherty workout program.
         
         User profile: ${profile?.first_name || 'Unknown'}.
@@ -135,7 +106,7 @@ export async function POST(req: Request) {
       const detectedDay = dayKeywords.find(day => prompt.toLowerCase().includes(day));
       
       let daySpecificPrompt = '';
-      let equipmentList = equipment?.map(e => e.name) || [];
+      const equipmentList = equipment?.map(e => e.name) || [];
       
       if (detectedDay) {
         const dayType = getDayWorkoutType(detectedDay);
