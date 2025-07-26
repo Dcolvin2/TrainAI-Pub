@@ -113,7 +113,7 @@ export default function TodaysWorkoutPage() {
     const loadFlahertyWorkout = async () => {
       const { data, error } = await supabase
         .from('flaherty_workouts')
-        .select('Workout, Exercise, Sets, Reps, Exercise Type')
+        .select('Workout, "Upper / Lower body", Sets, Reps, Exercise, "Exercise Type"')
         .eq('Workout', 1);
 
       if (error) {

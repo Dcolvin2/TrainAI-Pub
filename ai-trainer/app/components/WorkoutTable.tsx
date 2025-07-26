@@ -13,9 +13,10 @@ interface GeneratedWorkout {
 
 interface FlahertyExercise {
   Workout: number;
-  Exercise: string;
+  'Upper / Lower body': string;
   Sets: number;
-  Reps: number;
+  Reps: string;
+  Exercise: string;
   'Exercise Type': string;
 }
 
@@ -178,7 +179,9 @@ const convertFlahertyToGenerated = (flahertyWorkout: FlahertyWorkout): Generated
   const cooldown: string[] = [];
   
   flahertyWorkout.exercises.forEach(exercise => {
-    const exerciseString = `${exercise.Exercise}: ${exercise.Sets}x${exercise.Reps}`;
+    // Handle different rep formats (numbers vs "30 seconds")
+    const repsDisplay = exercise.Reps === '-' ? '1' : exercise.Reps;
+    const exerciseString = `${exercise.Exercise}: ${exercise.Sets}x${repsDisplay}`;
     
     // Categorize based on exercise type
     if (exercise['Exercise Type'].toLowerCase().includes('warmup') || 
