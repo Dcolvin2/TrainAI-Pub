@@ -157,11 +157,9 @@ export default function ActiveWorkoutPage() {
             <h3 className="text-lg font-semibold text-white mb-3">{sec.title}</h3>
             
             {sec.steps && (
-              <div className="bg-[#1E293B] rounded-xl p-4 mb-4">
-                <ul className="list-disc list-inside text-gray-200 space-y-1">
-                  {sec.steps.map((step, i) => <li key={i}>{step}</li>)}
-                </ul>
-              </div>
+              <ul className="list-disc list-inside text-gray-200 mb-4">
+                {sec.steps.map((step, i) => <li key={i}>{step}</li>)}
+              </ul>
             )}
             
             {sec.exercises?.map(ex => (
