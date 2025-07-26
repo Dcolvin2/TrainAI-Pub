@@ -159,198 +159,91 @@ export default function TodaysWorkoutPage() {
 
   // Handle chat messages
   const handleChatMessage = async (message: string) => {
-    if (!user?.id) {
-      setError('Please log in to use the chat');
-      return;
-    }
+    const lower = message.toLowerCase();
 
-    const timestamp = new Date().toLocaleTimeString();
-    
-    // Add user message to chat
-    setChatMessages(prev => [...prev, { 
-      sender: 'user', 
-      text: message, 
-      timestamp 
-    }]);
+    // 1. Append user message to chat history
+    setChatMessages(prev => [...prev, { sender: 'user', text: message, timestamp: new Date().toLocaleTimeString() }]);
 
-    // Check for Nike keyword
-    const isNike = message.toLowerCase().includes('nike');
-    
-    // Check for exercise instruction request
-    const exerciseInstructionMatch = message.match(/how should i perform (.+?)\?|what is the correct form for (.+?)\?/i);
-    
-    if (isNike) {
-      await handleNikeWorkout();
-    } else if (exerciseInstructionMatch) {
-      const exerciseName = exerciseInstructionMatch[1] || exerciseInstructionMatch[2];
-      await handleExerciseInstruction(exerciseName);
-    } else {
-      await generateWorkoutFromMessage(message);
-    }
-  };
-
-  // Handle Nike workout generation
-  const handleNikeWorkout = async () => {
-    if (!user?.id) return;
-    
-    const timestamp = new Date().toLocaleTimeString();
-    
-    // Get user's last Nike workout for confirmation
-    const profileResponse = await fetch('/api/getNikeProgress', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        userId: user.id
-      })
-    });
-    
-    if (profileResponse.ok) {
-      const profileData = await profileResponse.json();
-      const lastWorkout = profileData.lastWorkout || 0;
-      const nextWorkout = lastWorkout + 1;
-      
-      // Fetch the actual Nike workout data
+    // 2. Handle Nike workout request
+    if (lower.includes('nike')) {
       const { data, error } = await supabase
         .from('nike_workouts')
-        .select('*')
-        .eq('Workout', nextWorkout);
+        .select('Workout, Exercise, Sets, Reps, "Exercise Type"')
+        .eq('Workout', 1); // TEMP: hardcoded for testing. Replace with dynamic later.
 
-      if (error) {
-        console.error('❌ Failed to fetch nike_workouts:', error);
-        setChatMessages(prev => [...prev, { 
-          sender: 'assistant', 
-          text: 'Sorry, I had trouble loading your Nike workout.',
-          timestamp 
-        }]);
+      if (error || !data || data.length === 0) {
+        setChatMessages(prev => [
+          ...prev,
+          { sender: 'assistant', text: "Sorry, I couldn't load your Nike workout.", timestamp: new Date().toLocaleTimeString() },
+        ]);
         return;
       }
 
-      if (data?.length > 0) {
-        setChatMessages(prev => [...prev, { 
-          sender: 'assistant', 
-          text: `Here is your Nike workout #${nextWorkout}. Let's go!`,
-          timestamp 
-        }]);
-        
-        // Convert Nike workout data to our format and set it
-        const nikeWorkout: NikeWorkout = {
-          exercises: data as NikeExercise[],
-          workoutNumber: nextWorkout
-        };
-        setWorkoutData(nikeWorkout);
-      } else {
-        setChatMessages(prev => [...prev, { 
-          sender: 'assistant', 
-          text: 'No Nike workout found for that number.',
-          timestamp 
-        }]);
-      }
-    }
-  };
+      // Format and reply with summary
+      const summary = data
+        .map((ex) => `• ${ex.Exercise}: ${ex.Sets}x${ex.Reps} (${ex['Exercise Type']})`)
+        .join('\n');
 
-  // Handle exercise instruction requests
-  const handleExerciseInstruction = async (exerciseName: string) => {
-    if (!user?.id) return;
-    
-    const timestamp = new Date().toLocaleTimeString();
-    
-    try {
-      // First try to get instruction from database
-      const { data: exerciseData, error } = await supabase
+      setChatMessages(prev => [
+        ...prev,
+        {
+          sender: 'assistant',
+          text: `Here is your Nike Workout:\n${summary}`,
+          timestamp: new Date().toLocaleTimeString()
+        },
+      ]);
+      return;
+    }
+
+    // 3. Handle exercise guidance: "How should I perform Romanian Deadlift?"
+    if (lower.startsWith('how should i perform') || lower.startsWith('how do i do')) {
+      const exerciseName = message.split('perform ')[1] || message.split('do ')[1];
+
+      if (!exerciseName) {
+        setChatMessages(prev => [
+          ...prev,
+          { sender: 'assistant', text: "Can you tell me the exercise you're asking about?", timestamp: new Date().toLocaleTimeString() },
+        ]);
+        return;
+      }
+
+      const { data } = await supabase
         .from('exercise')
         .select('instruction_text')
-        .ilike('name', `%${exerciseName}%`)
-        .single();
-      
-      let instruction = '';
-      
-      if (!error && exerciseData?.instruction_text) {
-        instruction = exerciseData.instruction_text;
+        .ilike('name', `%${exerciseName.trim()}%`)
+        .limit(1);
+
+      if (data && data[0]?.instruction_text) {
+        setChatMessages(prev => [
+          ...prev,
+          { sender: 'assistant', text: data[0].instruction_text, timestamp: new Date().toLocaleTimeString() },
+        ]);
       } else {
-        // Fallback to GPT for generic instruction
-        const response = await fetch('/api/exerciseInstruction', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
+        // fallback
+        setChatMessages(prev => [
+          ...prev,
+          {
+            sender: 'assistant',
+            text: `I couldn't find that in the database, but generally: maintain good form, start light, and control the movement. Let me know the exact name if you want more detail.`,
+            timestamp: new Date().toLocaleTimeString()
           },
-          body: JSON.stringify({
-            exerciseName,
-            userId: user.id
-          })
-        });
-        
-        if (response.ok) {
-          const { instruction: gptInstruction } = await response.json();
-          instruction = gptInstruction;
-        } else {
-          instruction = `For ${exerciseName}: Focus on proper form, controlled movement, and full range of motion. If you're unsure about technique, consider consulting a fitness professional.`;
-        }
+        ]);
       }
-      
-      setChatMessages(prev => [...prev, {
-        sender: 'assistant',
-        text: instruction,
-        timestamp
-      }]);
-      
-    } catch {
-      setChatMessages(prev => [...prev, {
-        sender: 'assistant',
-        text: `I couldn't find specific instructions for ${exerciseName}. Please consult a fitness professional for proper form guidance.`,
-        timestamp
-      }]);
+      return;
     }
+
+    // 4. Default fallback
+    setChatMessages(prev => [
+      ...prev,
+      { sender: 'assistant', text: "I'm still learning. Try asking me for your Nike workout or how to perform an exercise.", timestamp: new Date().toLocaleTimeString() },
+    ]);
   };
 
-  // Generate workout from chat message
-  const generateWorkoutFromMessage = async (message: string) => {
-    if (!user?.id) return;
-    
-    setIsLoading(true);
-    setError('');
-    
-    try {
-      const timestamp = new Date().toLocaleTimeString();
-      
-      const response = await fetch('/api/generateWorkout', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          userId: user.id,
-          minutes: timeAvailable,
-          prompt: message
-        })
-      });
 
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to generate workout');
-      }
 
-      setWorkoutData(data);
-      setChatMessages(prev => [...prev, { 
-        sender: 'assistant', 
-        text: 'Your workout has been generated! Check the workout table below.',
-        timestamp 
-      }]);
-      
-    } catch (err) {
-      console.error('Workout generation error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to generate workout');
-      setChatMessages(prev => [...prev, { 
-        sender: 'assistant', 
-        text: 'Sorry, there was an error generating your workout. Please try again.',
-        timestamp: new Date().toLocaleTimeString()
-      }]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+
+
+
 
 
 
