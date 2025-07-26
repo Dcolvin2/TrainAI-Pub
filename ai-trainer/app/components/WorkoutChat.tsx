@@ -9,7 +9,7 @@ interface Message {
 }
 
 interface WorkoutChatProps {
-  sessionId: string;
+  sessionId?: string;
 }
 
 export function WorkoutChat({ sessionId }: WorkoutChatProps) {

@@ -125,11 +125,7 @@ export default function TodaysWorkoutPage() {
     next();
   };
 
-  // Handle rest timer completion
-  const handleRestTimerComplete = () => {
-    setRestTimerRunning(false);
-    setMainTimerRunning(true);
-  };
+
 
   // Finish workout
   const finishWorkout = async (): Promise<void> => {
