@@ -175,14 +175,14 @@ export default function TodaysWorkoutPage() {
     const isFlaherty = message.toLowerCase().includes('flaherty');
     
     if (isFlaherty) {
-      await handleFlahertyWorkout(message);
+      await handleFlahertyWorkout();
     } else {
       await generateWorkoutFromMessage(message);
     }
   };
 
   // Handle Flaherty workout generation
-  const handleFlahertyWorkout = async (_message: string) => {
+  const handleFlahertyWorkout = async () => {
     if (!user?.id) return;
     
     const timestamp = new Date().toLocaleTimeString();

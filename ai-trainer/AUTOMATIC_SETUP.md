@@ -31,18 +31,28 @@ chmod +x setup-git-hooks.sh
 
 ## What Happens on Every Commit
 
-The pre-commit hook automatically runs:
+**Option 1: Manual Pre-Checks (Recommended)**
+Run before committing:
+```bash
+npm run pre-check
+```
 
-1. **ESLint on staged files** (auto-fixes what it can)
-2. **ESLint on entire project** (catches all issues)
-3. **TypeScript type checking**
-4. **Full build verification**
+This runs:
+1. **ESLint** on entire project
+2. **TypeScript type checking**
+3. **Full build verification**
 
-If any step fails, the commit is blocked with helpful error messages.
+If any step fails, fix the errors before committing.
+
+**Option 2: Git Hooks (Optional)**
+If you set up git hooks with `npm run setup-hooks`, commits will be automatically checked.
 
 ## Commands Available
 
 ```bash
+# Run all pre-checks before committing
+npm run pre-check
+
 # Auto-fix ESLint issues
 npm run auto-fix
 

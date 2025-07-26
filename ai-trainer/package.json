@@ -11,6 +11,7 @@
         "type-check": "tsc --noEmit",
     "pre-commit": "lint-staged",
     "setup-hooks": "chmod +x setup-git-hooks.sh && ./setup-git-hooks.sh",
+    "pre-check": "chmod +x scripts/local-checks.sh && ./scripts/local-checks.sh",
     "auto-fix": "chmod +x scripts/auto-fix.sh && ./scripts/auto-fix.sh",
     "pre-deploy": "chmod +x scripts/pre-deploy.sh && ./scripts/pre-deploy.sh",
     "export": "next build && next export"
