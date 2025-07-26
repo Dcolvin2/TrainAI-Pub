@@ -3,30 +3,20 @@
 
 echo "🔍 Running pre-commit checks..."
 
-# Run ESLint with auto-fix on staged files
-echo "📝 Checking and fixing code style..."
+# Run ESLint on all staged files
+echo "📝 Running ESLint on staged files..."
 npx lint-staged
 
+# Run ESLint on the entire project to catch any issues
+echo "🔍 Running ESLint on entire project..."
+npm run lint
+
 # Run TypeScript type checking
-echo "🔧 Checking TypeScript types..."
+echo "🔧 Running TypeScript type check..."
 npm run type-check
 
-# If TypeScript check fails, prevent commit
-if [ $? -ne 0 ]; then
-    echo "❌ TypeScript errors found. Commit blocked."
-    echo "💡 Run 'npm run type-check' to see details."
-    exit 1
-fi
-
-# Run a quick build check
+# Run build to catch any remaining issues
 echo "🏗️ Running build check..."
-npm run build --silent
-
-# If build fails, prevent commit
-if [ $? -ne 0 ]; then
-    echo "❌ Build errors found. Commit blocked."
-    echo "💡 Run 'npm run build' to see details."
-    exit 1
-fi
+npm run build
 
 echo "✅ All checks passed! Proceeding with commit." 

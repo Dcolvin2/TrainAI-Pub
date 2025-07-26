@@ -1,5 +1,5 @@
 'use client'
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import WorkoutTable from '../components/WorkoutTable';
@@ -182,7 +182,7 @@ export default function TodaysWorkoutPage() {
   };
 
   // Handle Flaherty workout generation
-  const handleFlahertyWorkout = async (message: string) => {
+  const handleFlahertyWorkout = async (_message: string) => {
     if (!user?.id) return;
     
     const timestamp = new Date().toLocaleTimeString();

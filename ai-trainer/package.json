@@ -10,6 +10,7 @@
     "lint:fix": "next lint --fix",
     "type-check": "tsc --noEmit",
     "pre-commit": "lint-staged",
+    "prepare": "husky install",
     "auto-fix": "chmod +x scripts/auto-fix.sh && ./scripts/auto-fix.sh",
     "pre-deploy": "chmod +x scripts/pre-deploy.sh && ./scripts/pre-deploy.sh",
     "export": "next build && next export"
