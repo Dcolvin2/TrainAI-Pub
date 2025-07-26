@@ -105,12 +105,31 @@ export async function POST(req: Request) {
       const nextWorkoutNumber = lastWorkout + 1;
 
       // Get the next Flaherty workout with correct column names
-      const { data: flahertyRows } = await supabase
+      const { data: flahertyRaw } = await supabase
         .from('flaherty_workouts')
         .select('workout, exercise_name, sets, reps, weight, rest_seconds, section')
         .eq('workout', nextWorkoutNumber);
 
-      if (flahertyRows && flahertyRows.length > 0) {
+      if (flahertyRaw && flahertyRaw.length > 0) {
+        // Extract exercise names from Flaherty data
+        const flahertyExercises = flahertyRaw.map(row => row.exercise_name);
+
+        // Cross-reference with exercise table to get metadata
+        const { data: matchedExercises } = await supabase
+          .from('exercise')
+          .select('*')
+          .in('name', flahertyExercises);
+
+        // Merge Flaherty data with exercise metadata
+        const enrichedFlaherty = flahertyRaw.map(row => {
+          const match = matchedExercises?.find(ex => ex.name === row.exercise_name);
+          return {
+            ...row,
+            category: match?.category,
+            equipment_required: match?.equipment_required,
+            primary_muscle: match?.primary_muscle,
+          };
+        });
 
 
         // Get available exercises for Flaherty workout
@@ -129,7 +148,7 @@ export async function POST(req: Request) {
         The user last completed Flaherty workout #${lastWorkout}. This is workout #${nextWorkoutNumber}.`;
         
         userPrompt = `Create a workout plan based on the Flaherty program workout #${nextWorkoutNumber}. 
-        Workout data: ${JSON.stringify(flahertyRows)}. 
+        Workout data: ${JSON.stringify(enrichedFlaherty)}. 
         Format the response as a structured workout with warm-up, main workout, and cool-down sections.
         Total workout time should be ${minutes} minutes.
         

@@ -1,5 +1,5 @@
 'use client'
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import WorkoutTable from '../components/WorkoutTable';
@@ -124,6 +124,8 @@ export default function TodaysWorkoutPage() {
   const [workoutData, setWorkoutData] = useState<WorkoutData | null>(null);
   const [chatMessages, setChatMessages] = useState<Array<{sender: 'user' | 'assistant', text: string, timestamp?: string}>>([]);
   const [waitingForFlahertyConfirmation, setWaitingForFlahertyConfirmation] = useState(false);
+  const [inputText, setInputText] = useState('');
+  const chatHistoryRef = useRef<HTMLDivElement>(null);
 
 
 
@@ -152,6 +154,13 @@ export default function TodaysWorkoutPage() {
       return;
     }
   }, [user, router]);
+
+  // Auto-scroll chat to bottom when new messages are added
+  useEffect(() => {
+    if (chatHistoryRef.current) {
+      chatHistoryRef.current.scrollTop = chatHistoryRef.current.scrollHeight;
+    }
+  }, [chatMessages]);
 
 
 
@@ -415,33 +424,59 @@ export default function TodaysWorkoutPage() {
           </div>
         )}
 
-        {/* Chat History */}
-        {chatMessages.length > 0 && (
-          <div className="bg-[#1E293B] rounded-xl p-4 shadow-md mb-4 max-h-64 overflow-y-auto">
-            <h3 className="text-md font-semibold text-white mb-3">Chat History</h3>
-            <div className="space-y-3">
-              {chatMessages.map((message, index) => (
-                <ChatBubble 
-                  key={index} 
-                  sender={message.sender} 
-                  message={message.text}
-                  timestamp={message.timestamp}
-                />
-              ))}
+        {/* Integrated Chat Container */}
+        <div className="bg-[#1E293B] rounded-xl shadow-md mb-4">
+          <div className="p-4 border-b border-[#334155]">
+            <h3 className="text-md font-semibold text-white">AI Workout Coach</h3>
+          </div>
+          
+          <div className="chat-container">
+            <div className="chat-history" ref={chatHistoryRef}>
+              {chatMessages.length === 0 ? (
+                <div className="text-center text-gray-400 py-8">
+                  <p>Ask your coach anything...</p>
+                  <p className="text-sm mt-2">Try: "I only have 30 minutes" or "Flaherty"</p>
+                </div>
+              ) : (
+                <div className="space-y-3 p-4">
+                  {chatMessages.map((message, index) => (
+                    <ChatBubble 
+                      key={index} 
+                      sender={message.sender} 
+                      message={message.text}
+                      timestamp={message.timestamp}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-[#334155]">
+              <input
+                type="text"
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && inputText.trim() && !isLoading) {
+                    const message = inputText.trim();
+                    setInputText('');
+                    if (waitingForFlahertyConfirmation) {
+                      handleFlahertyConfirmation(message);
+                    } else {
+                      handleChatMessage(message);
+                    }
+                  }
+                }}
+                placeholder={waitingForFlahertyConfirmation 
+                  ? "Type 'yes' or 'no' to confirm..." 
+                  : "Ask your coach anything..."
+                }
+                disabled={isLoading}
+                className="w-full bg-[#0F172A] border border-[#334155] rounded-lg p-3 text-white focus:border-[#22C55E] focus:outline-none disabled:opacity-50"
+              />
             </div>
           </div>
-        )}
-
-        {/* Chat Input */}
-        <ChatBox
-          onSendMessage={waitingForFlahertyConfirmation ? handleFlahertyConfirmation : handleChatMessage}
-          placeholder={waitingForFlahertyConfirmation 
-            ? "Type 'yes' or 'no' to confirm..." 
-            : "Ask me to modify your workout, e.g., 'only have 30 minutes' or type 'Flaherty' for the next workout in the program..."
-          }
-          sendOnEnter={true}
-          disabled={isLoading}
-        />
+        </div>
 
         {/* Generated Workout Display */}
         {workoutData && (
