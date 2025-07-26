@@ -25,6 +25,9 @@ export default function Nav() {
                 <Link href="/dashboard" className="text-sm font-medium text-foreground hover:text-primary transition-colors">
                   Dashboard
                 </Link>
+                <Link href="/todays-workout" className="text-sm font-medium text-foreground hover:text-primary transition-colors">
+                  Today&apos;s Workout
+                </Link>
                 <Link href="/workout/builder" className="text-sm font-medium text-foreground hover:text-primary transition-colors">
                   Workout Builder
                 </Link>
@@ -90,6 +93,13 @@ export default function Nav() {
                     onClick={() => setIsMenuOpen(false)}
                   >
                     Dashboard
+                  </Link>
+                  <Link 
+                    href="/todays-workout" 
+                    className="text-sm font-medium text-foreground hover:text-primary transition-colors"
+                    onClick={() => setIsMenuOpen(false)}
+                  >
+                    Today&apos;s Workout
                   </Link>
                   <Link 
                     href="/workout/builder" 
