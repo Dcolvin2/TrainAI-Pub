@@ -9,21 +9,29 @@ const supabase = createClient(
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
-// Day of week workout logic
+// Day of week workout schedule
+const workoutSchedule = {
+  Monday: 'Legs (e.g., back squat + accessories)',
+  Tuesday: 'Chest (e.g., bench, cable flys, triceps)',
+  Thursday: 'HIIT (WOD style, no Olympic lifts)',
+  Saturday: 'Back + accessories (deadlift, shoulders, rows, biceps)',
+  Wednesday: 'Cardio',
+  Friday: 'Cardio',
+  Sunday: 'Cardio'
+};
+
+// Get workout type from day of week
 const getDayWorkoutType = (day: string) => {
-  const dayLower = day.toLowerCase();
-  if (["monday"].includes(dayLower)) return "legs";
-  if (["tuesday"].includes(dayLower)) return "chest";
-  if (["thursday"].includes(dayLower)) return "hiit";
-  if (["saturday"].includes(dayLower)) return "back";
-  if (["wednesday", "friday", "sunday"].includes(dayLower)) return "cardio";
-  return null;
+  const dayKey = day.charAt(0).toUpperCase() + day.slice(1).toLowerCase();
+  return workoutSchedule[dayKey as keyof typeof workoutSchedule] || null;
 };
 
 // Equipment-aware cardio workout
 const getCardioEquipmentWorkout = (equipmentList: string[]) => {
-  const options = ["treadmill", "rower", "bike", "airdyne", "elliptical"];
-  const available = options.filter((eq) => equipmentList.includes(eq));
+  const cardioOptions = ['Treadmill', 'Bike', 'Rowing Machine', 'Elliptical', 'Air Bike'];
+  const available = cardioOptions.filter(machine => 
+    equipmentList.some(eq => eq.toLowerCase().includes(machine.toLowerCase()))
+  );
   return available.length > 0 ? available[0] : "bodyweight circuit";
 };
 
@@ -58,7 +66,7 @@ const getNextFlahertyWorkout = async (userId: string) => {
 
 export async function POST(req: Request) {
   try {
-    const { userId, minutes, prompt, isFlaherty, workoutType, dayOfWeek } = await req.json();
+    const { userId, minutes, prompt } = await req.json();
 
     if (!userId) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
@@ -73,25 +81,43 @@ export async function POST(req: Request) {
 
     let systemPrompt = '';
     let userPrompt = prompt;
+    let isFlaherty = false;
+    let nextFlahertyWorkout = null;
 
-    // Handle Flaherty workout logic
-    if (isFlaherty) {
-      const flahertyData = await getNextFlahertyWorkout(userId);
+    // Check for Flaherty keyword
+    if (prompt.toLowerCase().includes('flaherty')) {
+      isFlaherty = true;
       
-      if (flahertyData && flahertyData.nextWorkoutRows) {
-        // Use Flaherty workout data
-        const workoutData = flahertyData.nextWorkoutRows;
-        systemPrompt = `You are TrainAI, an expert fitness coach. The user is following the Flaherty workout program. 
+      // Get user's last completed Flaherty workout
+      const { data: userProfile } = await supabase
+        .from('profiles')
+        .select('last_flaherty_workout')
+        .eq('id', userId)
+        .single();
+
+      const lastWorkout = userProfile?.last_flaherty_workout || 0;
+      const nextWorkoutNumber = lastWorkout + 1;
+
+      // Get the next Flaherty workout
+      const { data: flahertyWorkout } = await supabase
+        .from('flaherty_workouts')
+        .select('*')
+        .eq('workout', nextWorkoutNumber);
+
+      if (flahertyWorkout && flahertyWorkout.length > 0) {
+        nextFlahertyWorkout = flahertyWorkout;
+        systemPrompt = `You are TrainAI, an expert fitness coach. The user is following the Flaherty workout program.
         
         User profile: ${profile?.first_name || 'Unknown'}.
         Goals: ${goals?.map(g => g.description).join(', ') || 'None'}.
         Equipment: ${equipment?.map(e => e.name).join(', ') || 'None'}.
         
-        This is Flaherty workout #${flahertyData.nextWorkoutNumber}. Use the provided workout data to create a structured workout plan.`;
+        The user last completed Flaherty workout #${lastWorkout}. This is workout #${nextWorkoutNumber}.`;
         
-        userPrompt = `Create a workout plan based on the Flaherty program workout #${flahertyData.nextWorkoutNumber}. 
-        Workout data: ${JSON.stringify(workoutData)}. 
-        Format the response as a structured workout with warm-up, main workout, and cool-down sections.`;
+        userPrompt = `Create a workout plan based on the Flaherty program workout #${nextWorkoutNumber}. 
+        Workout data: ${JSON.stringify(flahertyWorkout)}. 
+        Format the response as a structured workout with warm-up, main workout, and cool-down sections.
+        Total workout time should be ${minutes} minutes.`;
       } else {
         // Fallback to regular AI generation for Flaherty
         systemPrompt = `You are TrainAI, an expert fitness coach. The user wants a Flaherty-style workout.
@@ -100,19 +126,26 @@ export async function POST(req: Request) {
         Goals: ${goals?.map(g => g.description).join(', ') || 'None'}.
         Equipment: ${equipment?.map(e => e.name).join(', ') || 'None'}.
         
-        Create a Flaherty-style workout that focuses on compound movements, progressive overload, and functional fitness.`;
+        Create a Flaherty-style workout that focuses on compound movements, progressive overload, and functional fitness.
+        Total workout time should be ${minutes} minutes.`;
       }
     } else {
-      // Regular workout generation with day-of-week logic
-      const dayType = workoutType || getDayWorkoutType(dayOfWeek || '');
-      const equipmentList = equipment?.map(e => e.name) || [];
+      // Check for day of week in prompt
+      const dayKeywords = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+      const detectedDay = dayKeywords.find(day => prompt.toLowerCase().includes(day));
       
       let daySpecificPrompt = '';
-      if (dayType === 'cardio') {
-        const cardioEquipment = getCardioEquipmentWorkout(equipmentList);
-        daySpecificPrompt = `Today is ${dayOfWeek || 'today'} and it's a cardio day. Use ${cardioEquipment} for the main cardio session.`;
-      } else if (dayType) {
-        daySpecificPrompt = `Today is ${dayOfWeek || 'today'} and it's a ${dayType} day. Focus the workout on ${dayType} training.`;
+      let equipmentList = equipment?.map(e => e.name) || [];
+      
+      if (detectedDay) {
+        const dayType = getDayWorkoutType(detectedDay);
+        
+        if (dayType && dayType.includes('Cardio')) {
+          const cardioEquipment = getCardioEquipmentWorkout(equipmentList);
+          daySpecificPrompt = `Today is ${detectedDay.charAt(0).toUpperCase() + detectedDay.slice(1)} and it's a cardio day. Use ${cardioEquipment} for the main cardio session.`;
+        } else if (dayType) {
+          daySpecificPrompt = `Today is ${detectedDay.charAt(0).toUpperCase() + detectedDay.slice(1)} and it's a ${dayType} day. Focus the workout on ${dayType} training.`;
+        }
       }
 
       systemPrompt = `You are TrainAI, an expert fitness coach.
@@ -174,9 +207,9 @@ export async function POST(req: Request) {
       prompt: prompt,
       plan: plan,
       used_model: 'gpt-3.5-turbo',
-      is_flaherty: isFlaherty || false,
-      workout_type: workoutType || null,
-      day_of_week: dayOfWeek || null
+      is_flaherty: isFlaherty,
+      workout_type: isFlaherty ? 'flaherty' : null,
+      day_of_week: null
     });
 
     return NextResponse.json(plan);

@@ -31,6 +31,7 @@ interface WorkoutSet {
 interface WorkoutTableProps {
   workout: GeneratedWorkout;
   onFinishWorkout?: () => void;
+  onStopTimer?: () => void;
 }
 
 // Parse workout string into structured data
@@ -203,7 +204,7 @@ const convertWorkoutToSets = (workout: GeneratedWorkout): WorkoutSet[] => {
   return sets;
 };
 
-export default function WorkoutTable({ workout, onFinishWorkout }: WorkoutTableProps) {
+export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer }: WorkoutTableProps) {
   const { user } = useAuth();
   const router = useRouter();
   
@@ -316,6 +317,7 @@ export default function WorkoutTable({ workout, onFinishWorkout }: WorkoutTableP
       }
 
       console.log('Workout completed and saved successfully');
+      onStopTimer?.(); // Stop the timer
       onFinishWorkout?.();
       router.push('/dashboard');
       

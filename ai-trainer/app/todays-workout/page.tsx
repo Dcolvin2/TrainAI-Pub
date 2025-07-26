@@ -61,16 +61,7 @@ interface WorkoutData {
   prompt?: string;
 }
 
-// Day of week workout logic
-const getDayWorkoutType = (day: string) => {
-  const dayLower = day.toLowerCase();
-  if (["monday"].includes(dayLower)) return "legs";
-  if (["tuesday"].includes(dayLower)) return "chest";
-  if (["thursday"].includes(dayLower)) return "hiit";
-  if (["saturday"].includes(dayLower)) return "back";
-  if (["wednesday", "friday", "sunday"].includes(dayLower)) return "cardio";
-  return null;
-};
+
 
 
 
@@ -147,6 +138,13 @@ export default function TodaysWorkoutPage() {
     return () => clearInterval(interval);
   }, [mainTimerRunning]);
 
+  // Start timer when workout data is generated
+  useEffect(() => {
+    if (workoutData && !mainTimerRunning) {
+      setMainTimerRunning(true);
+    }
+  }, [workoutData, mainTimerRunning]);
+
   // Redirect if not authenticated
   useEffect(() => {
     if (!user) {
@@ -197,7 +195,7 @@ export default function TodaysWorkoutPage() {
     setPrompt('');
   };
 
-  // Generate workout with day-of-week logic
+  // Generate workout with intelligent logic
   const generateWorkout = async () => {
     if (!user?.id) {
       setError('Please log in to generate a workout');
@@ -213,12 +211,36 @@ export default function TodaysWorkoutPage() {
         throw new Error('Please enter a prompt or use voice input');
       }
 
-      // Check for Flaherty keyword
+      // Check for Flaherty keyword and handle confirmation
       const isFlaherty = finalPrompt.toLowerCase().includes('flaherty');
       
-      // Get day of week for workout type
-      const today = new Date().toLocaleDateString('en-US', { weekday: 'long' });
-      const workoutType = getDayWorkoutType(today);
+      if (isFlaherty) {
+        // Get user's last Flaherty workout for confirmation
+        const profileResponse = await fetch('/api/getFlahertyProgress', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            userId: user.id
+          })
+        });
+        
+        if (profileResponse.ok) {
+          const profileData = await profileResponse.json();
+          const lastWorkout = profileData.lastWorkout || 0;
+          const nextWorkout = lastWorkout + 1;
+          
+          const confirmed = window.confirm(
+            `You last completed Flaherty workout #${lastWorkout}. Do you want to do workout #${nextWorkout}?`
+          );
+          
+          if (!confirmed) {
+            setIsLoading(false);
+            return;
+          }
+        }
+      }
 
       const response = await fetch('/api/generateWorkout', {
         method: 'POST',
@@ -228,10 +250,7 @@ export default function TodaysWorkoutPage() {
         body: JSON.stringify({
           userId: user.id,
           minutes: timeAvailable,
-          prompt: finalPrompt,
-          isFlaherty,
-          workoutType,
-          dayOfWeek: today
+          prompt: finalPrompt
         })
       });
 
@@ -446,6 +465,9 @@ export default function TodaysWorkoutPage() {
             workout={workoutData} 
             onFinishWorkout={() => {
               setWorkoutData(null);
+            }}
+            onStopTimer={() => {
+              setMainTimerRunning(false);
             }}
           />
         )}
