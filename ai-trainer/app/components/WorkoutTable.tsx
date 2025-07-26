@@ -11,7 +11,7 @@ interface GeneratedWorkout {
   prompt?: string;
 }
 
-interface FlahertyExercise {
+interface NikeExercise {
   Workout: number;
   'Upper / Lower body': string;
   Sets: number;
@@ -20,8 +20,8 @@ interface FlahertyExercise {
   'Exercise Type': string;
 }
 
-interface FlahertyWorkout {
-  exercises: FlahertyExercise[];
+interface NikeWorkout {
+  exercises: NikeExercise[];
   workoutNumber: number;
 }
 
@@ -43,7 +43,7 @@ interface WorkoutSet {
 
 
 interface WorkoutTableProps {
-  workout: GeneratedWorkout | FlahertyWorkout;
+  workout: GeneratedWorkout | NikeWorkout;
   onFinishWorkout?: () => void;
   onStopTimer?: () => void;
 }
@@ -172,13 +172,13 @@ const getDefaultSetCount = (section: 'warmup' | 'workout' | 'cooldown', exercise
   return 4;
 };
 
-// Convert Flaherty workout to GeneratedWorkout format
-const convertFlahertyToGenerated = (flahertyWorkout: FlahertyWorkout): GeneratedWorkout => {
+// Convert Nike workout to GeneratedWorkout format
+const convertNikeToGenerated = (nikeWorkout: NikeWorkout): GeneratedWorkout => {
   const warmup: string[] = [];
   const workout: string[] = [];
   const cooldown: string[] = [];
   
-  flahertyWorkout.exercises.forEach(exercise => {
+  nikeWorkout.exercises.forEach((exercise: NikeExercise) => {
     // Handle different rep formats (numbers vs "30 seconds")
     const repsDisplay = exercise.Reps === '-' ? '1' : exercise.Reps;
     const exerciseString = `${exercise.Exercise}: ${exercise.Sets}x${repsDisplay}`;
@@ -199,14 +199,14 @@ const convertFlahertyToGenerated = (flahertyWorkout: FlahertyWorkout): Generated
     warmup,
     workout,
     cooldown,
-    prompt: `Flaherty Workout ${flahertyWorkout.workoutNumber}`
+    prompt: `Nike Workout ${nikeWorkout.workoutNumber}`
   };
 };
 
 // Convert workout arrays to structured sets with proper set counts
-const convertWorkoutToSets = (workout: GeneratedWorkout | FlahertyWorkout): WorkoutSet[] => {
-  // Convert Flaherty workout to GeneratedWorkout format if needed
-  const generatedWorkout = 'exercises' in workout ? convertFlahertyToGenerated(workout) : workout;
+const convertWorkoutToSets = (workout: GeneratedWorkout | NikeWorkout): WorkoutSet[] => {
+  // Convert Nike workout to GeneratedWorkout format if needed
+  const generatedWorkout = 'exercises' in workout ? convertNikeToGenerated(workout) : workout;
   const sets: WorkoutSet[] = [];
   
   // Process warmup
@@ -350,10 +350,10 @@ export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer }: 
         }
       }
 
-      // Update user's Flaherty progress if this was a Flaherty workout
-      const workoutPrompt = 'prompt' in workout ? workout.prompt : `Flaherty Workout ${('workoutNumber' in workout ? workout.workoutNumber : 0)}`;
-      if (workoutPrompt?.toLowerCase().includes('flaherty')) {
-        await fetch('/api/updateFlahertyProgress', {
+      // Update user's Nike progress if this was a Nike workout
+      const workoutPrompt = 'prompt' in workout ? workout.prompt : `Nike Workout ${('workoutNumber' in workout ? workout.workoutNumber : 0)}`;
+      if (workoutPrompt?.toLowerCase().includes('nike')) {
+        await fetch('/api/updateNikeProgress', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

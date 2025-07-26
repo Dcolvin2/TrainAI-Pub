@@ -17,7 +17,7 @@ interface WorkoutData {
   prompt?: string;
 }
 
-interface FlahertyExercise {
+interface NikeExercise {
   Workout: number;
   'Upper / Lower body': string;
   Sets: number;
@@ -26,8 +26,8 @@ interface FlahertyExercise {
   'Exercise Type': string;
 }
 
-interface FlahertyWorkout {
-  exercises: FlahertyExercise[];
+interface NikeWorkout {
+  exercises: NikeExercise[];
   workoutNumber: number;
 }
 
@@ -88,9 +88,9 @@ export default function TodaysWorkoutPage() {
   // Chat agent state
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [workoutData, setWorkoutData] = useState<WorkoutData | FlahertyWorkout | null>(null);
+  const [workoutData, setWorkoutData] = useState<WorkoutData | NikeWorkout | null>(null);
   const [chatMessages, setChatMessages] = useState<Array<{sender: 'user' | 'assistant', text: string, timestamp?: string}>>([]);
-  const [waitingForFlahertyConfirmation, setWaitingForFlahertyConfirmation] = useState(false);
+  const [waitingForNikeConfirmation, setWaitingForNikeConfirmation] = useState(false);
   const [inputText, setInputText] = useState('');
   const chatHistoryRef = useRef<HTMLDivElement>(null);
 
@@ -122,30 +122,30 @@ export default function TodaysWorkoutPage() {
     }
   }, [user, router]);
 
-  // Load Flaherty workout data
+  // Load Nike workout data
   useEffect(() => {
-    const loadFlahertyWorkout = async () => {
+    const loadNikeWorkout = async () => {
       const { data, error } = await supabase
-        .from('flaherty_workouts')
+        .from('nike_workouts')
         .select('Workout, "Upper / Lower body", Sets, Reps, Exercise, "Exercise Type"')
         .eq('Workout', 1);
 
       if (error) {
-        console.error('❌ Error querying flaherty_workouts:', error);
+        console.error('❌ Error querying nike_workouts:', error);
       } else {
-        console.log('✅ Flaherty Workout 1:', data);
-        // Convert to FlahertyWorkout format and set as workout data
+        console.log('✅ Nike Workout 1:', data);
+        // Convert to NikeWorkout format and set as workout data
         if (data && data.length > 0) {
-          const flahertyWorkout: FlahertyWorkout = {
-            exercises: data as FlahertyExercise[],
+          const nikeWorkout: NikeWorkout = {
+            exercises: data as NikeExercise[],
             workoutNumber: 1
           };
-          setWorkoutData(flahertyWorkout);
+          setWorkoutData(nikeWorkout);
         }
       }
     };
 
-    loadFlahertyWorkout();
+    loadNikeWorkout();
   }, []);
 
   // Auto-scroll chat to bottom when new messages are added
@@ -173,24 +173,30 @@ export default function TodaysWorkoutPage() {
       timestamp 
     }]);
 
-    // Check for Flaherty keyword
-    const isFlaherty = message.toLowerCase().includes('flaherty');
+    // Check for Nike keyword
+    const isNike = message.toLowerCase().includes('nike');
     
-    if (isFlaherty) {
-      await handleFlahertyWorkout();
+    // Check for exercise instruction request
+    const exerciseInstructionMatch = message.match(/how should i perform (.+?)\?|what is the correct form for (.+?)\?/i);
+    
+    if (isNike) {
+      await handleNikeWorkout();
+    } else if (exerciseInstructionMatch) {
+      const exerciseName = exerciseInstructionMatch[1] || exerciseInstructionMatch[2];
+      await handleExerciseInstruction(exerciseName);
     } else {
       await generateWorkoutFromMessage(message);
     }
   };
 
-  // Handle Flaherty workout generation
-  const handleFlahertyWorkout = async () => {
+  // Handle Nike workout generation
+  const handleNikeWorkout = async () => {
     if (!user?.id) return;
     
     const timestamp = new Date().toLocaleTimeString();
     
-    // Get user's last Flaherty workout for confirmation
-    const profileResponse = await fetch('/api/getFlahertyProgress', {
+    // Get user's last Nike workout for confirmation
+    const profileResponse = await fetch('/api/getNikeProgress', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -208,11 +214,65 @@ export default function TodaysWorkoutPage() {
       // Add assistant response to chat
       setChatMessages(prev => [...prev, { 
         sender: 'assistant', 
-        text: `You last completed Flaherty workout ${lastWorkout}. Would you like to do workout ${nextWorkout} today? (yes/no)`,
+        text: `You last completed Nike workout ${lastWorkout}. Would you like to do workout ${nextWorkout} today? (yes/no)`,
         timestamp 
       }]);
       
-      setWaitingForFlahertyConfirmation(true);
+      setWaitingForNikeConfirmation(true);
+    }
+  };
+
+  // Handle exercise instruction requests
+  const handleExerciseInstruction = async (exerciseName: string) => {
+    if (!user?.id) return;
+    
+    const timestamp = new Date().toLocaleTimeString();
+    
+    try {
+      // First try to get instruction from database
+      const { data: exerciseData, error } = await supabase
+        .from('exercise')
+        .select('instruction_text')
+        .ilike('name', `%${exerciseName}%`)
+        .single();
+      
+      let instruction = '';
+      
+      if (!error && exerciseData?.instruction_text) {
+        instruction = exerciseData.instruction_text;
+      } else {
+        // Fallback to GPT for generic instruction
+        const response = await fetch('/api/exerciseInstruction', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            exerciseName,
+            userId: user.id
+          })
+        });
+        
+        if (response.ok) {
+          const { instruction: gptInstruction } = await response.json();
+          instruction = gptInstruction;
+        } else {
+          instruction = `For ${exerciseName}: Focus on proper form, controlled movement, and full range of motion. If you're unsure about technique, consider consulting a fitness professional.`;
+        }
+      }
+      
+      setChatMessages(prev => [...prev, {
+        sender: 'assistant',
+        text: instruction,
+        timestamp
+      }]);
+      
+    } catch (error) {
+      setChatMessages(prev => [...prev, {
+        sender: 'assistant',
+        text: `I couldn't find specific instructions for ${exerciseName}. Please consult a fitness professional for proper form guidance.`,
+        timestamp
+      }]);
     }
   };
 
@@ -264,8 +324,8 @@ export default function TodaysWorkoutPage() {
     }
   };
 
-  // Handle Flaherty confirmation response
-  const handleFlahertyConfirmation = async (response: string) => {
+  // Handle Nike confirmation response
+  const handleNikeConfirmation = async (response: string) => {
     if (!user?.id) return;
     
     const isYes = response.toLowerCase().includes('yes') || response.toLowerCase().includes('y');
@@ -279,9 +339,9 @@ export default function TodaysWorkoutPage() {
         timestamp 
       }]);
       
-      // Generate the Flaherty workout
+      // Generate the Nike workout
       setIsLoading(true);
-      setWaitingForFlahertyConfirmation(false);
+      setWaitingForNikeConfirmation(false);
       
       try {
         const workoutResponse = await fetch('/api/generateWorkout', {
@@ -292,7 +352,7 @@ export default function TodaysWorkoutPage() {
           body: JSON.stringify({
             userId: user.id,
             minutes: timeAvailable,
-            prompt: 'flaherty'
+            prompt: 'nike'
           })
         });
 
@@ -305,7 +365,7 @@ export default function TodaysWorkoutPage() {
         setWorkoutData(data);
         setChatMessages(prev => [...prev, { 
           sender: 'assistant', 
-          text: 'Great! Your Flaherty workout has been generated. Check the workout table below.',
+          text: 'Great! Your Nike workout has been generated. Check the workout table below.',
           timestamp 
         }]);
         
@@ -327,7 +387,7 @@ export default function TodaysWorkoutPage() {
         { sender: 'user', text: response, timestamp },
         { sender: 'assistant', text: 'No problem! You can ask for a different type of workout anytime.', timestamp }
       ]);
-      setWaitingForFlahertyConfirmation(false);
+      setWaitingForNikeConfirmation(false);
     }
   };
 
@@ -439,14 +499,14 @@ export default function TodaysWorkoutPage() {
                   if (e.key === 'Enter' && inputText.trim() && !isLoading) {
                     const message = inputText.trim();
                     setInputText('');
-                    if (waitingForFlahertyConfirmation) {
-                      handleFlahertyConfirmation(message);
-                    } else {
+                                      if (waitingForNikeConfirmation) {
+                    handleNikeConfirmation(message);
+                  } else {
                       handleChatMessage(message);
                     }
                   }
                 }}
-                placeholder={waitingForFlahertyConfirmation 
+                placeholder={waitingForNikeConfirmation 
                   ? "Type 'yes' or 'no' to confirm..." 
                   : "Ask your coach anything..."
                 }
