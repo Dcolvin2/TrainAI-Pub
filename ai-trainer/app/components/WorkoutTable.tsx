@@ -208,48 +208,91 @@ const convertNikeToGenerated = (nikeWorkout: NikeWorkout): GeneratedWorkout => {
 
 // Convert workout arrays to structured sets with proper set counts
 const convertWorkoutToSets = (workout: GeneratedWorkout | NikeWorkout): WorkoutSet[] => {
-  // Convert Nike workout to GeneratedWorkout format if needed
-  const generatedWorkout = 'exercises' in workout ? convertNikeToGenerated(workout) : workout;
   const sets: WorkoutSet[] = [];
   
-  // Process warmup
-  generatedWorkout.warmup.forEach((item: string) => {
-    const baseSet = parseWorkoutString(item, 'warmup');
-    const setCount = getDefaultSetCount('warmup', baseSet.exerciseName);
+  // If it's a Nike workout, use the actual exercise data
+  if ('exercises' in workout) {
+    workout.exercises.forEach((exercise: NikeExercise) => {
+      // Determine section based on exercise type
+      let section: 'warmup' | 'workout' | 'cooldown' = 'workout';
+      if (exercise.exercise_type.toLowerCase().includes('warmup') ||
+          exercise.exercise_type.toLowerCase().includes('mobility')) {
+        section = 'warmup';
+      } else if (exercise.exercise_type.toLowerCase().includes('cooldown') ||
+                 exercise.exercise_type.toLowerCase().includes('stretch')) {
+        section = 'cooldown';
+      }
+      
+      // Parse reps (handle different formats)
+      let prescribedReps = 1;
+      if (exercise.reps !== '-' && !isNaN(Number(exercise.reps))) {
+        prescribedReps = Number(exercise.reps);
+      } else if (exercise.reps.includes('min') || exercise.reps.includes('minute')) {
+        // Convert time-based reps to seconds
+        const timeMatch = exercise.reps.match(/(\d+)/);
+        prescribedReps = timeMatch ? Number(timeMatch[1]) * 60 : 60;
+      }
+      
+      // Create the correct number of sets based on database
+      for (let i = 0; i < exercise.sets; i++) {
+        const set: WorkoutSet = {
+          id: `${exercise.exercise}-${section}-${Date.now()}-${Math.random()}-${i}`,
+          exerciseName: exercise.exercise,
+          setNumber: i + 1,
+          prescribedWeight: 0, // Default to bodyweight
+          prescribedReps: prescribedReps,
+          completed: false,
+          restSeconds: 60, // Default rest
+          section: section,
+          previousWeight: 0,
+          previousReps: prescribedReps
+        };
+        sets.push(set);
+      }
+    });
+  } else {
+    // Handle GeneratedWorkout format (existing logic)
+    const generatedWorkout = workout;
     
-    for (let i = 0; i < setCount; i++) {
-      const set = { ...baseSet };
-      set.id = `${baseSet.exerciseName}-warmup-${Date.now()}-${Math.random()}-${i}`;
-      set.setNumber = i + 1;
-      sets.push(set);
-    }
-  });
-  
-  // Process main workout
-  generatedWorkout.workout.forEach((item: string) => {
-    const baseSet = parseWorkoutString(item, 'workout');
-    const setCount = getDefaultSetCount('workout', baseSet.exerciseName);
+    // Process warmup
+    generatedWorkout.warmup.forEach((item: string) => {
+      const baseSet = parseWorkoutString(item, 'warmup');
+      const setCount = getDefaultSetCount('warmup', baseSet.exerciseName);
+      
+      for (let i = 0; i < setCount; i++) {
+        const set = { ...baseSet };
+        set.id = `${baseSet.exerciseName}-warmup-${Date.now()}-${Math.random()}-${i}`;
+        set.setNumber = i + 1;
+        sets.push(set);
+      }
+    });
     
-    for (let i = 0; i < setCount; i++) {
-      const set = { ...baseSet };
-      set.id = `${baseSet.exerciseName}-workout-${Date.now()}-${Math.random()}-${i}`;
-      set.setNumber = i + 1;
-      sets.push(set);
-    }
-  });
-  
-  // Process cooldown
-  generatedWorkout.cooldown.forEach((item: string) => {
-    const baseSet = parseWorkoutString(item, 'cooldown');
-    const setCount = getDefaultSetCount('cooldown', baseSet.exerciseName);
+    // Process main workout
+    generatedWorkout.workout.forEach((item: string) => {
+      const baseSet = parseWorkoutString(item, 'workout');
+      const setCount = getDefaultSetCount('workout', baseSet.exerciseName);
+      
+      for (let i = 0; i < setCount; i++) {
+        const set = { ...baseSet };
+        set.id = `${baseSet.exerciseName}-workout-${Date.now()}-${Math.random()}-${i}`;
+        set.setNumber = i + 1;
+        sets.push(set);
+      }
+    });
     
-    for (let i = 0; i < setCount; i++) {
-      const set = { ...baseSet };
-      set.id = `${baseSet.exerciseName}-cooldown-${Date.now()}-${Math.random()}-${i}`;
-      set.setNumber = i + 1;
-      sets.push(set);
-    }
-  });
+    // Process cooldown
+    generatedWorkout.cooldown.forEach((item: string) => {
+      const baseSet = parseWorkoutString(item, 'cooldown');
+      const setCount = getDefaultSetCount('cooldown', baseSet.exerciseName);
+      
+      for (let i = 0; i < setCount; i++) {
+        const set = { ...baseSet };
+        set.id = `${baseSet.exerciseName}-cooldown-${Date.now()}-${Math.random()}-${i}`;
+        set.setNumber = i + 1;
+        sets.push(set);
+      }
+    });
+  }
   
   return sets;
 };
