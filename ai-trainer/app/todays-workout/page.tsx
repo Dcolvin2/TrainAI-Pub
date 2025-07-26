@@ -90,7 +90,7 @@ export default function TodaysWorkoutPage() {
   const [error, setError] = useState('');
   const [workoutData, setWorkoutData] = useState<WorkoutData | NikeWorkout | null>(null);
   const [chatMessages, setChatMessages] = useState<Array<{sender: 'user' | 'assistant', text: string, timestamp?: string}>>([]);
-  const [waitingForNikeConfirmation, setWaitingForNikeConfirmation] = useState(false);
+
   const [inputText, setInputText] = useState('');
   const chatHistoryRef = useRef<HTMLDivElement>(null);
 
@@ -211,14 +211,42 @@ export default function TodaysWorkoutPage() {
       const lastWorkout = profileData.lastWorkout || 0;
       const nextWorkout = lastWorkout + 1;
       
-      // Add assistant response to chat
-      setChatMessages(prev => [...prev, { 
-        sender: 'assistant', 
-        text: `You last completed Nike workout ${lastWorkout}. Would you like to do workout ${nextWorkout} today? (yes/no)`,
-        timestamp 
-      }]);
-      
-      setWaitingForNikeConfirmation(true);
+      // Fetch the actual Nike workout data
+      const { data, error } = await supabase
+        .from('nike_workouts')
+        .select('*')
+        .eq('Workout', nextWorkout);
+
+      if (error) {
+        console.error('❌ Failed to fetch nike_workouts:', error);
+        setChatMessages(prev => [...prev, { 
+          sender: 'assistant', 
+          text: 'Sorry, I had trouble loading your Nike workout.',
+          timestamp 
+        }]);
+        return;
+      }
+
+      if (data?.length > 0) {
+        setChatMessages(prev => [...prev, { 
+          sender: 'assistant', 
+          text: `Here is your Nike workout #${nextWorkout}. Let's go!`,
+          timestamp 
+        }]);
+        
+        // Convert Nike workout data to our format and set it
+        const nikeWorkout: NikeWorkout = {
+          exercises: data as NikeExercise[],
+          workoutNumber: nextWorkout
+        };
+        setWorkoutData(nikeWorkout);
+      } else {
+        setChatMessages(prev => [...prev, { 
+          sender: 'assistant', 
+          text: 'No Nike workout found for that number.',
+          timestamp 
+        }]);
+      }
     }
   };
 
@@ -324,72 +352,7 @@ export default function TodaysWorkoutPage() {
     }
   };
 
-  // Handle Nike confirmation response
-  const handleNikeConfirmation = async (response: string) => {
-    if (!user?.id) return;
-    
-    const isYes = response.toLowerCase().includes('yes') || response.toLowerCase().includes('y');
-    const timestamp = new Date().toLocaleTimeString();
-    
-    if (isYes) {
-      // Add user response to chat
-      setChatMessages(prev => [...prev, { 
-        sender: 'user', 
-        text: response,
-        timestamp 
-      }]);
-      
-      // Generate the Nike workout
-      setIsLoading(true);
-      setWaitingForNikeConfirmation(false);
-      
-      try {
-        const workoutResponse = await fetch('/api/generateWorkout', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            userId: user.id,
-            minutes: timeAvailable,
-            prompt: 'nike'
-          })
-        });
 
-        const data = await workoutResponse.json();
-        
-        if (!workoutResponse.ok) {
-          throw new Error(data.error || 'Failed to generate workout');
-        }
-
-        setWorkoutData(data);
-        setChatMessages(prev => [...prev, { 
-          sender: 'assistant', 
-          text: 'Great! Your Nike workout has been generated. Check the workout table below.',
-          timestamp 
-        }]);
-        
-      } catch (err) {
-        console.error('Workout generation error:', err);
-        setError(err instanceof Error ? err.message : 'Failed to generate workout');
-        setChatMessages(prev => [...prev, { 
-          sender: 'assistant', 
-          text: 'Sorry, there was an error generating your workout. Please try again.',
-          timestamp 
-        }]);
-      } finally {
-        setIsLoading(false);
-      }
-    } else {
-      // User declined
-      setChatMessages(prev => [
-        ...prev, 
-        { sender: 'user', text: response, timestamp },
-        { sender: 'assistant', text: 'No problem! You can ask for a different type of workout anytime.', timestamp }
-      ]);
-      setWaitingForNikeConfirmation(false);
-    }
-  };
 
 
 
@@ -499,17 +462,10 @@ export default function TodaysWorkoutPage() {
                   if (e.key === 'Enter' && inputText.trim() && !isLoading) {
                     const message = inputText.trim();
                     setInputText('');
-                                      if (waitingForNikeConfirmation) {
-                    handleNikeConfirmation(message);
-                  } else {
-                      handleChatMessage(message);
-                    }
+                    handleChatMessage(message);
                   }
                 }}
-                placeholder={waitingForNikeConfirmation 
-                  ? "Type 'yes' or 'no' to confirm..." 
-                  : "Ask your coach anything..."
-                }
+                placeholder="Ask your coach anything..."
                 disabled={isLoading}
                 className="w-full bg-[#0F172A] border border-[#334155] rounded-lg p-3 text-white focus:border-[#22C55E] focus:outline-none disabled:opacity-50"
               />
