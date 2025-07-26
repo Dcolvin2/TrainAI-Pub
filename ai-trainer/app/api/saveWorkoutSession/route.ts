@@ -8,7 +8,7 @@ const supabase = createClient(
 
 export async function POST(req: Request) {
   try {
-    const { userId, logs, workoutData, completedAt } = await req.json();
+    const { userId, sessionId, workoutData, completedAt, totalSets, completedSets } = await req.json();
 
     if (!userId) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
@@ -18,10 +18,12 @@ export async function POST(req: Request) {
     const { data, error } = await supabase
       .from('workout_sessions')
       .insert({
+        id: sessionId,
         user_id: userId,
-        logs: logs,
         workout_data: workoutData,
         completed_at: completedAt,
+        total_sets: totalSets || 0,
+        completed_sets: completedSets || 0,
         created_at: new Date().toISOString()
       })
       .select()

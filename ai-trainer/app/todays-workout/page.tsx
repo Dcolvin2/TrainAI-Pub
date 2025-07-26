@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
+import WorkoutTable from '../components/WorkoutTable';
 
 // Type declarations for Web Speech API
 declare global {
@@ -220,11 +221,7 @@ export default function TodaysWorkoutPage() {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
 
-  // Workout tracking state
-  const [exercises, setExercises] = useState<Exercise[]>([]);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [isLoadingWorkout, setIsLoadingWorkout] = useState(true);
-  const [workoutError, setWorkoutError] = useState('');
+
 
   // Timer effect - counts up when running
   useEffect(() => {
@@ -245,48 +242,7 @@ export default function TodaysWorkoutPage() {
     }
   }, [user, router]);
 
-  // Load today's workout
-  useEffect(() => {
-    if (!user?.id) return;
 
-    const loadWorkout = async () => {
-      try {
-        const response = await fetch('/api/currentWorkout');
-        const data = await response.json();
-        
-        if (data.error) {
-          setWorkoutError(data.error);
-          return;
-        }
-        
-        if (data.details && data.details.length > 0) {
-          // Convert to Exercise format for tracking
-          const exerciseList: Exercise[] = data.details.map((ex: { name: string; sets: Array<{ reps: number; prescribed: number; rest: number }> }, index: number) => ({
-            id: `${ex.name}-${index}`,
-            name: ex.name,
-            sets: ex.sets.length,
-            reps: ex.sets[0]?.reps || 8,
-            prescribedWeight: ex.sets[0]?.prescribed || 0,
-            previousWeight: ex.sets[0]?.prescribed ? ex.sets[0].prescribed - 5 : undefined,
-            previousReps: ex.sets[0]?.reps || 8,
-            restSeconds: ex.sets[0]?.rest ?? 60,
-          }));
-          
-          setExercises(exerciseList);
-        } else {
-          // No workout found, could prompt for AI generation
-          setWorkoutError('No workout found for today');
-        }
-      } catch (err) {
-        console.error('Error fetching workout:', err);
-        setWorkoutError('Failed to load workout');
-      } finally {
-        setIsLoadingWorkout(false);
-      }
-    };
-
-    loadWorkout();
-  }, [user?.id]);
 
   // Handle speech recognition
   const startListening = () => {
@@ -374,38 +330,6 @@ export default function TodaysWorkoutPage() {
 
       setWorkoutData(data);
       
-      // Convert the generated workout to exercises format
-      const exerciseList: Exercise[] = data.workout.map((item: string, index: number) => {
-        // Parse workout items like "Back Squat: 3x8 @ 100lb rest 90s"
-        const match = item.match(/^(.+?):\s*(\d+)x(\d+)\s*@\s*(\d+)lb\s*rest\s*(\d+)s?$/i);
-        if (match) {
-          const prescribedWeight = parseInt(match[4]);
-          return {
-            id: `${match[1]}-${index}`,
-            name: match[1],
-            sets: parseInt(match[2]),
-            reps: parseInt(match[3]),
-            prescribedWeight: prescribedWeight,
-            previousWeight: prescribedWeight - 5,
-            previousReps: parseInt(match[3]),
-            restSeconds: parseInt(match[5]),
-          };
-        }
-        // Fallback for non-standard format
-        return {
-          id: `${item}-${index}`,
-          name: item,
-          sets: 3,
-          reps: 8,
-          prescribedWeight: 0,
-          previousWeight: undefined,
-          previousReps: 8,
-          restSeconds: 60,
-        };
-      });
-      
-      setExercises(exerciseList);
-      
     } catch (err) {
       console.error('Workout generation error:', err);
       setError(err instanceof Error ? err.message : 'Failed to generate workout');
@@ -414,70 +338,7 @@ export default function TodaysWorkoutPage() {
     }
   };
 
-  // Log a set and start rest timer
-  const logSet = (exIdx: number, setIdx: number, weight: number, reps: number, rpe = 8): void => {
-    const ex = exercises[exIdx];
-    
-    setLogs((prev) => [
-      ...prev,
-      {
-        exerciseId: ex.id,
-        setIndex: setIdx,
-        actualWeight: weight,
-        actualReps: reps,
-        restSeconds: ex.restSeconds,
-        rpe,
-      },
-    ]);
-    
-    // Start rest timer
-    setRestTimerDuration(ex.restSeconds);
-    setRestTimerRunning(true);
-    setMainTimerRunning(false);
-  };
 
-  // Add a set to an exercise
-  const addSet = (exIdx: number): void => {
-    setExercises(prev =>
-      prev.map((ex, i) =>
-        i === exIdx ? { ...ex, sets: ex.sets + 1 } : ex
-      )
-    );
-  };
-
-  // Finish workout and save to Supabase
-  const finishWorkout = async (): Promise<void> => {
-    if (!user?.id) {
-      alert('Please log in to save your workout');
-      return;
-    }
-    
-    try {
-      // Save workout session to Supabase
-      const response = await fetch('/api/saveWorkoutSession', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          userId: user.id,
-          logs: logs,
-          workoutData: workoutData,
-          completedAt: new Date().toISOString()
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to save workout session');
-      }
-
-      console.log('Workout session saved successfully');
-      router.push('/dashboard');
-    } catch (err) {
-      console.error('Save failed:', err);
-      alert('Failed to save workout. Please try again.');
-    }
-  };
 
   if (!user) {
     return (
@@ -660,99 +521,22 @@ export default function TodaysWorkoutPage() {
         )}
       </section>
 
-      {/* Workout Tracking Section */}
-      <section className="space-y-6 mb-6">
-        {isLoadingWorkout ? (
-          <div className="text-center text-white">Loading workout...</div>
-        ) : workoutError ? (
-          <div className="text-center">
-            <div className="text-red-400 mb-4">{workoutError}</div>
-            <p className="text-gray-400">No workout found for today.</p>
-          </div>
-        ) : exercises.length === 0 ? (
-          <div className="text-center text-gray-400 py-4">
+      {/* Workout Table Section */}
+      <section className="mb-6">
+        {!workoutData ? (
+          <div className="text-center text-gray-400 py-8">
             <p className="mb-4">No workout found for today.</p>
             <p className="text-sm">Use the AI builder above to create your first workout!</p>
           </div>
         ) : (
-          exercises.map((ex, exIdx) => (
-            <article key={ex.id} className="bg-[#1F2937] p-4 rounded-lg">
-              <h2 className="text-2xl font-semibold text-white mb-3">{ex.name}</h2>
-              <table className="w-full text-white">
-                <thead>
-                  <tr className="border-b border-gray-600">
-                    <th className="py-2 text-left">Set</th>
-                    <th className="py-2 text-left">Previous</th>
-                    <th className="py-2 text-left">Lbs</th>
-                    <th className="py-2 text-left">Reps</th>
-                    <th className="py-2 text-center">✓</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Array.from({ length: ex.sets }).map((_, si) => {
-                    const done = logs.some(l => l.exerciseId === ex.id && l.setIndex === si);
-                    const prevLabel = ex.previousWeight
-                      ? `${ex.previousWeight} lb x ${ex.previousReps ?? ex.reps}`
-                      : `—`;
-                    
-                    return (
-                      <tr key={si} className="border-b border-gray-700">
-                        <td className="py-2">{si + 1}</td>
-                        <td className="py-2">{prevLabel}</td>
-                        <td className="py-2">
-                          <input
-                            type="number"
-                            defaultValue={ex.prescribedWeight}
-                            disabled={done}
-                            onBlur={e => logSet(exIdx, si, Number(e.target.value), ex.reps)}
-                            className="w-16 p-1 bg-transparent border border-gray-600 rounded text-white"
-                          />
-                        </td>
-                        <td className="py-2">
-                          <input
-                            type="number"
-                            defaultValue={ex.reps}
-                            disabled={done}
-                            onBlur={e => logSet(exIdx, si, ex.prescribedWeight, Number(e.target.value))}
-                            className="w-12 p-1 bg-transparent border border-gray-600 rounded text-white"
-                          />
-                        </td>
-                        <td className="py-2 text-center">
-                          <input
-                            type="checkbox"
-                            checked={done}
-                            disabled={done}
-                            onChange={() => logSet(exIdx, si, ex.prescribedWeight, ex.reps)}
-                            className="w-4 h-4 text-green-400"
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  <tr>
-                    <td colSpan={5} className="py-2 text-center">
-                      <button
-                        onClick={() => addSet(exIdx)}
-                        className="text-green-400 hover:underline"
-                      >
-                        + ADD SET
-                      </button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </article>
-          ))
+          <WorkoutTable 
+            workout={workoutData} 
+            onFinishWorkout={() => {
+              setWorkoutData(null);
+            }}
+          />
         )}
       </section>
-
-      {/* Complete Workout Button */}
-      <button
-        onClick={finishWorkout}
-        className="w-full bg-red-500 hover:bg-red-600 text-white py-3 rounded-lg mb-8"
-      >
-        Finish Workout
-      </button>
 
       {/* WorkoutChat Section */}
       <section className="bg-[#1F2937] p-4 rounded-lg">
