@@ -1,6 +1,7 @@
 'use client'
 import React, { useState, useEffect, useRef } from 'react';
 import { WorkoutTimer } from '@/app/components/WorkoutTimer';
+import { WorkoutChat } from '@/app/components/WorkoutChat';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 
@@ -332,6 +333,7 @@ export default function TodaysWorkoutPage() {
   };
 
   const finishWorkout = async (): Promise<void> => {
+    if (!user?.id) return;
     try {
       // TODO: Implement saveWorkoutSession API call
       console.log('Saving workout session:', logs);
@@ -445,54 +447,62 @@ export default function TodaysWorkoutPage() {
                 </button>
               </div>
             ) : (
-              <div className="bg-[#1E293B] rounded-xl p-6 shadow-md">
-                {exercises.map((ex, exIdx) => (
-                  <article key={ex.id} className="mb-6">
-                    <h2 className="text-xl font-semibold text-white mb-2">{ex.name}</h2>
+              <>
+                <div className="bg-[#1E293B] rounded-xl p-6 shadow-md">
+                  {exercises.map((ex, exIdx) => (
+                    <article key={ex.id} className="mb-6">
+                      <h2 className="text-xl font-semibold text-white mb-2">{ex.name}</h2>
 
-                    {Array.from({ length: ex.sets }, (_, setIdx) => {
-                      const completed = logs.some((l) => l.exerciseId === ex.id && l.setIndex === setIdx);
-                      return (
-                        <div
-                          key={setIdx}
-                          className={`flex items-center space-x-2 p-2 rounded mb-2 ${
-                            completed ? 'opacity-50 bg-gray-800' : 'bg-[#111827]'
-                          }`}
-                        >
-                          <span className="w-6 text-center text-white">{setIdx + 1}</span>
-                          <input
-                            type="number"
-                            defaultValue={ex.prescribedWeight}
-                            disabled={completed}
-                            onBlur={(e) => logSet(Number(e.target.value), ex.reps)}
-                            className="w-16 p-1 bg-transparent border border-gray-600 rounded text-white text-center"
-                          />
-                          <span className="text-white">×</span>
-                          <span className="w-8 text-center text-white">{ex.reps}</span>
-                          <button
-                            type="button"
-                            onClick={() => logSet(ex.prescribedWeight, ex.reps)}
-                            disabled={completed}
-                            className="ml-auto bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded transition-colors"
+                      {Array.from({ length: ex.sets }, (_, setIdx) => {
+                        const completed = logs.some((l) => l.exerciseId === ex.id && l.setIndex === setIdx);
+                        return (
+                          <div
+                            key={setIdx}
+                            className={`flex items-center space-x-2 p-2 rounded mb-2 ${
+                              completed ? 'opacity-50 bg-gray-800' : 'bg-[#111827]'
+                            }`}
                           >
-                            Done
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </article>
-                ))}
+                            <span className="w-6 text-center text-white">{setIdx + 1}</span>
+                            <input
+                              type="number"
+                              defaultValue={ex.prescribedWeight}
+                              disabled={completed}
+                              onBlur={(e) => logSet(Number(e.target.value), ex.reps)}
+                              className="w-16 p-1 bg-transparent border border-gray-600 rounded text-white text-center"
+                            />
+                            <span className="text-white">×</span>
+                            <span className="w-8 text-center text-white">{ex.reps}</span>
+                            <button
+                              type="button"
+                              onClick={() => logSet(ex.prescribedWeight, ex.reps)}
+                              disabled={completed}
+                              className="ml-auto bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded transition-colors"
+                            >
+                              Done
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </article>
+                  ))}
 
-                <footer className="flex justify-end pt-4 border-t border-gray-700">
-                  <button
-                    type="button"
-                    onClick={finishWorkout}
-                    className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-colors"
-                  >
-                    Finish Workout
-                  </button>
-                </footer>
-              </div>
+                  <footer className="flex justify-end pt-4 border-t border-gray-700">
+                    <button
+                      type="button"
+                      onClick={finishWorkout}
+                      className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-colors"
+                    >
+                      Finish Workout
+                    </button>
+                  </footer>
+                </div>
+
+                {/* AI Chat Feedback Section */}
+                <div className="bg-[#1E293B] rounded-xl p-6 shadow-md">
+                  <h2 className="text-lg font-semibold text-white mb-4">AI Coach Feedback</h2>
+                  <WorkoutChat sessionId={user?.id ?? ''} />
+                </div>
+              </>
             )}
           </div>
         )}
