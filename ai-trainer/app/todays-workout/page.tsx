@@ -68,6 +68,24 @@ interface WorkoutData {
   prompt?: string
 }
 
+interface Exercise {
+  id: string;
+  name: string;
+  sets: number;
+  reps: number;
+  prescribedWeight: number;
+  restSeconds: number;
+}
+
+interface LogEntry {
+  exerciseId: string;
+  setIndex: number;
+  actualWeight: number;
+  actualReps: number;
+  restSeconds: number;
+  rpe: number;
+}
+
 interface ExerciseRow {
   name: string;
   sets: number;
@@ -92,10 +110,15 @@ export default function TodaysWorkoutPage() {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
 
-  // Today's workout state
-  const [rows, setRows] = useState<ExerciseRow[]>([]);
+  // Advanced workout tracking state
+  const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [currentSet, setCurrentSet] = useState<{ exIdx: number; setIdx: number }>({ exIdx: 0, setIdx: 0 });
   const [isLoadingWorkout, setIsLoadingWorkout] = useState(true);
   const [workoutError, setWorkoutError] = useState('');
+  const [timerRunning, setTimerRunning] = useState(false);
+  const [timerDuration, setTimerDuration] = useState(60);
+  const micRef = useRef<HTMLButtonElement>(null);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -116,15 +139,17 @@ export default function TodaysWorkoutPage() {
           return;
         }
         
-        const list: ExerciseRow[] = data.details?.map((ex: { name: string; sets: Array<{ reps: number; prescribed: number; rest: number }> }) => ({
+        // Convert to Exercise format for advanced tracking
+        const exerciseList: Exercise[] = data.details?.map((ex: { name: string; sets: Array<{ reps: number; prescribed: number; rest: number }> }, index: number) => ({
+          id: `${ex.name}-${index}`,
           name: ex.name,
           sets: ex.sets.length,
           reps: ex.sets[0]?.reps || 8,
-          weight: ex.sets[0]?.prescribed || 0,
+          prescribedWeight: ex.sets[0]?.prescribed || 0,
           restSeconds: ex.sets[0]?.rest ?? 60,
         })) || [];
         
-        setRows(list);
+        setExercises(exerciseList);
       })
       .catch(err => {
         console.error('Error fetching workout:', err);
@@ -270,8 +295,54 @@ export default function TodaysWorkoutPage() {
     }
   };
 
-  const updateField = (idx: number, field: keyof ExerciseRow, value: number) => {
-    setRows(old => old.map((r,i) => i === idx ? { ...r, [field]: value } : r));
+  // Advanced workout tracking functions
+  const next = (): void => {
+    setCurrentSet(({ exIdx, setIdx }) => {
+      if (exIdx < exercises.length) {
+        if (setIdx + 1 < exercises[exIdx].sets) {
+          return { exIdx, setIdx: setIdx + 1 };
+        }
+        if (exIdx + 1 < exercises.length) {
+          return { exIdx: exIdx + 1, setIdx: 0 };
+        }
+      }
+      // End of workout
+      setTimerRunning(false);
+      return { exIdx, setIdx };
+    });
+  };
+
+  const logSet = (weight: number, reps: number, rpe = 8): void => {
+    const { exIdx, setIdx } = currentSet;
+    const ex = exercises[exIdx];
+    setLogs((prev) => [
+      ...prev,
+      {
+        exerciseId: ex.id,
+        setIndex: setIdx,
+        actualWeight: weight,
+        actualReps: reps,
+        restSeconds: ex.restSeconds,
+        rpe,
+      },
+    ]);
+    setTimerDuration(ex.restSeconds);
+    setTimerRunning(true);
+    next();
+  };
+
+  const finishWorkout = async (): Promise<void> => {
+    try {
+      // TODO: Implement saveWorkoutSession API call
+      console.log('Saving workout session:', logs);
+      router.push('/dashboard');
+    } catch (err) {
+      console.error('Save failed:', err);
+    }
+  };
+
+  const handleVoice = (): void => {
+    startListening();
   };
 
   if (!user) {
@@ -320,7 +391,36 @@ export default function TodaysWorkoutPage() {
         {/* Current Workout Tab */}
         {activeTab === 'workout' && (
           <div className="space-y-6">
-            <WorkoutTimer />
+            {/* Header with Timer Controls */}
+            <div className="bg-[#1E293B] rounded-xl p-6 shadow-md">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold text-white">Workout Session</h2>
+                <div className="flex space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => setTimerRunning((prev) => !prev)}
+                    className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition-colors"
+                  >
+                    {timerRunning ? 'Pause' : 'Start'}
+                  </button>
+                  <button
+                    type="button"
+                    ref={micRef}
+                    onClick={handleVoice}
+                    className={`p-2 rounded-lg transition-colors ${
+                      isListening 
+                        ? 'bg-red-500 text-white' 
+                        : 'bg-gray-700 text-white hover:bg-gray-600'
+                    }`}
+                    aria-label="Voice input"
+                  >
+                    🎤
+                  </button>
+                </div>
+              </div>
+
+              <WorkoutTimer />
+            </div>
 
             {isLoadingWorkout ? (
               <div className="text-center text-white">Loading workout...</div>
@@ -334,7 +434,7 @@ export default function TodaysWorkoutPage() {
                   Create New Workout
                 </button>
               </div>
-            ) : rows.length === 0 ? (
+            ) : exercises.length === 0 ? (
               <div className="text-center text-gray-400 py-8">
                 <p className="mb-4">No workout found for today.</p>
                 <button
@@ -346,60 +446,52 @@ export default function TodaysWorkoutPage() {
               </div>
             ) : (
               <div className="bg-[#1E293B] rounded-xl p-6 shadow-md">
-                <table className="w-full text-left text-gray-200">
-                  <thead>
-                    <tr className="border-b border-gray-700">
-                      <th className="py-2">Exercise</th>
-                      <th>Sets</th>
-                      <th>Reps</th>
-                      <th>Weight</th>
-                      <th>Rest (s)</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-700">
-                    {rows.map((r, i) => (
-                      <tr key={r.name+i} className="hover:bg-gray-800">
-                        <td className="py-3 text-white">{r.name}</td>
-                        <td>
+                {exercises.map((ex, exIdx) => (
+                  <article key={ex.id} className="mb-6">
+                    <h2 className="text-xl font-semibold text-white mb-2">{ex.name}</h2>
+
+                    {Array.from({ length: ex.sets }, (_, setIdx) => {
+                      const completed = logs.some((l) => l.exerciseId === ex.id && l.setIndex === setIdx);
+                      return (
+                        <div
+                          key={setIdx}
+                          className={`flex items-center space-x-2 p-2 rounded mb-2 ${
+                            completed ? 'opacity-50 bg-gray-800' : 'bg-[#111827]'
+                          }`}
+                        >
+                          <span className="w-6 text-center text-white">{setIdx + 1}</span>
                           <input
                             type="number"
-                            value={r.sets}
-                            onChange={e => updateField(i, 'sets', +e.target.value)}
-                            className="w-12 bg-transparent border border-gray-600 rounded text-center text-white p-1 focus:ring-2 focus:ring-green-400"
+                            defaultValue={ex.prescribedWeight}
+                            disabled={completed}
+                            onBlur={(e) => logSet(Number(e.target.value), ex.reps)}
+                            className="w-16 p-1 bg-transparent border border-gray-600 rounded text-white text-center"
                           />
-                        </td>
-                        <td>
-                          <input
-                            type="number"
-                            value={r.reps}
-                            onChange={e => updateField(i, 'reps', +e.target.value)}
-                            className="w-12 bg-transparent border border-gray-600 rounded text-center text-white p-1 focus:ring-2 focus:ring-green-400"
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="number"
-                            value={r.weight}
-                            onChange={e => updateField(i, 'weight', +e.target.value)}
-                            className="w-16 bg-transparent border border-gray-600 rounded text-center text-white p-1 focus:ring-2 focus:ring-green-400"
-                          />
-                        </td>
-                        <td className="flex items-center space-x-1">
-                          <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <circle cx="12" cy="12" r="10" />
-                            <polyline points="12,6 12,12 16,14" />
-                          </svg>
-                          <input
-                            type="number"
-                            value={r.restSeconds}
-                            onChange={e => updateField(i, 'restSeconds', +e.target.value)}
-                            className="w-12 bg-transparent border border-gray-600 rounded text-center text-white p-1 focus:ring-2 focus:ring-green-400"
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                          <span className="text-white">×</span>
+                          <span className="w-8 text-center text-white">{ex.reps}</span>
+                          <button
+                            type="button"
+                            onClick={() => logSet(ex.prescribedWeight, ex.reps)}
+                            disabled={completed}
+                            className="ml-auto bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded transition-colors"
+                          >
+                            Done
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </article>
+                ))}
+
+                <footer className="flex justify-end pt-4 border-t border-gray-700">
+                  <button
+                    type="button"
+                    onClick={finishWorkout}
+                    className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-colors"
+                  >
+                    Finish Workout
+                  </button>
+                </footer>
               </div>
             )}
           </div>
