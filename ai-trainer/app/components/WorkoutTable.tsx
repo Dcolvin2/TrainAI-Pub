@@ -26,14 +26,7 @@ interface WorkoutSet {
   section: 'warmup' | 'workout' | 'cooldown';
 }
 
-interface WorkoutSession {
-  id: string;
-  userId: string;
-  workoutData: GeneratedWorkout;
-  completedAt: string;
-  totalSets: number;
-  completedSets: number;
-}
+
 
 interface WorkoutTableProps {
   workout: GeneratedWorkout;

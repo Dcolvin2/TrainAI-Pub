@@ -52,25 +52,7 @@ interface SpeechRecognitionErrorEvent extends Event {
   message: string;
 }
 
-interface Exercise {
-  id: string;
-  name: string;
-  sets: number;
-  reps: number;
-  prescribedWeight: number;
-  previousWeight?: number;
-  previousReps?: number;
-  restSeconds: number;
-}
 
-interface LogEntry {
-  exerciseId: string;
-  setIndex: number;
-  actualWeight: number;
-  actualReps: number;
-  restSeconds: number;
-  rpe: number;
-}
 
 interface WorkoutData {
   warmup: string[];
@@ -210,7 +192,7 @@ export default function TodaysWorkoutPage() {
   const [timeAvailable, setTimeAvailable] = useState(45); // minutes, default
   const [mainTimerRunning, setMainTimerRunning] = useState(false);
   const [restTimerRunning, setRestTimerRunning] = useState(false);
-  const [restTimerDuration, setRestTimerDuration] = useState(60);
+  const [restTimerDuration] = useState(60);
   
   // Chat agent state
   const [prompt, setPrompt] = useState('');
