@@ -156,6 +156,133 @@ export default function TodaysWorkoutPage() {
     }
   }, [chatMessages]);
 
+  // Day-of-week workout mapping
+  const workoutMap = {
+    monday: "Back Squat",
+    tuesday: "Bench Press",
+    thursday: "HIIT",
+    saturday: "Deadlift"
+  };
+
+  const upperMuscles = ["Chest", "Shoulders", "Triceps"];
+  const lowerMuscles = ["Hamstrings", "Quadriceps", "Glutes"];
+
+  const getMusclesForLift = (lift: string) => {
+    switch (lift) {
+      case "Bench Press":
+        return upperMuscles;
+      case "Back Squat":
+      case "Deadlift":
+        return lowerMuscles;
+      default:
+        return [];
+    }
+  };
+
+  // Handle day-of-week workout requests
+  const handleDayRequest = async (day: string, userId: string, timeLimit: number = 45) => {
+    const capitalizedDay = day.charAt(0).toUpperCase() + day.slice(1);
+    const coreLift = workoutMap[day as keyof typeof workoutMap];
+    
+    if (!coreLift) {
+      setChatMessages(prev => [
+        ...prev,
+        { sender: 'assistant', text: `${capitalizedDay} is a rest day. Try another day of the week!`, timestamp: new Date().toLocaleTimeString() },
+      ]);
+      return;
+    }
+
+    const muscleGroups = getMusclesForLift(coreLift);
+
+    try {
+      // Get user profile
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("equipment")
+        .eq("id", userId)
+        .single();
+
+      const availableEquipment = profile?.equipment || [];
+
+      // Pull accessories from exercises table
+      const { data: accessories } = await supabase
+        .from("exercises")
+        .select("*")
+        .in("primary_muscle", muscleGroups)
+        .eq("is_main_lift", false);
+
+      // Filter by available equipment if we have accessories
+      let filteredAccessories = accessories || [];
+      if (availableEquipment.length > 0) {
+        filteredAccessories = filteredAccessories.filter(acc => 
+          !acc.equipment_required || 
+          availableEquipment.some((eq: string) => acc.equipment_required.includes(eq))
+        );
+      }
+
+      // Estimate how many we can include
+      const totalMinutes = timeLimit;
+      const minutesPerExercise = 5;
+      const accessoryCount = Math.floor((totalMinutes - 10) / minutesPerExercise);
+
+      const selectedAccessories = filteredAccessories.slice(0, accessoryCount);
+
+      const finalWorkout = [
+        {
+          name: coreLift,
+          is_main_lift: true,
+          sets: 4,
+          reps: 8,
+          exercise_type: 'strength'
+        },
+        ...selectedAccessories.map(a => ({
+          name: a.name,
+          is_main_lift: false,
+          sets: 3,
+          reps: 12,
+          exercise_type: 'accessory'
+        }))
+      ];
+
+      // Save to workouts table
+      await supabase.from("workouts").insert({
+        user_id: userId,
+        program_name: "DayOfWeek",
+        workout_type: `${capitalizedDay} Workout`,
+        date: new Date().toISOString().split("T")[0],
+        created_at: new Date(),
+        main_lift: coreLift,
+        accessory_lifts: JSON.stringify(selectedAccessories.map(e => e.name))
+      });
+
+      // Create workout summary for chat
+      const accessoryList = selectedAccessories.map(a => `• ${a.name}: 3x12`).join('\n');
+      const summary = `${capitalizedDay} Workout:\n\nMain Lift:\n• ${coreLift}: 4x8\n\nAccessories:\n${accessoryList}`;
+
+      setChatMessages(prev => [
+        ...prev,
+        { sender: 'assistant', text: summary, timestamp: new Date().toLocaleTimeString() },
+      ]);
+
+      // Convert to workout data format for the table
+      const workoutData: WorkoutData = {
+        warmup: [],
+        workout: finalWorkout.map(ex => `${ex.name}: ${ex.sets}x${ex.reps}`),
+        cooldown: [],
+        prompt: `${capitalizedDay} Day-of-Week Workout`
+      };
+
+      setWorkoutData(workoutData);
+
+    } catch (err) {
+      console.error('Error creating day-of-week workout:', err);
+      setChatMessages(prev => [
+        ...prev,
+        { sender: 'assistant', text: `Sorry, I couldn't create your ${capitalizedDay} workout. Please try again.`, timestamp: new Date().toLocaleTimeString() },
+      ]);
+    }
+  };
+
 
 
   // Handle chat messages
@@ -277,10 +404,18 @@ export default function TodaysWorkoutPage() {
       return;
     }
 
-    // 4. Default fallback
+    // 4. Handle day-of-week workout requests
+    const dayMatch = lower.match(/(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/);
+    if (dayMatch && user?.id) {
+      const day = dayMatch[1];
+      await handleDayRequest(day, user.id, timeAvailable);
+      return;
+    }
+
+    // 5. Default fallback
     setChatMessages(prev => [
       ...prev,
-      { sender: 'assistant', text: "I'm still learning. Try asking me for your Nike workout or how to perform an exercise.", timestamp: new Date().toLocaleTimeString() },
+      { sender: 'assistant', text: "I'm still learning. Try asking me for your Nike workout, a day of the week, or how to perform an exercise.", timestamp: new Date().toLocaleTimeString() },
     ]);
   };
 
