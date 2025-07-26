@@ -78,32 +78,34 @@ interface WorkoutData {
   prompt?: string;
 }
 
-// Simple Timer Component
-function WorkoutTimer({ duration, running, onExpire, className = '' }: { 
-  duration: number; 
+// Day of week workout logic
+const getDayWorkoutType = (day: string) => {
+  const dayLower = day.toLowerCase();
+  if (["monday"].includes(dayLower)) return "legs";
+  if (["tuesday"].includes(dayLower)) return "chest";
+  if (["thursday"].includes(dayLower)) return "hiit";
+  if (["saturday"].includes(dayLower)) return "back";
+  if (["wednesday", "friday", "sunday"].includes(dayLower)) return "cardio";
+  return null;
+};
+
+// Equipment-aware cardio workout
+const getCardioEquipmentWorkout = (equipmentList: string[]) => {
+  const options = ["treadmill", "rower", "bike", "airdyne", "elliptical"];
+  const available = options.filter((eq) => equipmentList.includes(eq));
+  return available.length > 0 ? available[0] : "bodyweight circuit";
+};
+
+// Simple Timer Component - Counts UP from 0
+function WorkoutTimer({ elapsedTime, running, onToggle, className = '' }: { 
+  elapsedTime: number; 
   running: boolean; 
-  onExpire: () => void;
+  onToggle: () => void;
   className?: string;
 }) {
-  const [seconds, setSeconds] = useState(duration);
-
-  useEffect(() => {
-    if (!running) return;
-    const id = setInterval(() => {
-      setSeconds(s => {
-        if (s <= 1) {
-          onExpire();
-          return 0;
-        }
-        return s - 1;
-      });
-    }, 1000);
-    return () => clearInterval(id);
-  }, [running, onExpire]);
-
-  const hh = String(Math.floor(seconds / 3600)).padStart(2, '0');
-  const mm = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
-  const ss = String(seconds % 60).padStart(2, '0');
+  const hh = String(Math.floor(elapsedTime / 3600)).padStart(2, '0');
+  const mm = String(Math.floor((elapsedTime % 3600) / 60)).padStart(2, '0');
+  const ss = String(elapsedTime % 60).padStart(2, '0');
 
   return (
     <div className={`bg-[#1E293B] rounded-xl p-6 shadow-md ${className}`}>
@@ -111,7 +113,7 @@ function WorkoutTimer({ duration, running, onExpire, className = '' }: {
         <h2 className="text-xl font-semibold text-white">Workout Timer</h2>
         <div className="flex items-center space-x-3">
           <button
-            onClick={() => {/* Timer toggle handled by parent */}}
+            onClick={onToggle}
             className="p-2 text-white bg-green-500 rounded-full hover:bg-green-600 transition-colors"
           >
             {running ? (
@@ -207,12 +209,18 @@ export default function TodaysWorkoutPage() {
   const { user } = useAuth();
   const router = useRouter();
   
+  // Timer state - counts UP from 0
+  const [elapsedTime, setElapsedTime] = useState(0); // seconds
+  const [timeAvailable, setTimeAvailable] = useState(45); // minutes, default
+  const [mainTimerRunning, setMainTimerRunning] = useState(false);
+  const [restTimerRunning, setRestTimerRunning] = useState(false);
+  const [restTimerDuration, setRestTimerDuration] = useState(60);
+  
   // Chat agent state
   const [prompt, setPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [workoutData, setWorkoutData] = useState<WorkoutData | null>(null);
-  const [minutes, setMinutes] = useState(30);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
@@ -220,13 +228,19 @@ export default function TodaysWorkoutPage() {
   // Workout tracking state
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
-
   const [isLoadingWorkout, setIsLoadingWorkout] = useState(true);
   const [workoutError, setWorkoutError] = useState('');
-  const [mainTimerRunning, setMainTimerRunning] = useState(false);
-  const [restTimerRunning, setRestTimerRunning] = useState(false);
-  const [restTimerDuration, setRestTimerDuration] = useState(60);
-  const [duration] = useState(45 * 60); // 45 minutes default
+
+  // Timer effect - counts up when running
+  useEffect(() => {
+    if (!mainTimerRunning) return;
+    
+    const interval = setInterval(() => {
+      setElapsedTime((prev) => prev + 1);
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [mainTimerRunning]);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -319,7 +333,7 @@ export default function TodaysWorkoutPage() {
     setPrompt('');
   };
 
-  // Generate workout
+  // Generate workout with day-of-week logic
   const generateWorkout = async () => {
     if (!user?.id) {
       setError('Please log in to generate a workout');
@@ -335,6 +349,13 @@ export default function TodaysWorkoutPage() {
         throw new Error('Please enter a prompt or use voice input');
       }
 
+      // Check for Flaherty keyword
+      const isFlaherty = finalPrompt.toLowerCase().includes('flaherty');
+      
+      // Get day of week for workout type
+      const today = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+      const workoutType = getDayWorkoutType(today);
+
       const response = await fetch('/api/generateWorkout', {
         method: 'POST',
         headers: {
@@ -342,8 +363,11 @@ export default function TodaysWorkoutPage() {
         },
         body: JSON.stringify({
           userId: user.id,
-          minutes,
-          prompt: finalPrompt
+          minutes: timeAvailable,
+          prompt: finalPrompt,
+          isFlaherty,
+          workoutType,
+          dayOfWeek: today
         })
       });
 
@@ -394,8 +418,6 @@ export default function TodaysWorkoutPage() {
       setIsLoading(false);
     }
   };
-
-
 
   // Log a set and start rest timer
   const logSet = (exIdx: number, setIdx: number, weight: number, reps: number, rpe = 8): void => {
@@ -484,7 +506,7 @@ export default function TodaysWorkoutPage() {
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 space-y-2 sm:space-y-0">
         <h1 className="text-3xl font-bold text-white">Today&apos;s Workout</h1>
         <div className="flex items-center space-x-4">
-          <span className="text-white">Time Available: 45 min</span>
+          <span className="text-white">Time Available: {timeAvailable} min</span>
           <button
             onClick={() => setMainTimerRunning((prev) => !prev)}
             className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg"
@@ -503,9 +525,9 @@ export default function TodaysWorkoutPage() {
 
       {/* Main Workout Timer */}
       <WorkoutTimer 
-        duration={duration} 
+        elapsedTime={elapsedTime}
         running={mainTimerRunning} 
-        onExpire={() => setMainTimerRunning(false)} 
+        onToggle={() => setMainTimerRunning(!mainTimerRunning)} 
         className="mb-6" 
       />
 
@@ -536,8 +558,8 @@ export default function TodaysWorkoutPage() {
             type="number"
             min={5}
             max={120}
-            value={minutes}
-            onChange={(e) => setMinutes(Number(e.target.value))}
+            value={timeAvailable}
+            onChange={(e) => setTimeAvailable(Number(e.target.value))}
             className="w-20 bg-[#1E293B] border border-[#334155] px-3 py-2 rounded-lg text-white text-center"
           />
           <span className="text-gray-400 text-sm">minutes</span>
@@ -557,7 +579,7 @@ export default function TodaysWorkoutPage() {
               ref={textareaRef}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Tell me what workout you want to do today. For example: 'I want a chest and triceps workout with dumbbells' or 'Give me a 30-minute cardio session'..."
+              placeholder="Tell me what workout you want to do today. For example: 'I want a chest and triceps workout with dumbbells' or 'Give me a 30-minute cardio session' or type 'Flaherty' for the next workout in the program..."
               className="w-full h-24 bg-[#0F172A] border border-[#334155] rounded-lg p-3 text-white resize-none focus:border-[#22C55E] focus:outline-none text-sm"
             />
             <button
