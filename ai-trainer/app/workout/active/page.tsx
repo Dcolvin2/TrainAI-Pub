@@ -49,9 +49,9 @@ export default function ActiveWorkoutPage() {
         if (Array.isArray(workout.details)) {
           secs.push({
             title: 'Main Workout',
-            exercises: workout.details.map((ex: any) => ({
+            exercises: workout.details.map((ex: { name: string; sets: Array<{ previous: number | null; prescribed: number; reps: number; rest: number; rpe: number }> }) => ({
               name: ex.name,
-              sets: ex.sets.map((st: any, idx: number) => ({
+              sets: ex.sets.map((st: { previous: number | null; prescribed: number; reps: number; rest: number; rpe: number }, idx: number) => ({
                 setNumberLabel: String(idx + 1),
                 previousWeight: st.previous,
                 prescribedWeight: st.prescribed,
@@ -135,7 +135,7 @@ export default function ActiveWorkoutPage() {
       <div className="min-h-screen bg-[#0F172A] p-6">
         <div className="max-w-lg mx-auto text-center">
           <h1 className="text-2xl font-bold text-white mb-4">No Active Workout</h1>
-          <p className="text-gray-400 mb-6">You don't have an active workout to track.</p>
+          <p className="text-gray-400 mb-6">You don&apos;t have an active workout to track.</p>
           <button
             onClick={() => router.push('/workout/builder')}
             className="bg-[#22C55E] px-6 py-3 rounded-xl text-white font-semibold hover:bg-[#16a34a] transition-colors"

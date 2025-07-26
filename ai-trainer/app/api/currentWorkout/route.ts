@@ -48,7 +48,7 @@ export async function GET(req: Request) {
 
       return {
         name: exerciseName,
-        sets: Array.from({ length: parseInt(sets) || 1 }, (_, i) => ({
+        sets: Array.from({ length: parseInt(sets) || 1 }, () => ({
           previous: null,
           prescribed: parseInt(weight) || 0,
           reps: parseInt(reps) || 8,
