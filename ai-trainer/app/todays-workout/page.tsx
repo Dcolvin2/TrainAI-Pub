@@ -191,7 +191,7 @@ export default function TodaysWorkoutPage() {
   const [elapsedTime, setElapsedTime] = useState(0); // seconds
   const [timeAvailable, setTimeAvailable] = useState(45); // minutes, default
   const [mainTimerRunning, setMainTimerRunning] = useState(false);
-  const [restTimerRunning, setRestTimerRunning] = useState(false);
+  const [restTimerRunning] = useState(false);
   const [restTimerDuration] = useState(60);
   
   // Chat agent state
