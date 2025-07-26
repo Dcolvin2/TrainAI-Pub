@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import WorkoutTable from '../components/WorkoutTable';
-import ChatBox from '../components/ChatBox';
+
 import ChatBubble from '../components/ChatBubble';
 
 // Type declarations for Web Speech API
@@ -115,8 +115,8 @@ export default function TodaysWorkoutPage() {
   const [elapsedTime, setElapsedTime] = useState(0); // seconds
   const [timeAvailable, setTimeAvailable] = useState(45); // minutes, default
   const [mainTimerRunning, setMainTimerRunning] = useState(false);
-  const [restTimerRunning] = useState(false);
-  const [restTimerDuration] = useState(60);
+  const [restTimerRunning, setRestTimerRunning] = useState(false);
+  const [restTimerDuration, setRestTimerDuration] = useState(60);
   
   // Chat agent state
   const [isLoading, setIsLoading] = useState(false);
@@ -435,7 +435,7 @@ export default function TodaysWorkoutPage() {
               {chatMessages.length === 0 ? (
                 <div className="text-center text-gray-400 py-8">
                   <p>Ask your coach anything...</p>
-                  <p className="text-sm mt-2">Try: "I only have 30 minutes" or "Flaherty"</p>
+                  <p className="text-sm mt-2">Try: &quot;I only have 30 minutes&quot; or &quot;Flaherty&quot;</p>
                 </div>
               ) : (
                 <div className="space-y-3 p-4">
