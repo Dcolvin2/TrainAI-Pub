@@ -175,36 +175,7 @@ const getDefaultSetCount = (section: 'warmup' | 'workout' | 'cooldown', exercise
   return 4;
 };
 
-// Convert Nike workout to GeneratedWorkout format
-const convertNikeToGenerated = (nikeWorkout: NikeWorkout): GeneratedWorkout => {
-  const warmup: string[] = [];
-  const workout: string[] = [];
-  const cooldown: string[] = [];
-  
-            nikeWorkout.exercises.forEach((exercise: NikeExercise) => {
-            // Handle different rep formats (numbers vs "30 seconds")
-            const repsDisplay = exercise.reps === '-' ? '1' : exercise.reps;
-            const exerciseString = `${exercise.exercise}: ${exercise.sets}x${repsDisplay}`;
 
-            // Categorize based on exercise type
-            if (exercise.exercise_type.toLowerCase().includes('warmup') ||
-                exercise.exercise_type.toLowerCase().includes('mobility')) {
-              warmup.push(exerciseString);
-            } else if (exercise.exercise_type.toLowerCase().includes('cooldown') ||
-                       exercise.exercise_type.toLowerCase().includes('stretch')) {
-              cooldown.push(exerciseString);
-            } else {
-              workout.push(exerciseString);
-            }
-          });
-  
-  return {
-    warmup,
-    workout,
-    cooldown,
-    prompt: `Nike Workout ${nikeWorkout.workoutNumber}`
-  };
-};
 
 // Convert workout arrays to structured sets with proper set counts
 const convertWorkoutToSets = (workout: GeneratedWorkout | NikeWorkout): WorkoutSet[] => {
