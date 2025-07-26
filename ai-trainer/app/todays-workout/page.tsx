@@ -224,7 +224,7 @@ export default function TodaysWorkoutPage() {
   const [mainTimerRunning, setMainTimerRunning] = useState(false);
   const [restTimerRunning, setRestTimerRunning] = useState(false);
   const [restTimerDuration, setRestTimerDuration] = useState(60);
-  const [duration, setDuration] = useState(45 * 60); // 45 minutes default
+  const [duration] = useState(45 * 60); // 45 minutes default
 
   // Redirect if not authenticated
   useEffect(() => {
