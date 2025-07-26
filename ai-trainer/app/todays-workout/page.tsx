@@ -124,6 +124,8 @@ export default function TodaysWorkoutPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
+  const [chatMessages, setChatMessages] = useState<Array<{role: 'user' | 'assistant', content: string}>>([]);
+  const [waitingForFlahertyConfirmation, setWaitingForFlahertyConfirmation] = useState(false);
 
 
 
@@ -196,6 +198,59 @@ export default function TodaysWorkoutPage() {
   };
 
   // Generate workout with intelligent logic
+  const handleFlahertyConfirmation = async (response: string) => {
+    if (!user?.id) return;
+    
+    const isYes = response.toLowerCase().includes('yes') || response.toLowerCase().includes('y');
+    
+    if (isYes) {
+      // Add user response to chat
+      setChatMessages(prev => [...prev, { role: 'user', content: response }]);
+      
+      // Generate the Flaherty workout
+      setIsLoading(true);
+      setWaitingForFlahertyConfirmation(false);
+      
+      try {
+        const workoutResponse = await fetch('/api/generateWorkout', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            userId: user.id,
+            minutes: timeAvailable,
+            prompt: 'flaherty'
+          })
+        });
+
+        const data = await workoutResponse.json();
+        
+        if (!workoutResponse.ok) {
+          throw new Error(data.error || 'Failed to generate workout');
+        }
+
+        setWorkoutData(data);
+        setChatMessages(prev => [...prev, { role: 'assistant', content: 'Great! Your Flaherty workout has been generated. Check the workout table below.' }]);
+        
+      } catch (err) {
+        console.error('Workout generation error:', err);
+        setError(err instanceof Error ? err.message : 'Failed to generate workout');
+        setChatMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, there was an error generating your workout. Please try again.' }]);
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+      // User declined
+      setChatMessages(prev => [
+        ...prev, 
+        { role: 'user', content: response },
+        { role: 'assistant', content: 'No problem! You can ask for a different type of workout anytime.' }
+      ]);
+      setWaitingForFlahertyConfirmation(false);
+    }
+  };
+
   const generateWorkout = async () => {
     if (!user?.id) {
       setError('Please log in to generate a workout');
@@ -231,17 +286,24 @@ export default function TodaysWorkoutPage() {
           const lastWorkout = profileData.lastWorkout || 0;
           const nextWorkout = lastWorkout + 1;
           
-          const confirmed = window.confirm(
-            `You last completed Flaherty workout #${lastWorkout}. Do you want to do workout #${nextWorkout}?`
-          );
+          // Add user message and assistant response to chat
+          setChatMessages(prev => [
+            ...prev,
+            { role: 'user', content: finalPrompt },
+            { role: 'assistant', content: `You last completed Flaherty workout ${lastWorkout}. Would you like to do workout ${nextWorkout} today? (yes/no)` }
+          ]);
           
-          if (!confirmed) {
-            setIsLoading(false);
-            return;
-          }
+          setWaitingForFlahertyConfirmation(true);
+          setIsLoading(false);
+          setPrompt('');
+          setTranscript('');
+          return;
         }
       }
 
+      // Add user message to chat
+      setChatMessages(prev => [...prev, { role: 'user', content: finalPrompt }]);
+      
       const response = await fetch('/api/generateWorkout', {
         method: 'POST',
         headers: {
@@ -261,6 +323,7 @@ export default function TodaysWorkoutPage() {
       }
 
       setWorkoutData(data);
+      setChatMessages(prev => [...prev, { role: 'assistant', content: 'Your workout has been generated! Check the workout table below.' }]);
       
     } catch (err) {
       console.error('Workout generation error:', err);
@@ -396,7 +459,7 @@ export default function TodaysWorkoutPage() {
           )}
 
           <button
-            onClick={generateWorkout}
+            onClick={waitingForFlahertyConfirmation ? () => handleFlahertyConfirmation(prompt) : generateWorkout}
             disabled={isLoading || (!prompt.trim() && !transcript)}
             className="mt-3 bg-[#22C55E] px-4 py-2 rounded-lg text-white font-semibold hover:bg-[#16a34a] disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
           >
@@ -405,11 +468,38 @@ export default function TodaysWorkoutPage() {
                 <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
                 Creating workout...
               </span>
+            ) : waitingForFlahertyConfirmation ? (
+              'Confirm'
             ) : (
               'Generate My Workout'
             )}
           </button>
         </div>
+
+        {/* Chat Messages */}
+        {chatMessages.length > 0 && (
+          <div className="bg-[#1E293B] rounded-xl p-4 shadow-md mb-4 max-h-64 overflow-y-auto">
+            <h3 className="text-md font-semibold text-white mb-3">Chat History</h3>
+            <div className="space-y-3">
+              {chatMessages.map((message, index) => (
+                <div
+                  key={index}
+                  className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div
+                    className={`max-w-xs px-3 py-2 rounded-lg text-sm ${
+                      message.role === 'user'
+                        ? 'bg-[#22C55E] text-white'
+                        : 'bg-[#334155] text-white'
+                    }`}
+                  >
+                    {message.content}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Generated Workout Display */}
         {workoutData && (

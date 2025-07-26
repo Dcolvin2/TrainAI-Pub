@@ -70,13 +70,28 @@ export async function POST(req: Request) {
       const lastWorkout = userProfile?.last_flaherty_workout || 0;
       const nextWorkoutNumber = lastWorkout + 1;
 
-      // Get the next Flaherty workout
-      const { data: flahertyWorkout } = await supabase
+      // Get the next Flaherty workout with correct column names
+      const { data: flahertyRows } = await supabase
         .from('flaherty_workouts')
-        .select('*')
+        .select('workout, exercise_name, sets, reps, weight, rest_seconds, section')
         .eq('workout', nextWorkoutNumber);
 
-      if (flahertyWorkout && flahertyWorkout.length > 0) {
+      if (flahertyRows && flahertyRows.length > 0) {
+        // Group exercises by name to create summary
+        const groupedExercises = flahertyRows.reduce((acc, row) => {
+          if (!acc[row.exercise_name]) {
+            acc[row.exercise_name] = [];
+          }
+          acc[row.exercise_name].push(row);
+          return acc;
+        }, {} as Record<string, typeof flahertyRows>);
+
+        let summary = `Here's your Flaherty workout ${nextWorkoutNumber}:\n`;
+        for (const [name, entries] of Object.entries(groupedExercises)) {
+          const { reps, sets } = entries[0];
+          summary += `- ${name}: ${sets} sets of ${reps}\n`;
+        }
+
         systemPrompt = `You are TrainAI, an expert fitness coach. The user is following the Flaherty workout program.
         
         User profile: ${profile?.first_name || 'Unknown'}.
@@ -86,9 +101,11 @@ export async function POST(req: Request) {
         The user last completed Flaherty workout #${lastWorkout}. This is workout #${nextWorkoutNumber}.`;
         
         userPrompt = `Create a workout plan based on the Flaherty program workout #${nextWorkoutNumber}. 
-        Workout data: ${JSON.stringify(flahertyWorkout)}. 
+        Workout data: ${JSON.stringify(flahertyRows)}. 
         Format the response as a structured workout with warm-up, main workout, and cool-down sections.
-        Total workout time should be ${minutes} minutes.`;
+        Total workout time should be ${minutes} minutes.
+        
+        IMPORTANT: Use the exact exercise names from the data. Do NOT add "(bodyweight)" to any exercise names unless it's explicitly part of the exercise name in the data.`;
       } else {
         // Fallback to regular AI generation for Flaherty
         systemPrompt = `You are TrainAI, an expert fitness coach. The user wants a Flaherty-style workout.
@@ -98,7 +115,9 @@ export async function POST(req: Request) {
         Equipment: ${equipment?.map(e => e.name).join(', ') || 'None'}.
         
         Create a Flaherty-style workout that focuses on compound movements, progressive overload, and functional fitness.
-        Total workout time should be ${minutes} minutes.`;
+        Total workout time should be ${minutes} minutes.
+        
+        IMPORTANT: Use exact exercise names. Do NOT add "(bodyweight)" to exercise names unless it's explicitly part of the exercise name.`;
       }
     } else {
       // Check for day of week in prompt
@@ -126,7 +145,9 @@ export async function POST(req: Request) {
       Equipment: ${equipment?.map(e => e.name).join(', ') || 'None'}.
       ${daySpecificPrompt}
       
-      Create a ${minutes}-minute workout that matches the user's request and available equipment.`;
+      Create a ${minutes}-minute workout that matches the user's request and available equipment.
+      
+      IMPORTANT: Use exact exercise names. Do NOT add "(bodyweight)" to exercise names unless it's explicitly part of the exercise name.`;
     }
 
     // Call OpenAI

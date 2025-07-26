@@ -53,7 +53,7 @@ const parseWorkoutString = (workoutString: string, section: 'warmup' | 'workout'
   for (let i = 0; i < patterns.length; i++) {
     const match = workoutString.match(patterns[i]);
     if (match) {
-      const exerciseName = match[1].trim();
+      const exerciseName = match[1].trim().replace(/\s*\(bodyweight\)\s*$/i, '');
       
       if (i === 0) {
         // Format: "Back Squat: 3x8 @ 100lb rest 90s"
@@ -113,7 +113,7 @@ const parseWorkoutString = (workoutString: string, section: 'warmup' | 'workout'
   // Fallback for unrecognized format
   return {
     id: `${workoutString}-${section}-${Date.now()}-${Math.random()}`,
-    exerciseName: workoutString,
+    exerciseName: workoutString.replace(/\s*\(bodyweight\)\s*$/i, ''),
     setNumber: 1,
     prescribedWeight: 0,
     prescribedReps: 10,
