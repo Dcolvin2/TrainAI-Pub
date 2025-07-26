@@ -18,25 +18,26 @@ export function WorkoutTimer() {
 
   return (
     <div className="w-full flex justify-center mb-4">
-      <div className="flex items-center space-x-3 bg-[#0F172A]/80 backdrop-blur-sm rounded-2xl px-4 py-2 shadow-md">
+      <div className="flex items-center space-x-3 bg-transparent rounded-2xl px-4 py-2">
         <button
           onClick={() => setRunning(!running)}
-          className="p-2 text-white bg-green-500 rounded-full focus:outline-none focus:ring-2 focus:ring-green-400 hover:bg-green-600 transition-colors"
+          className="p-2 text-white bg-[#22C55E] rounded-full focus:outline-none focus:ring-2 focus:ring-[#16a34a] hover:bg-[#16a34a] transition-colors"
         >
           {running ? (
-            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <rect x="6" y="4" width="4" height="16" />
+              <rect x="14" y="4" width="4" height="16" />
             </svg>
           ) : (
-            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M8 5v14l11-7z"/>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <polygon points="5,3 19,12 5,21" />
             </svg>
           )}
         </button>
         <span className="font-mono text-lg text-white">{`${hh}:${mm}:${ss}`}</span>
         <button
           onClick={() => { setSeconds(0); setRunning(false); }}
-          className="p-2 text-white bg-gray-700 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-600 hover:bg-gray-600 transition-colors"
+          className="p-2 text-white bg-[#334155] rounded-full focus:outline-none focus:ring-2 focus:ring-[#475569] hover:bg-[#475569] transition-colors"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />

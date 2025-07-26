@@ -23,42 +23,40 @@ export function WorkoutExerciseCard({
   updateSet: (target: LogSet, changes: Partial<LogSet>) => void;
 }) {
   return (
-    <div className="mb-6 bg-[#0F172A] rounded-2xl shadow-lg">
-      <div className="px-4 py-3 border-b border-gray-700">
+    <div className="mb-6 bg-[#1E293B] rounded-2xl shadow-md">
+      <div className="px-4 py-3 border-b border-[#334155]">
         <h2 className="text-xl font-bold text-white">{exerciseName}</h2>
       </div>
 
-      <div className="divide-y divide-gray-700">
+      <div className="divide-y divide-[#334155]">
         {sets.map((s, idx) => (
           <div
             key={idx}
-            className="flex flex-col md:grid md:grid-cols-7 gap-3 px-4 py-3 items-center md:items-start"
+            className="flex flex-col md:grid md:grid-cols-8 gap-3 px-4 py-3 items-center"
           >
-            <div className="w-8 text-center text-white font-medium md:text-left">
-              {s.setNumberLabel}
-            </div>
+            <div className="w-8 text-center text-white font-medium">{s.setNumberLabel}</div>
             <div className="w-10 text-center text-gray-300">
-              {s.previousWeight != null ? `${s.previousWeight}` : '—'}
+              {s.previousWeight != null ? s.previousWeight : '—'}
             </div>
             <input
               type="number"
               value={s.prescribedWeight}
               onChange={e => updateSet(s, { prescribedWeight: +e.target.value })}
-              className="flex-1 bg-transparent border border-gray-600 text-center rounded-lg py-1 text-white focus:ring-2 focus:ring-green-400"
+              className="flex-1 bg-[#0F172A] border border-[#334155] text-center rounded-lg py-1 text-white focus:ring-2 focus:ring-[#22C55E] focus:border-[#22C55E] focus:outline-none"
               placeholder="Prescribed"
             />
             <input
               type="number"
               value={s.actualWeight || ''}
               onChange={e => updateSet(s, { actualWeight: +e.target.value })}
-              className="flex-1 bg-transparent border border-gray-600 text-center rounded-lg py-1 text-white focus:ring-2 focus:ring-green-400"
+              className="flex-1 bg-[#0F172A] border border-[#334155] text-center rounded-lg py-1 text-white focus:ring-2 focus:ring-[#22C55E] focus:border-[#22C55E] focus:outline-none"
               placeholder="Actual"
             />
             <input
               type="number"
               value={s.reps}
               onChange={e => updateSet(s, { reps: +e.target.value })}
-              className="w-16 bg-transparent border border-gray-600 text-center rounded-lg py-1 text-white focus:ring-2 focus:ring-green-400"
+              className="w-16 bg-[#0F172A] border border-[#334155] text-center rounded-lg py-1 text-white focus:ring-2 focus:ring-[#22C55E] focus:border-[#22C55E] focus:outline-none"
               placeholder="Reps"
             />
             <div className="flex items-center justify-center">
@@ -66,18 +64,19 @@ export function WorkoutExerciseCard({
                 type="checkbox"
                 checked={s.done}
                 onChange={() => updateSet(s, { done: !s.done })}
-                className="h-5 w-5 text-green-400"
+                className="h-5 w-5 text-[#22C55E] bg-[#0F172A] border-[#334155] rounded focus:ring-[#22C55E] focus:ring-2"
               />
             </div>
             <div className="flex items-center justify-center space-x-1">
               <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12,6 12,12 16,14" />
               </svg>
               <input
                 type="number"
                 value={s.restSeconds}
                 onChange={e => updateSet(s, { restSeconds: +e.target.value })}
-                className="w-16 bg-transparent border border-gray-600 text-center rounded-lg py-1 text-white focus:ring-2 focus:ring-green-400"
+                className="w-16 bg-[#0F172A] border border-[#334155] text-center rounded-lg py-1 text-white focus:ring-2 focus:ring-[#22C55E] focus:border-[#22C55E] focus:outline-none"
                 placeholder="Rest"
               />
             </div>
@@ -85,7 +84,7 @@ export function WorkoutExerciseCard({
               type="number"
               value={s.rpe}
               onChange={e => updateSet(s, { rpe: +e.target.value })}
-              className="w-12 bg-transparent border border-gray-600 text-center rounded-lg py-1 text-white focus:ring-2 focus:ring-green-400"
+              className="w-12 bg-[#0F172A] border border-[#334155] text-center rounded-lg py-1 text-white focus:ring-2 focus:ring-[#22C55E] focus:border-[#22C55E] focus:outline-none"
               placeholder="RPE"
             />
           </div>
