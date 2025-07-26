@@ -1,0 +1,18 @@
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+echo "🔍 Running pre-commit checks..."
+
+# Run ESLint on staged files
+echo "📝 Checking code style..."
+npm run lint:fix
+
+# Run TypeScript type checking
+echo "🔧 Checking TypeScript types..."
+npm run type-check
+
+# Run build to catch any remaining issues
+echo "🏗️ Running build check..."
+npm run build
+
+echo "✅ Pre-commit checks passed!" 
