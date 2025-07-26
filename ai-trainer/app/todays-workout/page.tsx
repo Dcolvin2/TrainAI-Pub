@@ -115,7 +115,6 @@ function WorkoutTimer({ running, onToggle }: { running: boolean; onToggle: () =>
 export default function TodaysWorkoutPage() {
   const { user } = useAuth();
   const router = useRouter();
-  const [activeSection, setActiveSection] = useState<'chat' | 'workout'>('chat');
   
   // Chat agent state
   const [prompt, setPrompt] = useState('');
@@ -257,7 +256,36 @@ export default function TodaysWorkoutPage() {
       }
 
       setWorkoutData(data);
-      setActiveSection('workout');
+      
+      // Convert the generated workout to exercises format
+      const exerciseList: Exercise[] = data.workout.map((item: string, index: number) => {
+        // Parse workout items like "Back Squat: 3x8 @ 100lb rest 90s"
+        const match = item.match(/^(.+?):\s*(\d+)x(\d+)\s*@\s*(\d+)lb\s*rest\s*(\d+)s?$/i);
+        if (match) {
+          return {
+            id: `${match[1]}-${index}`,
+            name: match[1],
+            sets: parseInt(match[2]),
+            reps: parseInt(match[3]),
+            prescribedWeight: parseInt(match[4]),
+            restSeconds: parseInt(match[5]),
+          };
+        }
+        // Fallback for non-standard format
+        return {
+          id: `${item}-${index}`,
+          name: item,
+          sets: 3,
+          reps: 8,
+          prescribedWeight: 0,
+          restSeconds: 60,
+        };
+      });
+      
+      setExercises(exerciseList);
+      if (exerciseList.length > 0) {
+        setCurrentExercise(exerciseList[0]);
+      }
       
     } catch (err) {
       console.error('Workout generation error:', err);
@@ -363,303 +391,272 @@ export default function TodaysWorkoutPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0F172A] p-6">
-      <div className="max-w-4xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="text-center">
-          <h1 className="text-3xl font-bold text-white mb-2">Today&apos;s Workout</h1>
-          <p className="text-gray-400">Build and track your workouts</p>
+    <div className="p-5 max-w-lg mx-auto bg-[#0F172A] min-h-screen">
+      {/* Header */}
+      <header className="flex justify-between items-center mb-4">
+        <h1 className="text-2xl font-bold text-white">Today&apos;s Workout</h1>
+        <div className="flex space-x-2">
+          <button
+            type="button"
+            onClick={() => setMainTimerRunning((prev) => !prev)}
+            className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded"
+          >
+            {mainTimerRunning ? 'Pause' : 'Start'}
+          </button>
+          <button
+            type="button"
+            onClick={startListening}
+            className="p-2 bg-transparent rounded"
+            aria-label="Voice input"
+          >
+            🎤
+          </button>
         </div>
+      </header>
 
-        {/* Section Navigation */}
-        <div className="flex justify-center">
-          <div className="bg-[#1E293B] rounded-xl p-1">
-            <button
-              onClick={() => setActiveSection('chat')}
-              className={`px-6 py-2 rounded-lg transition-colors ${
-                activeSection === 'chat'
-                  ? 'bg-[#22C55E] text-white'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              AI Chat Agent
-            </button>
-            <button
-              onClick={() => setActiveSection('workout')}
-              className={`px-6 py-2 rounded-lg transition-colors ${
-                activeSection === 'workout'
-                  ? 'bg-[#22C55E] text-white'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              Today&apos;s Workout
-            </button>
+      {/* Main Workout Timer */}
+      <div className="bg-[#1E293B] rounded-xl p-4 shadow-md mb-4">
+        <div className="flex justify-between items-center">
+          <h2 className="text-lg font-semibold text-white">Workout Timer</h2>
+          <WorkoutTimer 
+            running={mainTimerRunning} 
+            onToggle={() => setMainTimerRunning(!mainTimerRunning)} 
+          />
+        </div>
+      </div>
+
+      {/* Rest Timer */}
+      {restTimerRunning && (
+        <div className="bg-[#1E293B] rounded-xl p-4 shadow-md border-l-4 border-orange-500 mb-4">
+          <div className="flex justify-between items-center mb-2">
+            <h2 className="text-lg font-semibold text-white">Rest Timer</h2>
+            <span className="text-orange-400 font-medium">Take a break!</span>
+          </div>
+          <div className="text-center">
+            <div className="text-3xl font-bold text-orange-400 mb-2">
+              {Math.floor(restTimerDuration / 60)}:{(restTimerDuration % 60).toString().padStart(2, '0')}
+            </div>
+            <p className="text-gray-400">Next set coming up...</p>
           </div>
         </div>
+      )}
 
-        {/* AI Chat Agent Section */}
-        {activeSection === 'chat' && (
-          <div className="space-y-6">
-            {/* Time Selection */}
-            <div className="flex items-center justify-center gap-4">
-              <label className="text-white text-sm">Time Available:</label>
-              <input
-                type="number"
-                min={5}
-                max={120}
-                value={minutes}
-                onChange={(e) => setMinutes(Number(e.target.value))}
-                className="w-20 bg-[#1E293B] border border-[#334155] px-3 py-2 rounded-lg text-white text-center"
-              />
-              <span className="text-gray-400 text-sm">minutes</span>
-            </div>
+      {/* AI Chat Agent Section */}
+      <section className="mb-6">
+        <h2 className="text-lg font-semibold text-white mb-2">AI Workout Builder</h2>
+        
+        {/* Time Selection */}
+        <div className="flex items-center gap-4 mb-3">
+          <label className="text-white text-sm">Time Available:</label>
+          <input
+            type="number"
+            min={5}
+            max={120}
+            value={minutes}
+            onChange={(e) => setMinutes(Number(e.target.value))}
+            className="w-20 bg-[#1E293B] border border-[#334155] px-3 py-2 rounded-lg text-white text-center"
+          />
+          <span className="text-gray-400 text-sm">minutes</span>
+        </div>
 
-            {/* Error Banner */}
-            {error && (
-              <div className="bg-red-900/20 border border-red-500 text-red-400 px-4 py-3 rounded-xl">
-                {error}
-              </div>
-            )}
+        {/* Error Banner */}
+        {error && (
+          <div className="bg-red-900/20 border border-red-500 text-red-400 px-4 py-3 rounded-xl mb-4">
+            {error}
+          </div>
+        )}
 
-            {/* Prompt Box */}
-            <div className="bg-[#1E293B] rounded-xl p-6 shadow-md">
-              <div className="relative">
-                <textarea
-                  ref={textareaRef}
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="Tell me what workout you want to do today. For example: 'I want a chest and triceps workout with dumbbells' or 'Give me a 30-minute cardio session'..."
-                  className="w-full h-32 bg-[#0F172A] border border-[#334155] rounded-lg p-4 text-white resize-none focus:border-[#22C55E] focus:outline-none"
-                />
-                <button
-                  onClick={startListening}
-                  disabled={isListening}
-                  className={`absolute bottom-4 right-4 p-2 rounded-lg transition-colors ${
-                    isListening 
-                      ? 'bg-red-500 text-white' 
-                      : 'bg-[#22C55E] text-white hover:bg-[#16a34a]'
-                  }`}
-                  title="Voice input"
-                >
-                  🎤
-                </button>
-              </div>
-              
-              {(transcript || prompt) && (
-                <div className="mt-3 flex items-center gap-2">
-                  <button
-                    onClick={resetTranscript}
-                    className="text-gray-400 hover:text-white text-sm transition-colors"
-                  >
-                    Clear
-                  </button>
-                </div>
-              )}
-
+        {/* Prompt Box */}
+        <div className="bg-[#1E293B] rounded-xl p-4 shadow-md mb-4">
+          <div className="relative">
+            <textarea
+              ref={textareaRef}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="Tell me what workout you want to do today. For example: 'I want a chest and triceps workout with dumbbells' or 'Give me a 30-minute cardio session'..."
+              className="w-full h-24 bg-[#0F172A] border border-[#334155] rounded-lg p-3 text-white resize-none focus:border-[#22C55E] focus:outline-none text-sm"
+            />
+            <button
+              onClick={startListening}
+              disabled={isListening}
+              className={`absolute bottom-3 right-3 p-1 rounded transition-colors ${
+                isListening 
+                  ? 'bg-red-500 text-white' 
+                  : 'bg-[#22C55E] text-white hover:bg-[#16a34a]'
+              }`}
+              title="Voice input"
+            >
+              🎤
+            </button>
+          </div>
+          
+          {(transcript || prompt) && (
+            <div className="mt-2 flex items-center gap-2">
               <button
-                onClick={generateWorkout}
-                disabled={isLoading || (!prompt.trim() && !transcript)}
-                className="mt-4 bg-[#22C55E] px-6 py-3 rounded-xl text-white font-semibold hover:bg-[#16a34a] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                onClick={resetTranscript}
+                className="text-gray-400 hover:text-white text-xs transition-colors"
               >
-                {isLoading ? (
-                  <span className="flex items-center gap-2">
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                    AI is creating your workout...
-                  </span>
-                ) : (
-                  'Generate My Workout'
-                )}
+                Clear
               </button>
             </div>
+          )}
 
-            {/* Generated Workout Display */}
-            {workoutData && (
-              <div className="bg-[#1E293B] rounded-xl p-6 shadow-md space-y-4">
-                <h3 className="text-lg font-semibold text-white">Your Generated Workout</h3>
-                
-                {workoutData.prompt && (
-                  <div className="bg-[#0F172A] p-4 rounded-lg">
-                    <h4 className="text-sm font-medium text-gray-400 mb-2">Your Request:</h4>
-                    <p className="text-white text-sm">{workoutData.prompt}</p>
-                  </div>
-                )}
+          <button
+            onClick={generateWorkout}
+            disabled={isLoading || (!prompt.trim() && !transcript)}
+            className="mt-3 bg-[#22C55E] px-4 py-2 rounded-lg text-white font-semibold hover:bg-[#16a34a] disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+          >
+            {isLoading ? (
+              <span className="flex items-center gap-2">
+                <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                Creating workout...
+              </span>
+            ) : (
+              'Generate My Workout'
+            )}
+          </button>
+        </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <h4 className="text-white font-medium mb-2">Warm-up</h4>
-                    <ul className="space-y-1">
-                      {workoutData.warmup.map((item, i) => (
-                        <li key={i} className="text-gray-300 text-sm">• {item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div>
-                    <h4 className="text-white font-medium mb-2">Main Workout</h4>
-                    <ul className="space-y-1">
-                      {workoutData.workout.map((item, i) => (
-                        <li key={i} className="text-gray-300 text-sm">• {item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div>
-                    <h4 className="text-white font-medium mb-2">Cool-down</h4>
-                    <ul className="space-y-1">
-                      {workoutData.cooldown.map((item, i) => (
-                        <li key={i} className="text-gray-300 text-sm">• {item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => setActiveSection('workout')}
-                  className="bg-[#22C55E] px-6 py-3 rounded-xl text-white font-semibold hover:bg-[#16a34a] transition-colors"
-                >
-                  Start This Workout
-                </button>
+        {/* Generated Workout Display */}
+        {workoutData && (
+          <div className="bg-[#1E293B] rounded-xl p-4 shadow-md space-y-3 mb-4">
+            <h3 className="text-md font-semibold text-white">Your Generated Workout</h3>
+            
+            {workoutData.prompt && (
+              <div className="bg-[#0F172A] p-3 rounded-lg">
+                <h4 className="text-xs font-medium text-gray-400 mb-1">Your Request:</h4>
+                <p className="text-white text-xs">{workoutData.prompt}</p>
               </div>
             )}
-          </div>
-        )}
 
-        {/* Today's Workout Section */}
-        {activeSection === 'workout' && (
-          <div className="space-y-6">
-            {/* Main Workout Timer */}
-            <div className="bg-[#1E293B] rounded-xl p-6 shadow-md">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold text-white">Workout Timer</h2>
-                <WorkoutTimer 
-                  running={mainTimerRunning} 
-                  onToggle={() => setMainTimerRunning(!mainTimerRunning)} 
-                />
+            <div className="grid grid-cols-1 gap-3">
+              <div>
+                <h4 className="text-white font-medium mb-1 text-sm">Warm-up</h4>
+                <ul className="space-y-1">
+                  {workoutData.warmup.map((item, i) => (
+                    <li key={i} className="text-gray-300 text-xs">• {item}</li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <h4 className="text-white font-medium mb-1 text-sm">Main Workout</h4>
+                <ul className="space-y-1">
+                  {workoutData.workout.map((item, i) => (
+                    <li key={i} className="text-gray-300 text-xs">• {item}</li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <h4 className="text-white font-medium mb-1 text-sm">Cool-down</h4>
+                <ul className="space-y-1">
+                  {workoutData.cooldown.map((item, i) => (
+                    <li key={i} className="text-gray-300 text-xs">• {item}</li>
+                  ))}
+                </ul>
               </div>
             </div>
-
-            {/* Rest Timer */}
-            {restTimerRunning && (
-              <div className="bg-[#1E293B] rounded-xl p-6 shadow-md border-l-4 border-orange-500">
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-semibold text-white">Rest Timer</h2>
-                  <span className="text-orange-400 font-medium">Take a break!</span>
-                </div>
-                <div className="text-center">
-                  <div className="text-4xl font-bold text-orange-400 mb-2">
-                    {Math.floor(restTimerDuration / 60)}:{(restTimerDuration % 60).toString().padStart(2, '0')}
-                  </div>
-                  <p className="text-gray-400">Next set coming up...</p>
-                </div>
-              </div>
-            )}
-
-            {/* Workout Content */}
-            {isLoadingWorkout ? (
-              <div className="text-center text-white">Loading workout...</div>
-            ) : workoutError ? (
-              <div className="text-center">
-                <div className="text-red-400 mb-4">{workoutError}</div>
-                <p className="text-gray-400">No workout found for today.</p>
-                <button
-                  onClick={() => setActiveSection('chat')}
-                  className="mt-4 bg-[#22C55E] px-6 py-3 rounded-xl text-white font-semibold hover:bg-[#16a34a] transition-colors"
-                >
-                  Create New Workout
-                </button>
-              </div>
-            ) : exercises.length === 0 ? (
-              <div className="text-center text-gray-400 py-8">
-                <p className="mb-4">No workout found for today.</p>
-                <button
-                  onClick={() => setActiveSection('chat')}
-                  className="bg-[#22C55E] px-6 py-3 rounded-xl text-white font-semibold hover:bg-[#16a34a] transition-colors"
-                >
-                  Create your first workout
-                </button>
-              </div>
-            ) : (
-              <div className="bg-[#1E293B] rounded-xl p-6 shadow-md">
-                {/* Current Exercise Highlight */}
-                {currentExercise && (
-                  <div className="mb-6 p-4 bg-[#22C55E]/10 border border-[#22C55E]/20 rounded-lg">
-                    <h3 className="text-lg font-semibold text-[#22C55E] mb-2">
-                      Current: {currentExercise.name}
-                    </h3>
-                    <p className="text-gray-300 text-sm">
-                      Set {currentSet.setIdx + 1} of {currentExercise.sets} • {currentExercise.reps} reps
-                    </p>
-                  </div>
-                )}
-
-                {/* Exercise List */}
-                {exercises.map((ex, exIdx) => (
-                  <article key={ex.id} className="mb-6">
-                    <h2 className="text-xl font-semibold text-white mb-2">{ex.name}</h2>
-
-                    {Array.from({ length: ex.sets }, (_, setIdx) => {
-                      const completed = logs.some((l) => l.exerciseId === ex.id && l.setIndex === setIdx);
-                      const isCurrent = exIdx === currentSet.exIdx && setIdx === currentSet.setIdx;
-                      
-                      return (
-                        <div
-                          key={setIdx}
-                          className={`flex items-center space-x-2 p-3 rounded mb-2 transition-all ${
-                            completed 
-                              ? 'opacity-50 bg-gray-800' 
-                              : isCurrent
-                              ? 'bg-[#22C55E]/20 border border-[#22C55E]/30'
-                              : 'bg-[#111827]'
-                          }`}
-                        >
-                          <span className={`w-6 text-center font-medium ${
-                            isCurrent ? 'text-[#22C55E]' : 'text-white'
-                          }`}>
-                            {setIdx + 1}
-                          </span>
-                          <input
-                            type="number"
-                            defaultValue={ex.prescribedWeight}
-                            disabled={completed}
-                            onBlur={(e) => logSet(Number(e.target.value), ex.reps)}
-                            className="w-16 p-1 bg-transparent border border-gray-600 rounded text-white text-center focus:border-[#22C55E] focus:outline-none"
-                            placeholder="0"
-                          />
-                          <span className="text-white">×</span>
-                          <span className="w-8 text-center text-white">{ex.reps}</span>
-                          <button
-                            type="button"
-                            onClick={() => logSet(ex.prescribedWeight, ex.reps)}
-                            disabled={completed}
-                            className={`ml-auto px-3 py-1 rounded transition-colors ${
-                              completed
-                                ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                                : isCurrent
-                                ? 'bg-[#22C55E] hover:bg-[#16a34a] text-white'
-                                : 'bg-green-500 hover:bg-green-600 text-white'
-                            }`}
-                          >
-                            {completed ? 'Done' : 'Complete'}
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </article>
-                ))}
-
-                {/* Complete Workout Button */}
-                <footer className="flex justify-end pt-4 border-t border-gray-700">
-                  <button
-                    type="button"
-                    onClick={finishWorkout}
-                    className="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-lg transition-colors"
-                  >
-                    Complete Workout
-                  </button>
-                </footer>
-              </div>
-            )}
           </div>
         )}
-      </div>
+      </section>
+
+      {/* Workout Tracking Section */}
+      <section className="bg-[#1E293B] p-4 rounded-lg">
+        <h2 className="text-lg font-semibold text-white mb-4">Today&apos;s Workout</h2>
+        
+        {isLoadingWorkout ? (
+          <div className="text-center text-white">Loading workout...</div>
+        ) : workoutError ? (
+          <div className="text-center">
+            <div className="text-red-400 mb-4">{workoutError}</div>
+            <p className="text-gray-400">No workout found for today.</p>
+          </div>
+        ) : exercises.length === 0 ? (
+          <div className="text-center text-gray-400 py-4">
+            <p className="mb-4">No workout found for today.</p>
+            <p className="text-sm">Use the AI builder above to create your first workout!</p>
+          </div>
+        ) : (
+          <>
+            {/* Current Exercise Highlight */}
+            {currentExercise && (
+              <div className="mb-4 p-3 bg-[#22C55E]/10 border border-[#22C55E]/20 rounded-lg">
+                <h3 className="text-md font-semibold text-[#22C55E] mb-1">
+                  Current: {currentExercise.name}
+                </h3>
+                <p className="text-gray-300 text-xs">
+                  Set {currentSet.setIdx + 1} of {currentExercise.sets} • {currentExercise.reps} reps
+                </p>
+              </div>
+            )}
+
+            {/* Exercise List */}
+            {exercises.map((ex, exIdx) => (
+              <article key={ex.id} className="mb-4">
+                <h3 className="text-md font-semibold text-white mb-2">{ex.name}</h3>
+
+                {Array.from({ length: ex.sets }, (_, setIdx) => {
+                  const completed = logs.some((l) => l.exerciseId === ex.id && l.setIndex === setIdx);
+                  const isCurrent = exIdx === currentSet.exIdx && setIdx === currentSet.setIdx;
+                  
+                  return (
+                    <div
+                      key={setIdx}
+                      className={`flex items-center space-x-2 p-2 rounded mb-1 transition-all ${
+                        completed 
+                          ? 'opacity-50 bg-gray-800' 
+                          : isCurrent
+                          ? 'bg-[#22C55E]/20 border border-[#22C55E]/30'
+                          : 'bg-[#111827]'
+                      }`}
+                    >
+                      <span className={`w-4 text-center font-medium text-xs ${
+                        isCurrent ? 'text-[#22C55E]' : 'text-white'
+                      }`}>
+                        {setIdx + 1}
+                      </span>
+                      <input
+                        type="number"
+                        defaultValue={ex.prescribedWeight}
+                        disabled={completed}
+                        onBlur={(e) => logSet(Number(e.target.value), ex.reps)}
+                        className="w-12 p-1 bg-transparent border border-gray-600 rounded text-white text-center focus:border-[#22C55E] focus:outline-none text-xs"
+                        placeholder="0"
+                      />
+                      <span className="text-white text-xs">×</span>
+                      <span className="w-6 text-center text-white text-xs">{ex.reps}</span>
+                      <button
+                        type="button"
+                        onClick={() => logSet(ex.prescribedWeight, ex.reps)}
+                        disabled={completed}
+                        className={`ml-auto px-2 py-1 rounded transition-colors text-xs ${
+                          completed
+                            ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                            : isCurrent
+                            ? 'bg-[#22C55E] hover:bg-[#16a34a] text-white'
+                            : 'bg-green-500 hover:bg-green-600 text-white'
+                        }`}
+                      >
+                        {completed ? 'Done' : 'Complete'}
+                      </button>
+                    </div>
+                  );
+                })}
+              </article>
+            ))}
+
+            {/* Complete Workout Button */}
+            <footer className="flex justify-end pt-3 border-t border-gray-700">
+              <button
+                type="button"
+                onClick={finishWorkout}
+                className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded transition-colors"
+              >
+                Complete Workout
+              </button>
+            </footer>
+          </>
+        )}
+      </section>
     </div>
   );
 } 
