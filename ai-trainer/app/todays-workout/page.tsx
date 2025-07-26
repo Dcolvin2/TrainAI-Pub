@@ -589,59 +589,122 @@ export default function TodaysWorkoutPage() {
               </div>
             )}
 
-            {/* Exercise List */}
+            {/* Workout Tables */}
             {exercises.map((ex, exIdx) => (
-              <article key={ex.id} className="mb-4">
-                <h3 className="text-md font-semibold text-white mb-2">{ex.name}</h3>
-
-                {Array.from({ length: ex.sets }, (_, setIdx) => {
-                  const completed = logs.some((l) => l.exerciseId === ex.id && l.setIndex === setIdx);
-                  const isCurrent = exIdx === currentSet.exIdx && setIdx === currentSet.setIdx;
-                  
-                  return (
-                    <div
-                      key={setIdx}
-                      className={`flex items-center space-x-2 p-2 rounded mb-1 transition-all ${
-                        completed 
-                          ? 'opacity-50 bg-gray-800' 
-                          : isCurrent
-                          ? 'bg-[#22C55E]/20 border border-[#22C55E]/30'
-                          : 'bg-[#111827]'
-                      }`}
-                    >
-                      <span className={`w-4 text-center font-medium text-xs ${
-                        isCurrent ? 'text-[#22C55E]' : 'text-white'
-                      }`}>
-                        {setIdx + 1}
-                      </span>
-                      <input
-                        type="number"
-                        defaultValue={ex.prescribedWeight}
-                        disabled={completed}
-                        onBlur={(e) => logSet(Number(e.target.value), ex.reps)}
-                        className="w-12 p-1 bg-transparent border border-gray-600 rounded text-white text-center focus:border-[#22C55E] focus:outline-none text-xs"
-                        placeholder="0"
-                      />
-                      <span className="text-white text-xs">×</span>
-                      <span className="w-6 text-center text-white text-xs">{ex.reps}</span>
-                      <button
-                        type="button"
-                        onClick={() => logSet(ex.prescribedWeight, ex.reps)}
-                        disabled={completed}
-                        className={`ml-auto px-2 py-1 rounded transition-colors text-xs ${
-                          completed
-                            ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                            : isCurrent
-                            ? 'bg-[#22C55E] hover:bg-[#16a34a] text-white'
-                            : 'bg-green-500 hover:bg-green-600 text-white'
-                        }`}
-                      >
-                        {completed ? 'Done' : 'Complete'}
-                      </button>
-                    </div>
-                  );
-                })}
-              </article>
+              <div key={ex.id} className="mb-6 border border-dashed border-[#22C55E]/30 rounded-lg p-4">
+                <div className="overflow-x-auto">
+                  <table className="w-full bg-[#111827] border border-[#334155] rounded-lg">
+                    {/* Table Header */}
+                    <thead>
+                      <tr className="bg-[#1E293B]">
+                        <th className="px-3 py-2 text-left text-white text-sm font-medium border-b border-[#334155]">
+                          Exercise Name
+                        </th>
+                        <th className="px-3 py-2 text-center text-white text-sm font-medium border-b border-[#334155]">
+                          Set
+                        </th>
+                        <th className="px-3 py-2 text-left text-white text-sm font-medium border-b border-[#334155]">
+                          Previous
+                        </th>
+                        <th className="px-3 py-2 text-center text-white text-sm font-medium border-b border-[#334155]">
+                          Lbs
+                        </th>
+                        <th className="px-3 py-2 text-center text-white text-sm font-medium border-b border-[#334155]">
+                          Reps
+                        </th>
+                        <th className="px-3 py-2 text-center text-white text-sm font-medium border-b border-[#334155]">
+                          ✓
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Array.from({ length: ex.sets }, (_, setIdx) => {
+                        const completed = logs.some((l) => l.exerciseId === ex.id && l.setIndex === setIdx);
+                        const isCurrent = exIdx === currentSet.exIdx && setIdx === currentSet.setIdx;
+                        
+                        return (
+                          <tr 
+                            key={setIdx}
+                            className={`${
+                              completed 
+                                ? 'opacity-50 bg-gray-800' 
+                                : isCurrent
+                                ? 'bg-[#22C55E]/10'
+                                : 'hover:bg-[#1E293B]'
+                            } transition-colors`}
+                          >
+                            {/* Exercise Name */}
+                            <td className="px-3 py-2 text-white text-sm border-b border-[#334155]">
+                              {setIdx === 0 ? ex.name : ''}
+                            </td>
+                            
+                            {/* Set Number */}
+                            <td className="px-3 py-2 text-center text-white text-sm border-b border-[#334155]">
+                              {setIdx + 1}
+                            </td>
+                            
+                            {/* Previous Performance */}
+                            <td className="px-3 py-2 text-left text-gray-300 text-sm border-b border-[#334155]">
+                              {ex.prescribedWeight > 0 ? `${ex.prescribedWeight - 5} lb × ${ex.reps}` : 'New'}
+                            </td>
+                            
+                            {/* Weight Input */}
+                            <td className="px-3 py-2 text-center border-b border-[#334155]">
+                              <input
+                                type="number"
+                                defaultValue={ex.prescribedWeight}
+                                disabled={completed}
+                                onBlur={(e) => logSet(Number(e.target.value), ex.reps)}
+                                className={`w-16 p-1 bg-transparent border border-[#334155] rounded text-white text-center text-sm focus:border-[#22C55E] focus:outline-none ${
+                                  completed ? 'opacity-50' : ''
+                                }`}
+                                placeholder="0"
+                              />
+                            </td>
+                            
+                            {/* Reps */}
+                            <td className="px-3 py-2 text-center text-white text-sm border-b border-[#334155]">
+                              {ex.reps}
+                            </td>
+                            
+                            {/* Checkbox */}
+                            <td className="px-3 py-2 text-center border-b border-[#334155]">
+                              <button
+                                type="button"
+                                onClick={() => logSet(ex.prescribedWeight, ex.reps)}
+                                disabled={completed}
+                                className={`w-6 h-6 rounded border-2 transition-colors ${
+                                  completed
+                                    ? 'bg-[#22C55E] border-[#22C55E] text-white'
+                                    : isCurrent
+                                    ? 'border-[#22C55E] hover:bg-[#22C55E] hover:text-white'
+                                    : 'border-[#334155] hover:border-[#22C55E] hover:bg-[#22C55E] hover:text-white'
+                                }`}
+                              >
+                                {completed && (
+                                  <svg className="w-4 h-4 mx-auto" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                  </svg>
+                                )}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                
+                {/* Add Set Button */}
+                <div className="flex justify-center mt-3">
+                  <button
+                    type="button"
+                    className="text-[#22C55E] hover:text-[#16a34a] text-sm font-medium transition-colors"
+                  >
+                    + ADD SET
+                  </button>
+                </div>
+              </div>
             ))}
 
             {/* Complete Workout Button */}
