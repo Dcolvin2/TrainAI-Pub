@@ -89,12 +89,7 @@ const getDayWorkoutType = (day: string) => {
   return null;
 };
 
-// Equipment-aware cardio workout
-const getCardioEquipmentWorkout = (equipmentList: string[]) => {
-  const options = ["treadmill", "rower", "bike", "airdyne", "elliptical"];
-  const available = options.filter((eq) => equipmentList.includes(eq));
-  return available.length > 0 ? available[0] : "bodyweight circuit";
-};
+
 
 // Simple Timer Component - Counts UP from 0
 function WorkoutTimer({ elapsedTime, running, onToggle, className = '' }: { 
