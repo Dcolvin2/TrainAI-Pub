@@ -131,7 +131,7 @@ function WorkoutTimer({ duration, running, onExpire, className = '' }: {
 }
 
 // Simple WorkoutChat Component
-function WorkoutChat({ sessionId, concise = false }: { sessionId: string; concise?: boolean }) {
+function WorkoutChat({ concise = false }: { concise?: boolean }) {
   const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([
     { role: 'assistant', content: 'Ready to help with your workout! How are you feeling today?' }
   ]);
@@ -224,7 +224,6 @@ export default function TodaysWorkoutPage() {
   const [mainTimerRunning, setMainTimerRunning] = useState(false);
   const [restTimerRunning, setRestTimerRunning] = useState(false);
   const [restTimerDuration, setRestTimerDuration] = useState(60);
-  const [currentExercise, setCurrentExercise] = useState<Exercise | null>(null);
   const [duration, setDuration] = useState(45 * 60); // 45 minutes default
 
   // Redirect if not authenticated
@@ -261,9 +260,6 @@ export default function TodaysWorkoutPage() {
           }));
           
           setExercises(exerciseList);
-          if (exerciseList.length > 0) {
-            setCurrentExercise(exerciseList[0]);
-          }
         } else {
           // No workout found, could prompt for AI generation
           setWorkoutError('No workout found for today');
@@ -381,9 +377,6 @@ export default function TodaysWorkoutPage() {
       });
       
       setExercises(exerciseList);
-      if (exerciseList.length > 0) {
-        setCurrentExercise(exerciseList[0]);
-      }
       
     } catch (err) {
       console.error('Workout generation error:', err);
@@ -401,8 +394,6 @@ export default function TodaysWorkoutPage() {
           return { exIdx, setIdx: setIdx + 1 };
         }
         if (exIdx + 1 < exercises.length) {
-          const nextExercise = exercises[exIdx + 1];
-          setCurrentExercise(nextExercise);
           return { exIdx: exIdx + 1, setIdx: 0 };
         }
       }
@@ -801,7 +792,7 @@ export default function TodaysWorkoutPage() {
       {/* WorkoutChat Section */}
       <section className="bg-[#1F2937] p-4 rounded-lg">
         <h2 className="text-xl font-semibold text-white mb-2">Your Generated Workout</h2>
-        <WorkoutChat sessionId={user?.id || ''} concise />
+        <WorkoutChat concise />
       </section>
     </div>
   );
