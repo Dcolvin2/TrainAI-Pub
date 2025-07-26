@@ -23,14 +23,6 @@ jobs:
     - name: Install dependencies
       run: npm ci
       
-    - name: Setup git hooks
-      run: |
-        if [ -d ".git" ]; then
-          chmod +x setup-git-hooks-auto.sh && ./setup-git-hooks-auto.sh
-        else
-          echo "Skipping git hooks setup in CI environment"
-        fi
-      
     - name: Run ESLint
       run: npm run lint
       

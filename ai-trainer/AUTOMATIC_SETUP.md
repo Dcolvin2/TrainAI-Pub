@@ -1,24 +1,29 @@
-# 🤖 Automatic Git Hooks Setup
+# 🛡️ Local Pre-Check Setup
 
 ## How It Works
 
-The git hooks are now set up automatically in several ways:
+The git hooks are set up locally for development, with CI/CD handling production checks:
 
-### 1. **Post-Install Script** (Automatic)
-When you run `npm install`, the `postinstall` script automatically:
-- Installs husky and lint-staged
-- Initializes git hooks
-- Tests the setup
-- Makes hooks executable
+### 1. **Local Development Setup** (Manual)
+Run once per developer:
+```bash
+npm run setup-hooks
+```
+
+This will:
+- Install husky and lint-staged
+- Initialize git hooks
+- Test the setup
+- Make hooks executable
 
 ### 2. **GitHub Actions** (Automatic)
 Every push and pull request automatically:
-- Runs the setup script
-- Tests ESLint, TypeScript, and build
-- Ensures code quality
+- Runs ESLint, TypeScript, and build checks
+- Ensures code quality without git hooks
+- Provides fast feedback
 
-### 3. **Manual Setup** (Optional)
-If you need to run it manually:
+### 3. **Manual Setup** (Alternative)
+If you prefer manual setup:
 ```bash
 chmod +x setup-git-hooks.sh
 ./setup-git-hooks.sh
@@ -55,31 +60,26 @@ npm run type-check
 
 ### If hooks aren't working:
 ```bash
-# Reinstall dependencies
-rm -rf node_modules package-lock.json
-npm install
+# Run the setup command
+npm run setup-hooks
 
 # Or run setup manually
 ./setup-git-hooks.sh
 ```
 
 ### Vercel Deployment Issues:
-The git hooks setup is automatically skipped in Vercel's build environment (no git repo). This is normal and expected.
-
-If you see build errors related to husky, the fix is already in place:
-- `vercel.json` uses custom build commands
-- `package.json` scripts check for git repo before running
-- Build process skips git hooks setup automatically
+Git hooks are now only set up locally, so Vercel deployments won't have any issues. The CI/CD pipeline handles quality checks in production.
 
 ### If you get permission errors:
 ```bash
 chmod +x .husky/pre-commit
-chmod +x setup-git-hooks-auto.sh
+chmod +x setup-git-hooks.sh
 ```
 
 ## Benefits
 
-- ✅ **No more deployment failures** due to ESLint errors
-- ✅ **Automatic setup** - no manual configuration needed
-- ✅ **Consistent code quality** across all commits
-- ✅ **Fast feedback** - catch issues before they reach deployment 
+- ✅ **Clean deployments** - no git hooks in production builds
+- ✅ **Local protection** - git hooks only where needed (development)
+- ✅ **CI/CD quality checks** - automated testing in production
+- ✅ **Fast feedback** - catch issues before they reach deployment
+- ✅ **Simple setup** - one command per developer 

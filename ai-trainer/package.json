@@ -8,10 +8,9 @@
     "start": "next start",
     "lint": "next lint",
     "lint:fix": "next lint --fix",
-    "type-check": "tsc --noEmit",
+        "type-check": "tsc --noEmit",
     "pre-commit": "lint-staged",
-    "prepare": "[ -d .git ] && husky install || echo 'Skipping husky install (no git repo)'",
-    "postinstall": "[ -d .git ] && chmod +x setup-git-hooks-auto.sh && ./setup-git-hooks-auto.sh || echo 'Skipping git hooks setup (no git repo)'",
+    "setup-hooks": "chmod +x setup-git-hooks.sh && ./setup-git-hooks.sh",
     "auto-fix": "chmod +x scripts/auto-fix.sh && ./scripts/auto-fix.sh",
     "pre-deploy": "chmod +x scripts/pre-deploy.sh && ./scripts/pre-deploy.sh",
     "export": "next build && next export"
