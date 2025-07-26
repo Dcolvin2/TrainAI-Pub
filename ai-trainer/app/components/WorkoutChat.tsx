@@ -8,11 +8,7 @@ interface Message {
   timestamp: Date;
 }
 
-interface WorkoutChatProps {
-  sessionId?: string;
-}
-
-export function WorkoutChat({ sessionId }: WorkoutChatProps) {
+export function WorkoutChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
