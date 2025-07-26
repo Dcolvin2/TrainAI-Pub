@@ -125,7 +125,7 @@ export default function TodaysWorkoutPage() {
     const loadNikeWorkout = async () => {
       const { data, error } = await supabase
         .from('nike_workouts')
-        .select(`workout, "Upper / Lower body", Sets, Reps, Exercise, "Exercise Type"`)
+        .select(`"workout", "Upper / Lower body", "Sets", "Reps", "Exercise", "Exercise Type"`)
         .eq('workout', 1);
 
       if (error) {
@@ -188,7 +188,7 @@ export default function TodaysWorkoutPage() {
         // 2. Query nike_workouts where workout = nextWorkout
         const { data: rows, error } = await supabase
           .from('nike_workouts')
-          .select(`workout, Exercise, Sets, Reps, "Exercise Type", "Upper / Lower body"`)
+          .select(`"workout", "Exercise", "Sets", "Reps", "Exercise Type", "Upper / Lower body"`)
           .eq('workout', nextWorkout);
 
         console.log('📊 Nike workout result:', { rows: rows?.length, error, nextWorkout });
