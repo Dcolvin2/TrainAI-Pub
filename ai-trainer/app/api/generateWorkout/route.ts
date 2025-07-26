@@ -26,13 +26,46 @@ const getDayWorkoutType = (day: string) => {
   return workoutSchedule[dayKey as keyof typeof workoutSchedule] || null;
 };
 
-// Equipment-aware cardio workout
-const getCardioEquipmentWorkout = (equipmentList: string[]) => {
-  const cardioOptions = ['Treadmill', 'Bike', 'Rowing Machine', 'Elliptical', 'Air Bike'];
-  const available = cardioOptions.filter(machine => 
-    equipmentList.some(eq => eq.toLowerCase().includes(machine.toLowerCase()))
-  );
-  return available.length > 0 ? available[0] : "bodyweight circuit";
+// Get available exercises based on user equipment and category
+const getAvailableExercises = async (equipmentList: string[], category?: string) => {
+  let query = supabase
+    .from('exercise')
+    .select('*');
+  
+  if (category) {
+    query = query.eq('category', category);
+  }
+  
+  // Filter by equipment - exercises that can be done with available equipment
+  const { data: exercises } = await query;
+  
+  if (!exercises) return [];
+  
+  // Filter exercises based on available equipment
+  return exercises.filter(exercise => {
+    if (!exercise.equipment_required || exercise.equipment_required.length === 0) {
+      return true; // Bodyweight exercises
+    }
+    
+    // Check if user has any of the required equipment
+    return exercise.equipment_required.some((required: string) =>
+      equipmentList.some(available => 
+        available.toLowerCase().includes(required.toLowerCase()) ||
+        required.toLowerCase().includes(available.toLowerCase())
+      )
+    );
+  });
+};
+
+// Get user profile with equipment
+const getUserProfile = async (userId: string) => {
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('equipment, experience_level, first_name')
+    .eq('id', userId)
+    .single();
+  
+  return profile;
 };
 
 
@@ -45,12 +78,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
     }
 
-    // Fetch user context
-    const [{ data: profile }, { data: equipment }, { data: goals }] = await Promise.all([
-      supabase.from('profiles').select('*').eq('id', userId).single(),
-      supabase.from('equipment').select('name').eq('user_id', userId),
+    // Fetch user context with new dynamic exercise system
+    const [profile, { data: goals }] = await Promise.all([
+      getUserProfile(userId),
       supabase.from('user_goals').select('description').eq('user_id', userId)
     ]);
+
+    const equipmentList = profile?.equipment || [];
 
     let systemPrompt = '';
     let userPrompt = prompt;
@@ -79,11 +113,18 @@ export async function POST(req: Request) {
       if (flahertyRows && flahertyRows.length > 0) {
 
 
+        // Get available exercises for Flaherty workout
+        const availableExercises = await getAvailableExercises(equipmentList);
+        const exerciseOptions = availableExercises.map(ex => `${ex.name} (${ex.category})`).join('\n');
+        
         systemPrompt = `You are TrainAI, an expert fitness coach. The user is following the Flaherty workout program.
         
         User profile: ${profile?.first_name || 'Unknown'}.
         Goals: ${goals?.map(g => g.description).join(', ') || 'None'}.
-        Equipment: ${equipment?.map(e => e.name).join(', ') || 'None'}.
+        Equipment: ${equipmentList.join(', ') || 'None'}.
+        
+        Available exercises for this user:
+        ${exerciseOptions}
         
         The user last completed Flaherty workout #${lastWorkout}. This is workout #${nextWorkoutNumber}.`;
         
@@ -99,7 +140,7 @@ export async function POST(req: Request) {
         
         User profile: ${profile?.first_name || 'Unknown'}.
         Goals: ${goals?.map(g => g.description).join(', ') || 'None'}.
-        Equipment: ${equipment?.map(e => e.name).join(', ') || 'None'}.
+        Equipment: ${equipmentList.join(', ') || 'None'}.
         
         Create a Flaherty-style workout that focuses on compound movements, progressive overload, and functional fitness.
         Total workout time should be ${minutes} minutes.
@@ -112,29 +153,37 @@ export async function POST(req: Request) {
       const detectedDay = dayKeywords.find(day => prompt.toLowerCase().includes(day));
       
       let daySpecificPrompt = '';
-      const equipmentList = equipment?.map(e => e.name) || [];
       
       if (detectedDay) {
         const dayType = getDayWorkoutType(detectedDay);
         
         if (dayType && dayType.includes('Cardio')) {
-          const cardioEquipment = getCardioEquipmentWorkout(equipmentList);
-          daySpecificPrompt = `Today is ${detectedDay.charAt(0).toUpperCase() + detectedDay.slice(1)} and it's a cardio day. Use ${cardioEquipment} for the main cardio session.`;
+          // Get cardio exercises from database
+          const cardioExercises = await getAvailableExercises(equipmentList, 'endurance');
+          const cardioOptions = cardioExercises.map(ex => ex.name).join(', ');
+          daySpecificPrompt = `Today is ${detectedDay.charAt(0).toUpperCase() + detectedDay.slice(1)} and it's a cardio day. Available cardio exercises: ${cardioOptions}.`;
         } else if (dayType) {
           daySpecificPrompt = `Today is ${detectedDay.charAt(0).toUpperCase() + detectedDay.slice(1)} and it's a ${dayType} day. Focus the workout on ${dayType} training.`;
         }
       }
 
+      // Get available exercises for the user
+      const availableExercises = await getAvailableExercises(equipmentList);
+      const exerciseOptions = availableExercises.map(ex => `${ex.name} (${ex.category})`).join('\n');
+      
       systemPrompt = `You are TrainAI, an expert fitness coach.
       
       User profile: ${profile?.first_name || 'Unknown'}.
       Goals: ${goals?.map(g => g.description).join(', ') || 'None'}.
-      Equipment: ${equipment?.map(e => e.name).join(', ') || 'None'}.
+      Equipment: ${equipmentList.join(', ') || 'None'}.
       ${daySpecificPrompt}
+      
+      Available exercises for this user:
+      ${exerciseOptions}
       
       Create a ${minutes}-minute workout that matches the user's request and available equipment.
       
-      IMPORTANT: Use exact exercise names. Do NOT add "(bodyweight)" to exercise names unless it's explicitly part of the exercise name.`;
+      IMPORTANT: Use exact exercise names from the available exercises list. Do NOT add "(bodyweight)" to exercise names unless it's explicitly part of the exercise name.`;
     }
 
     // Call OpenAI
