@@ -77,37 +77,126 @@ interface WorkoutData {
 }
 
 // Simple Timer Component
-function WorkoutTimer({ running, onToggle }: { running: boolean; onToggle: () => void }) {
-  const [seconds, setSeconds] = useState(0);
+function WorkoutTimer({ duration, running, onExpire, className = '' }: { 
+  duration: number; 
+  running: boolean; 
+  onExpire: () => void;
+  className?: string;
+}) {
+  const [seconds, setSeconds] = useState(duration);
 
   useEffect(() => {
     if (!running) return;
-    const id = setInterval(() => setSeconds(s => s + 1), 1000);
+    const id = setInterval(() => {
+      setSeconds(s => {
+        if (s <= 1) {
+          onExpire();
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
     return () => clearInterval(id);
-  }, [running]);
+  }, [running, onExpire]);
 
   const hh = String(Math.floor(seconds / 3600)).padStart(2, '0');
   const mm = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
   const ss = String(seconds % 60).padStart(2, '0');
 
   return (
-    <div className="flex items-center space-x-3">
-      <button
-        onClick={onToggle}
-        className="p-2 text-white bg-green-500 rounded-full hover:bg-green-600 transition-colors"
-      >
-        {running ? (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <rect x="6" y="4" width="4" height="16" />
-            <rect x="14" y="4" width="4" height="16" />
-          </svg>
-        ) : (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <polygon points="5,3 19,12 5,21" />
-          </svg>
+    <div className={`bg-[#1E293B] rounded-xl p-6 shadow-md ${className}`}>
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-semibold text-white">Workout Timer</h2>
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={() => {/* Timer toggle handled by parent */}}
+            className="p-2 text-white bg-green-500 rounded-full hover:bg-green-600 transition-colors"
+          >
+            {running ? (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <rect x="6" y="4" width="4" height="16" />
+                <rect x="14" y="4" width="4" height="16" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <polygon points="5,3 19,12 5,21" />
+              </svg>
+            )}
+          </button>
+          <span className="font-mono text-2xl text-white">{`${hh}:${mm}:${ss}`}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Simple WorkoutChat Component
+function WorkoutChat({ sessionId, concise = false }: { sessionId: string; concise?: boolean }) {
+  const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([
+    { role: 'assistant', content: 'Ready to help with your workout! How are you feeling today?' }
+  ]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const sendMessage = async () => {
+    if (!input.trim()) return;
+    
+    const userMessage = { role: 'user' as const, content: input };
+    setMessages(prev => [...prev, userMessage]);
+    setInput('');
+    setIsLoading(true);
+
+    // Simulate AI response
+    setTimeout(() => {
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: 'Great work! Keep pushing through those sets. Remember to maintain proper form.'
+      }]);
+      setIsLoading(false);
+    }, 1000);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="max-h-40 overflow-y-auto space-y-2">
+        {messages.map((msg, i) => (
+          <div key={i} className={`p-2 rounded-lg ${
+            msg.role === 'user' 
+              ? 'bg-[#22C55E]/20 text-white ml-4' 
+              : 'bg-[#1E293B] text-gray-300'
+          }`}>
+            {msg.content}
+          </div>
+        ))}
+        {isLoading && (
+          <div className="bg-[#1E293B] text-gray-300 p-2 rounded-lg">
+            <div className="flex items-center space-x-2">
+              <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-[#22C55E]"></div>
+              <span>AI is thinking...</span>
+            </div>
+          </div>
         )}
-      </button>
-      <span className="font-mono text-lg text-white">{`${hh}:${mm}:${ss}`}</span>
+      </div>
+      
+      {!concise && (
+        <div className="flex space-x-2">
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+            placeholder="Ask about your workout..."
+            className="flex-1 bg-[#0F172A] border border-[#334155] rounded-lg px-3 py-2 text-white text-sm focus:border-[#22C55E] focus:outline-none"
+          />
+          <button
+            onClick={sendMessage}
+            disabled={isLoading}
+            className="bg-[#22C55E] hover:bg-[#16a34a] text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+          >
+            Send
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -136,6 +225,7 @@ export default function TodaysWorkoutPage() {
   const [restTimerRunning, setRestTimerRunning] = useState(false);
   const [restTimerDuration, setRestTimerDuration] = useState(60);
   const [currentExercise, setCurrentExercise] = useState<Exercise | null>(null);
+  const [duration, setDuration] = useState(45 * 60); // 45 minutes default
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -149,36 +239,44 @@ export default function TodaysWorkoutPage() {
   useEffect(() => {
     if (!user?.id) return;
 
-    fetch('/api/currentWorkout')
-      .then(res => res.json())
-      .then(data => {
+    const loadWorkout = async () => {
+      try {
+        const response = await fetch('/api/currentWorkout');
+        const data = await response.json();
+        
         if (data.error) {
           setWorkoutError(data.error);
           return;
         }
         
-        // Convert to Exercise format for tracking
-        const exerciseList: Exercise[] = data.details?.map((ex: { name: string; sets: Array<{ reps: number; prescribed: number; rest: number }> }, index: number) => ({
-          id: `${ex.name}-${index}`,
-          name: ex.name,
-          sets: ex.sets.length,
-          reps: ex.sets[0]?.reps || 8,
-          prescribedWeight: ex.sets[0]?.prescribed || 0,
-          restSeconds: ex.sets[0]?.rest ?? 60,
-        })) || [];
-        
-        setExercises(exerciseList);
-        if (exerciseList.length > 0) {
-          setCurrentExercise(exerciseList[0]);
+        if (data.details && data.details.length > 0) {
+          // Convert to Exercise format for tracking
+          const exerciseList: Exercise[] = data.details.map((ex: { name: string; sets: Array<{ reps: number; prescribed: number; rest: number }> }, index: number) => ({
+            id: `${ex.name}-${index}`,
+            name: ex.name,
+            sets: ex.sets.length,
+            reps: ex.sets[0]?.reps || 8,
+            prescribedWeight: ex.sets[0]?.prescribed || 0,
+            restSeconds: ex.sets[0]?.rest ?? 60,
+          }));
+          
+          setExercises(exerciseList);
+          if (exerciseList.length > 0) {
+            setCurrentExercise(exerciseList[0]);
+          }
+        } else {
+          // No workout found, could prompt for AI generation
+          setWorkoutError('No workout found for today');
         }
-      })
-      .catch(err => {
+      } catch (err) {
         console.error('Error fetching workout:', err);
         setWorkoutError('Failed to load workout');
-      })
-      .finally(() => {
+      } finally {
         setIsLoadingWorkout(false);
-      });
+      }
+    };
+
+    loadWorkout();
   }, [user?.id]);
 
   // Handle speech recognition
@@ -296,7 +394,7 @@ export default function TodaysWorkoutPage() {
   };
 
   // Advance to next set or finish
-  const next = (): void => {
+  const nextSet = (): void => {
     setCurrentSet(({ exIdx, setIdx }) => {
       if (exIdx < exercises.length) {
         if (setIdx + 1 < exercises[exIdx].sets) {
@@ -337,7 +435,7 @@ export default function TodaysWorkoutPage() {
     setRestTimerRunning(true);
     setMainTimerRunning(false);
     
-    next();
+    nextSet();
   };
 
   // Finish workout and save to Supabase
@@ -391,22 +489,20 @@ export default function TodaysWorkoutPage() {
   }
 
   return (
-    <div className="p-5 max-w-lg mx-auto bg-[#0F172A] min-h-screen">
+    <div className="p-6 max-w-md mx-auto bg-[#0F172A] min-h-screen">
       {/* Header */}
-      <header className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold text-white">Today&apos;s Workout</h1>
-        <div className="flex space-x-2">
+      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 space-y-4 sm:space-y-0">
+        <h1 className="text-3xl font-bold text-white">Today&apos;s Workout</h1>
+        <div className="flex items-center space-x-4">
           <button
-            type="button"
             onClick={() => setMainTimerRunning((prev) => !prev)}
-            className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded"
+            className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg"
           >
             {mainTimerRunning ? 'Pause' : 'Start'}
           </button>
-          <button
-            type="button"
-            onClick={startListening}
-            className="p-2 bg-transparent rounded"
+          <button 
+            onClick={startListening} 
+            className="p-2 bg-transparent"
             aria-label="Voice input"
           >
             🎤
@@ -415,25 +511,22 @@ export default function TodaysWorkoutPage() {
       </header>
 
       {/* Main Workout Timer */}
-      <div className="bg-[#1E293B] rounded-xl p-4 shadow-md mb-4">
-        <div className="flex justify-between items-center">
-          <h2 className="text-lg font-semibold text-white">Workout Timer</h2>
-          <WorkoutTimer 
-            running={mainTimerRunning} 
-            onToggle={() => setMainTimerRunning(!mainTimerRunning)} 
-          />
-        </div>
-      </div>
+      <WorkoutTimer 
+        duration={duration} 
+        running={mainTimerRunning} 
+        onExpire={() => setMainTimerRunning(false)} 
+        className="mb-8" 
+      />
 
       {/* Rest Timer */}
       {restTimerRunning && (
-        <div className="bg-[#1E293B] rounded-xl p-4 shadow-md border-l-4 border-orange-500 mb-4">
-          <div className="flex justify-between items-center mb-2">
-            <h2 className="text-lg font-semibold text-white">Rest Timer</h2>
+        <div className="bg-[#1E293B] rounded-xl p-6 shadow-md border-l-4 border-orange-500 mb-8">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-white">Rest Timer</h2>
             <span className="text-orange-400 font-medium">Take a break!</span>
           </div>
           <div className="text-center">
-            <div className="text-3xl font-bold text-orange-400 mb-2">
+            <div className="text-4xl font-bold text-orange-400 mb-2">
               {Math.floor(restTimerDuration / 60)}:{(restTimerDuration % 60).toString().padStart(2, '0')}
             </div>
             <p className="text-gray-400">Next set coming up...</p>
@@ -442,11 +535,11 @@ export default function TodaysWorkoutPage() {
       )}
 
       {/* AI Chat Agent Section */}
-      <section className="mb-6">
-        <h2 className="text-lg font-semibold text-white mb-2">AI Workout Builder</h2>
+      <section className="mb-8">
+        <h2 className="text-xl font-semibold text-white mb-4">AI Workout Builder</h2>
         
         {/* Time Selection */}
-        <div className="flex items-center gap-4 mb-3">
+        <div className="flex items-center gap-4 mb-4">
           <label className="text-white text-sm">Time Available:</label>
           <input
             type="number"
@@ -560,9 +653,7 @@ export default function TodaysWorkoutPage() {
       </section>
 
       {/* Workout Tracking Section */}
-      <section className="bg-[#1E293B] p-4 rounded-lg">
-        <h2 className="text-lg font-semibold text-white mb-4">Today&apos;s Workout</h2>
-        
+      <section className="space-y-6 mb-8">
         {isLoadingWorkout ? (
           <div className="text-center text-white">Loading workout...</div>
         ) : workoutError ? (
@@ -576,149 +667,141 @@ export default function TodaysWorkoutPage() {
             <p className="text-sm">Use the AI builder above to create your first workout!</p>
           </div>
         ) : (
-          <>
-            {/* Current Exercise Highlight */}
-            {currentExercise && (
-              <div className="mb-4 p-3 bg-[#22C55E]/10 border border-[#22C55E]/20 rounded-lg">
-                <h3 className="text-md font-semibold text-[#22C55E] mb-1">
-                  Current: {currentExercise.name}
-                </h3>
-                <p className="text-gray-300 text-xs">
-                  Set {currentSet.setIdx + 1} of {currentExercise.sets} • {currentExercise.reps} reps
-                </p>
+          exercises.map((ex, exIdx) => (
+            <div key={ex.id} className="bg-[#1F2937] p-4 rounded-lg border border-dashed border-[#22C55E]/30">
+              <h2 className="text-2xl font-semibold text-white mb-4">
+                {ex.name} <span className="text-sm text-gray-400">({ex.sets} sets)</span>
+              </h2>
+              
+              <div className="overflow-x-auto">
+                <table className="w-full bg-[#111827] border border-[#334155] rounded-lg">
+                  {/* Table Header */}
+                  <thead>
+                    <tr className="bg-[#1E293B]">
+                      <th className="px-3 py-2 text-left text-white text-sm font-medium border-b border-[#334155]">
+                        Exercise Name
+                      </th>
+                      <th className="px-3 py-2 text-center text-white text-sm font-medium border-b border-[#334155]">
+                        Set
+                      </th>
+                      <th className="px-3 py-2 text-left text-white text-sm font-medium border-b border-[#334155]">
+                        Previous
+                      </th>
+                      <th className="px-3 py-2 text-center text-white text-sm font-medium border-b border-[#334155]">
+                        Lbs
+                      </th>
+                      <th className="px-3 py-2 text-center text-white text-sm font-medium border-b border-[#334155]">
+                        Reps
+                      </th>
+                      <th className="px-3 py-2 text-center text-white text-sm font-medium border-b border-[#334155]">
+                        ✓
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Array.from({ length: ex.sets }, (_, setIdx) => {
+                      const completed = logs.some((l) => l.exerciseId === ex.id && l.setIndex === setIdx);
+                      const isCurrent = exIdx === currentSet.exIdx && setIdx === currentSet.setIdx;
+                      
+                      return (
+                        <tr 
+                          key={setIdx}
+                          className={`${
+                            completed 
+                              ? 'opacity-50 bg-gray-800' 
+                              : isCurrent
+                              ? 'bg-[#22C55E]/10'
+                              : 'hover:bg-[#1E293B]'
+                          } transition-colors`}
+                        >
+                          {/* Exercise Name */}
+                          <td className="px-3 py-2 text-white text-sm border-b border-[#334155]">
+                            {setIdx === 0 ? ex.name : ''}
+                          </td>
+                          
+                          {/* Set Number */}
+                          <td className="px-3 py-2 text-center text-white text-sm border-b border-[#334155]">
+                            {setIdx + 1}
+                          </td>
+                          
+                          {/* Previous Performance */}
+                          <td className="px-3 py-2 text-left text-gray-300 text-sm border-b border-[#334155]">
+                            {ex.prescribedWeight > 0 ? `${ex.prescribedWeight - 5} lb × ${ex.reps}` : 'New'}
+                          </td>
+                          
+                          {/* Weight Input */}
+                          <td className="px-3 py-2 text-center border-b border-[#334155]">
+                            <input
+                              type="number"
+                              defaultValue={ex.prescribedWeight}
+                              disabled={completed}
+                              onBlur={(e) => logSet(Number(e.target.value), ex.reps)}
+                              className={`w-16 p-1 bg-transparent border border-[#334155] rounded text-white text-center text-sm focus:border-[#22C55E] focus:outline-none ${
+                                completed ? 'opacity-50' : ''
+                              }`}
+                              placeholder="0"
+                            />
+                          </td>
+                          
+                          {/* Reps */}
+                          <td className="px-3 py-2 text-center text-white text-sm border-b border-[#334155]">
+                            {ex.reps}
+                          </td>
+                          
+                          {/* Checkbox */}
+                          <td className="px-3 py-2 text-center border-b border-[#334155]">
+                            <button
+                              type="button"
+                              onClick={() => logSet(ex.prescribedWeight, ex.reps)}
+                              disabled={completed}
+                              className={`w-6 h-6 rounded border-2 transition-colors ${
+                                completed
+                                  ? 'bg-[#22C55E] border-[#22C55E] text-white'
+                                  : isCurrent
+                                  ? 'border-[#22C55E] hover:bg-[#22C55E] hover:text-white'
+                                  : 'border-[#334155] hover:border-[#22C55E] hover:bg-[#22C55E] hover:text-white'
+                              }`}
+                            >
+                              {completed && (
+                                <svg className="w-4 h-4 mx-auto" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                </svg>
+                              )}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-            )}
-
-            {/* Workout Tables */}
-            {exercises.map((ex, exIdx) => (
-              <div key={ex.id} className="mb-6 border border-dashed border-[#22C55E]/30 rounded-lg p-4">
-                <div className="overflow-x-auto">
-                  <table className="w-full bg-[#111827] border border-[#334155] rounded-lg">
-                    {/* Table Header */}
-                    <thead>
-                      <tr className="bg-[#1E293B]">
-                        <th className="px-3 py-2 text-left text-white text-sm font-medium border-b border-[#334155]">
-                          Exercise Name
-                        </th>
-                        <th className="px-3 py-2 text-center text-white text-sm font-medium border-b border-[#334155]">
-                          Set
-                        </th>
-                        <th className="px-3 py-2 text-left text-white text-sm font-medium border-b border-[#334155]">
-                          Previous
-                        </th>
-                        <th className="px-3 py-2 text-center text-white text-sm font-medium border-b border-[#334155]">
-                          Lbs
-                        </th>
-                        <th className="px-3 py-2 text-center text-white text-sm font-medium border-b border-[#334155]">
-                          Reps
-                        </th>
-                        <th className="px-3 py-2 text-center text-white text-sm font-medium border-b border-[#334155]">
-                          ✓
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Array.from({ length: ex.sets }, (_, setIdx) => {
-                        const completed = logs.some((l) => l.exerciseId === ex.id && l.setIndex === setIdx);
-                        const isCurrent = exIdx === currentSet.exIdx && setIdx === currentSet.setIdx;
-                        
-                        return (
-                          <tr 
-                            key={setIdx}
-                            className={`${
-                              completed 
-                                ? 'opacity-50 bg-gray-800' 
-                                : isCurrent
-                                ? 'bg-[#22C55E]/10'
-                                : 'hover:bg-[#1E293B]'
-                            } transition-colors`}
-                          >
-                            {/* Exercise Name */}
-                            <td className="px-3 py-2 text-white text-sm border-b border-[#334155]">
-                              {setIdx === 0 ? ex.name : ''}
-                            </td>
-                            
-                            {/* Set Number */}
-                            <td className="px-3 py-2 text-center text-white text-sm border-b border-[#334155]">
-                              {setIdx + 1}
-                            </td>
-                            
-                            {/* Previous Performance */}
-                            <td className="px-3 py-2 text-left text-gray-300 text-sm border-b border-[#334155]">
-                              {ex.prescribedWeight > 0 ? `${ex.prescribedWeight - 5} lb × ${ex.reps}` : 'New'}
-                            </td>
-                            
-                            {/* Weight Input */}
-                            <td className="px-3 py-2 text-center border-b border-[#334155]">
-                              <input
-                                type="number"
-                                defaultValue={ex.prescribedWeight}
-                                disabled={completed}
-                                onBlur={(e) => logSet(Number(e.target.value), ex.reps)}
-                                className={`w-16 p-1 bg-transparent border border-[#334155] rounded text-white text-center text-sm focus:border-[#22C55E] focus:outline-none ${
-                                  completed ? 'opacity-50' : ''
-                                }`}
-                                placeholder="0"
-                              />
-                            </td>
-                            
-                            {/* Reps */}
-                            <td className="px-3 py-2 text-center text-white text-sm border-b border-[#334155]">
-                              {ex.reps}
-                            </td>
-                            
-                            {/* Checkbox */}
-                            <td className="px-3 py-2 text-center border-b border-[#334155]">
-                              <button
-                                type="button"
-                                onClick={() => logSet(ex.prescribedWeight, ex.reps)}
-                                disabled={completed}
-                                className={`w-6 h-6 rounded border-2 transition-colors ${
-                                  completed
-                                    ? 'bg-[#22C55E] border-[#22C55E] text-white'
-                                    : isCurrent
-                                    ? 'border-[#22C55E] hover:bg-[#22C55E] hover:text-white'
-                                    : 'border-[#334155] hover:border-[#22C55E] hover:bg-[#22C55E] hover:text-white'
-                                }`}
-                              >
-                                {completed && (
-                                  <svg className="w-4 h-4 mx-auto" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                  </svg>
-                                )}
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-                
-                {/* Add Set Button */}
-                <div className="flex justify-center mt-3">
-                  <button
-                    type="button"
-                    className="text-[#22C55E] hover:text-[#16a34a] text-sm font-medium transition-colors"
-                  >
-                    + ADD SET
-                  </button>
-                </div>
+              
+              {/* Add Set Button */}
+              <div className="flex justify-center mt-3">
+                <button
+                  type="button"
+                  className="text-[#22C55E] hover:text-[#16a34a] text-sm font-medium transition-colors"
+                >
+                  + ADD SET
+                </button>
               </div>
-            ))}
-
-            {/* Complete Workout Button */}
-            <footer className="flex justify-end pt-3 border-t border-gray-700">
-              <button
-                type="button"
-                onClick={finishWorkout}
-                className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded transition-colors"
-              >
-                Complete Workout
-              </button>
-            </footer>
-          </>
+            </div>
+          ))
         )}
+      </section>
+
+      {/* Complete Workout Button */}
+      <button
+        onClick={finishWorkout}
+        className="w-full bg-red-500 hover:bg-red-600 text-white py-3 rounded-lg mb-8"
+      >
+        Finish Workout
+      </button>
+
+      {/* WorkoutChat Section */}
+      <section className="bg-[#1F2937] p-4 rounded-lg">
+        <h2 className="text-xl font-semibold text-white mb-2">Your Generated Workout</h2>
+        <WorkoutChat sessionId={user?.id || ''} concise />
       </section>
     </div>
   );
