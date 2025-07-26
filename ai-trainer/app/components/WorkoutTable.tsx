@@ -122,29 +122,82 @@ const parseWorkoutString = (workoutString: string, section: 'warmup' | 'workout'
   };
 };
 
-// Convert workout arrays to structured sets
+// Get default set count based on exercise type
+const getDefaultSetCount = (section: 'warmup' | 'workout' | 'cooldown', exerciseName: string): number => {
+  // Determine exercise type based on section and exercise name
+  if (section === 'warmup') return 1;
+  if (section === 'cooldown') return 1;
+  
+  // For main workout, determine by exercise characteristics
+  const exerciseLower = exerciseName.toLowerCase();
+  
+  // Cardio/endurance exercises
+  if (exerciseLower.includes('cardio') || 
+      exerciseLower.includes('run') || 
+      exerciseLower.includes('jog') || 
+      exerciseLower.includes('bike') || 
+      exerciseLower.includes('row') || 
+      exerciseLower.includes('elliptical') ||
+      exerciseLower.includes('jumping') ||
+      exerciseLower.includes('burpee') ||
+      exerciseLower.includes('mountain climber')) {
+    return 2;
+  }
+  
+  // HIIT exercises
+  if (exerciseLower.includes('sprint') || 
+      exerciseLower.includes('tabata') || 
+      exerciseLower.includes('circuit') ||
+      exerciseLower.includes('amrap') ||
+      exerciseLower.includes('emom')) {
+    return 3;
+  }
+  
+  // Strength exercises (default)
+  return 4;
+};
+
+// Convert workout arrays to structured sets with proper set counts
 const convertWorkoutToSets = (workout: GeneratedWorkout): WorkoutSet[] => {
   const sets: WorkoutSet[] = [];
   
   // Process warmup
-  workout.warmup.forEach((item, index) => {
-    const set = parseWorkoutString(item, 'warmup');
-    set.setNumber = index + 1;
-    sets.push(set);
+  workout.warmup.forEach((item) => {
+    const baseSet = parseWorkoutString(item, 'warmup');
+    const setCount = getDefaultSetCount('warmup', baseSet.exerciseName);
+    
+    for (let i = 0; i < setCount; i++) {
+      const set = { ...baseSet };
+      set.id = `${baseSet.exerciseName}-warmup-${Date.now()}-${Math.random()}-${i}`;
+      set.setNumber = i + 1;
+      sets.push(set);
+    }
   });
   
   // Process main workout
-  workout.workout.forEach((item, index) => {
-    const set = parseWorkoutString(item, 'workout');
-    set.setNumber = index + 1;
-    sets.push(set);
+  workout.workout.forEach((item) => {
+    const baseSet = parseWorkoutString(item, 'workout');
+    const setCount = getDefaultSetCount('workout', baseSet.exerciseName);
+    
+    for (let i = 0; i < setCount; i++) {
+      const set = { ...baseSet };
+      set.id = `${baseSet.exerciseName}-workout-${Date.now()}-${Math.random()}-${i}`;
+      set.setNumber = i + 1;
+      sets.push(set);
+    }
   });
   
   // Process cooldown
-  workout.cooldown.forEach((item, index) => {
-    const set = parseWorkoutString(item, 'cooldown');
-    set.setNumber = index + 1;
-    sets.push(set);
+  workout.cooldown.forEach((item) => {
+    const baseSet = parseWorkoutString(item, 'cooldown');
+    const setCount = getDefaultSetCount('cooldown', baseSet.exerciseName);
+    
+    for (let i = 0; i < setCount; i++) {
+      const set = { ...baseSet };
+      set.id = `${baseSet.exerciseName}-cooldown-${Date.now()}-${Math.random()}-${i}`;
+      set.setNumber = i + 1;
+      sets.push(set);
+    }
   });
   
   return sets;
@@ -183,7 +236,7 @@ export default function WorkoutTable({ workout, onFinishWorkout }: WorkoutTableP
     const newSet: WorkoutSet = {
       id: `${exerciseName}-${section}-${Date.now()}-${Math.random()}`,
       exerciseName,
-      setNumber: lastSet ? lastSet.setNumber + 1 : 1,
+      setNumber: existingSets.length + 1, // Always increment from current count
       prescribedWeight: lastSet?.prescribedWeight || 0,
       prescribedReps: lastSet?.prescribedReps || 10,
       completed: false,

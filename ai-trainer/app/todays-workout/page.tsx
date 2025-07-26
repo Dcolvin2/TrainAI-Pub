@@ -112,76 +112,7 @@ function WorkoutTimer({ elapsedTime, running, onToggle, className = '' }: {
   );
 }
 
-// Simple WorkoutChat Component
-function WorkoutChat({ concise = false }: { concise?: boolean }) {
-  const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([
-    { role: 'assistant', content: 'Ready to help with your workout! How are you feeling today?' }
-  ]);
-  const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
 
-  const sendMessage = async () => {
-    if (!input.trim()) return;
-    
-    const userMessage = { role: 'user' as const, content: input };
-    setMessages(prev => [...prev, userMessage]);
-    setInput('');
-    setIsLoading(true);
-
-    // Simulate AI response
-    setTimeout(() => {
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: 'Great work! Keep pushing through those sets. Remember to maintain proper form.'
-      }]);
-      setIsLoading(false);
-    }, 1000);
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="max-h-40 overflow-y-auto space-y-2">
-        {messages.map((msg, i) => (
-          <div key={i} className={`p-2 rounded-lg ${
-            msg.role === 'user' 
-              ? 'bg-[#22C55E]/20 text-white ml-4' 
-              : 'bg-[#1E293B] text-gray-300'
-          }`}>
-            {msg.content}
-          </div>
-        ))}
-        {isLoading && (
-          <div className="bg-[#1E293B] text-gray-300 p-2 rounded-lg">
-            <div className="flex items-center space-x-2">
-              <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-[#22C55E]"></div>
-              <span>AI is thinking...</span>
-            </div>
-          </div>
-        )}
-      </div>
-      
-      {!concise && (
-        <div className="flex space-x-2">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-            placeholder="Ask about your workout..."
-            className="flex-1 bg-[#0F172A] border border-[#334155] rounded-lg px-3 py-2 text-white text-sm focus:border-[#22C55E] focus:outline-none"
-          />
-          <button
-            onClick={sendMessage}
-            disabled={isLoading}
-            className="bg-[#22C55E] hover:bg-[#16a34a] text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
-          >
-            Send
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
 
 export default function TodaysWorkoutPage() {
   const { user } = useAuth();
@@ -520,11 +451,7 @@ export default function TodaysWorkoutPage() {
         )}
       </section>
 
-      {/* WorkoutChat Section */}
-      <section className="bg-[#1F2937] p-4 rounded-lg">
-        <h2 className="text-xl font-semibold text-white mb-2">Your Generated Workout</h2>
-        <WorkoutChat concise />
-      </section>
+
     </div>
   );
 } 
