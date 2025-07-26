@@ -15,9 +15,14 @@ if [ ! -d "node_modules/husky" ]; then
     npm install --save-dev husky lint-staged --silent
 fi
 
-# Initialize husky
-echo "🔧 Initializing husky..."
-npx husky install --silent
+# Initialize husky (only if git repo exists)
+if [ -d ".git" ]; then
+    echo "🔧 Initializing husky..."
+    npx husky install --silent
+else
+    echo "⚠️  Skipping husky install (no git repository)"
+    exit 0
+fi
 
 # Make the pre-commit hook executable
 chmod +x .husky/pre-commit 2>/dev/null || true

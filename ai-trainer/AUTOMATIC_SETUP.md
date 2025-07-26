@@ -63,6 +63,14 @@ npm install
 ./setup-git-hooks.sh
 ```
 
+### Vercel Deployment Issues:
+The git hooks setup is automatically skipped in Vercel's build environment (no git repo). This is normal and expected.
+
+If you see build errors related to husky, the fix is already in place:
+- `vercel.json` uses custom build commands
+- `package.json` scripts check for git repo before running
+- Build process skips git hooks setup automatically
+
 ### If you get permission errors:
 ```bash
 chmod +x .husky/pre-commit
