@@ -87,7 +87,6 @@ export default function TodaysWorkoutPage() {
   
   // Chat agent state
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
   const [workoutData, setWorkoutData] = useState<WorkoutData | NikeWorkout | null>(null);
   const [chatMessages, setChatMessages] = useState<Array<{sender: 'user' | 'assistant', text: string, timestamp?: string}>>([]);
 
@@ -312,12 +311,7 @@ export default function TodaysWorkoutPage() {
           <span className="text-gray-400 text-sm">minutes</span>
         </div>
 
-        {/* Error Banner */}
-        {error && (
-          <div className="bg-red-900/20 border border-red-500 text-red-400 px-4 py-3 rounded-xl mb-4">
-            {error}
-          </div>
-        )}
+
 
         {/* Integrated Chat Container */}
         <div className="bg-[#1E293B] rounded-xl shadow-md mb-4">
