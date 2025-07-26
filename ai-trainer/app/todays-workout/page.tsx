@@ -1,6 +1,5 @@
 'use client'
 import React, { useState, useEffect, useRef } from 'react';
-import Link from 'next/link';
 import { WorkoutTimer } from '@/app/components/WorkoutTimer';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
