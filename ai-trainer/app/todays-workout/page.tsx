@@ -3,8 +3,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import WorkoutTable from '../components/WorkoutTable';
-
 import ChatBubble from '../components/ChatBubble';
+import { supabase } from '@/lib/supabaseClient';
 
 
 
@@ -107,6 +107,24 @@ export default function TodaysWorkoutPage() {
       return;
     }
   }, [user, router]);
+
+  // TEST: Fetch and log Flaherty workout 1
+  useEffect(() => {
+    const testFlahertyWorkout = async () => {
+      const { data, error } = await supabase
+        .from('flaherty_workouts')
+        .select('Workout, Exercise, Sets, Reps, Exercise Type')
+        .eq('Workout', 1);
+
+      if (error) {
+        console.error('❌ Error querying flaherty_workouts:', error);
+      } else {
+        console.log('✅ Flaherty Workout 1:', data);
+      }
+    };
+
+    testFlahertyWorkout();
+  }, []);
 
   // Auto-scroll chat to bottom when new messages are added
   useEffect(() => {
