@@ -57,6 +57,8 @@ interface Exercise {
   sets: number;
   reps: number;
   prescribedWeight: number;
+  previousWeight?: number;
+  previousReps?: number;
   restSeconds: number;
 }
 
@@ -131,7 +133,7 @@ function WorkoutTimer({ duration, running, onExpire, className = '' }: {
 }
 
 // Simple WorkoutChat Component
-function WorkoutChat({ concise = false }: { concise?: boolean }) {
+function WorkoutChat({ sessionId, concise = false }: { sessionId: string; concise?: boolean }) {
   const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([
     { role: 'assistant', content: 'Ready to help with your workout! How are you feeling today?' }
   ]);
@@ -224,7 +226,7 @@ export default function TodaysWorkoutPage() {
   const [mainTimerRunning, setMainTimerRunning] = useState(false);
   const [restTimerRunning, setRestTimerRunning] = useState(false);
   const [restTimerDuration, setRestTimerDuration] = useState(60);
-  const [duration] = useState(45 * 60); // 45 minutes default
+  const [duration, setDuration] = useState(45 * 60); // 45 minutes default
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -256,6 +258,8 @@ export default function TodaysWorkoutPage() {
             sets: ex.sets.length,
             reps: ex.sets[0]?.reps || 8,
             prescribedWeight: ex.sets[0]?.prescribed || 0,
+            previousWeight: ex.sets[0]?.prescribed ? ex.sets[0].prescribed - 5 : undefined,
+            previousReps: ex.sets[0]?.reps || 8,
             restSeconds: ex.sets[0]?.rest ?? 60,
           }));
           
@@ -356,12 +360,15 @@ export default function TodaysWorkoutPage() {
         // Parse workout items like "Back Squat: 3x8 @ 100lb rest 90s"
         const match = item.match(/^(.+?):\s*(\d+)x(\d+)\s*@\s*(\d+)lb\s*rest\s*(\d+)s?$/i);
         if (match) {
+          const prescribedWeight = parseInt(match[4]);
           return {
             id: `${match[1]}-${index}`,
             name: match[1],
             sets: parseInt(match[2]),
             reps: parseInt(match[3]),
-            prescribedWeight: parseInt(match[4]),
+            prescribedWeight: prescribedWeight,
+            previousWeight: prescribedWeight - 5,
+            previousReps: parseInt(match[3]),
             restSeconds: parseInt(match[5]),
           };
         }
@@ -372,6 +379,8 @@ export default function TodaysWorkoutPage() {
           sets: 3,
           reps: 8,
           prescribedWeight: 0,
+          previousWeight: undefined,
+          previousReps: 8,
           restSeconds: 60,
         };
       });
@@ -389,24 +398,22 @@ export default function TodaysWorkoutPage() {
   // Advance to next set or finish
   const nextSet = (): void => {
     setCurrentSet(({ exIdx, setIdx }) => {
-      if (exIdx < exercises.length) {
-        if (setIdx + 1 < exercises[exIdx].sets) {
-          return { exIdx, setIdx: setIdx + 1 };
-        }
-        if (exIdx + 1 < exercises.length) {
-          return { exIdx: exIdx + 1, setIdx: 0 };
-        }
+      const currentExercise = exercises[exIdx];
+      if (!currentExercise) return { exIdx, setIdx };
+      
+      if (setIdx + 1 < currentExercise.sets) {
+        return { exIdx, setIdx: setIdx + 1 };
       }
-      // End of workout
+      if (exIdx + 1 < exercises.length) {
+        return { exIdx: exIdx + 1, setIdx: 0 };
+      }
       setMainTimerRunning(false);
-      setRestTimerRunning(false);
       return { exIdx, setIdx };
     });
   };
 
   // Log a set and start rest timer
-  const logSet = (weight: number, reps: number, rpe = 8): void => {
-    const { exIdx, setIdx } = currentSet;
+  const logSet = (exIdx: number, setIdx: number, weight: number, reps: number, rpe = 8): void => {
     const ex = exercises[exIdx];
     
     setLogs((prev) => [
@@ -427,6 +434,15 @@ export default function TodaysWorkoutPage() {
     setMainTimerRunning(false);
     
     nextSet();
+  };
+
+  // Add a set to an exercise
+  const addSet = (exIdx: number): void => {
+    setExercises(prev =>
+      prev.map((ex, i) =>
+        i === exIdx ? { ...ex, sets: ex.sets + 1 } : ex
+      )
+    );
   };
 
   // Finish workout and save to Supabase
@@ -482,9 +498,10 @@ export default function TodaysWorkoutPage() {
   return (
     <div className="p-6 max-w-md mx-auto bg-[#0F172A] min-h-screen">
       {/* Header */}
-      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 space-y-4 sm:space-y-0">
+      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 space-y-2 sm:space-y-0">
         <h1 className="text-3xl font-bold text-white">Today&apos;s Workout</h1>
         <div className="flex items-center space-x-4">
+          <span className="text-white">Time Available: 45 min</span>
           <button
             onClick={() => setMainTimerRunning((prev) => !prev)}
             className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg"
@@ -506,12 +523,12 @@ export default function TodaysWorkoutPage() {
         duration={duration} 
         running={mainTimerRunning} 
         onExpire={() => setMainTimerRunning(false)} 
-        className="mb-8" 
+        className="mb-6" 
       />
 
       {/* Rest Timer */}
       {restTimerRunning && (
-        <div className="bg-[#1E293B] rounded-xl p-6 shadow-md border-l-4 border-orange-500 mb-8">
+        <div className="bg-[#1E293B] rounded-xl p-6 shadow-md border-l-4 border-orange-500 mb-6">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-semibold text-white">Rest Timer</h2>
             <span className="text-orange-400 font-medium">Take a break!</span>
@@ -526,7 +543,7 @@ export default function TodaysWorkoutPage() {
       )}
 
       {/* AI Chat Agent Section */}
-      <section className="mb-8">
+      <section className="mb-6">
         <h2 className="text-xl font-semibold text-white mb-4">AI Workout Builder</h2>
         
         {/* Time Selection */}
@@ -644,7 +661,7 @@ export default function TodaysWorkoutPage() {
       </section>
 
       {/* Workout Tracking Section */}
-      <section className="space-y-6 mb-8">
+      <section className="space-y-6 mb-6">
         {isLoadingWorkout ? (
           <div className="text-center text-white">Loading workout...</div>
         ) : workoutError ? (
@@ -659,124 +676,72 @@ export default function TodaysWorkoutPage() {
           </div>
         ) : (
           exercises.map((ex, exIdx) => (
-            <div key={ex.id} className="bg-[#1F2937] p-4 rounded-lg border border-dashed border-[#22C55E]/30">
-              <h2 className="text-2xl font-semibold text-white mb-4">
-                {ex.name} <span className="text-sm text-gray-400">({ex.sets} sets)</span>
-              </h2>
-              
-              <div className="overflow-x-auto">
-                <table className="w-full bg-[#111827] border border-[#334155] rounded-lg">
-                  {/* Table Header */}
-                  <thead>
-                    <tr className="bg-[#1E293B]">
-                      <th className="px-3 py-2 text-left text-white text-sm font-medium border-b border-[#334155]">
-                        Exercise Name
-                      </th>
-                      <th className="px-3 py-2 text-center text-white text-sm font-medium border-b border-[#334155]">
-                        Set
-                      </th>
-                      <th className="px-3 py-2 text-left text-white text-sm font-medium border-b border-[#334155]">
-                        Previous
-                      </th>
-                      <th className="px-3 py-2 text-center text-white text-sm font-medium border-b border-[#334155]">
-                        Lbs
-                      </th>
-                      <th className="px-3 py-2 text-center text-white text-sm font-medium border-b border-[#334155]">
-                        Reps
-                      </th>
-                      <th className="px-3 py-2 text-center text-white text-sm font-medium border-b border-[#334155]">
-                        ✓
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Array.from({ length: ex.sets }, (_, setIdx) => {
-                      const completed = logs.some((l) => l.exerciseId === ex.id && l.setIndex === setIdx);
-                      const isCurrent = exIdx === currentSet.exIdx && setIdx === currentSet.setIdx;
-                      
-                      return (
-                        <tr 
-                          key={setIdx}
-                          className={`${
-                            completed 
-                              ? 'opacity-50 bg-gray-800' 
-                              : isCurrent
-                              ? 'bg-[#22C55E]/10'
-                              : 'hover:bg-[#1E293B]'
-                          } transition-colors`}
-                        >
-                          {/* Exercise Name */}
-                          <td className="px-3 py-2 text-white text-sm border-b border-[#334155]">
-                            {setIdx === 0 ? ex.name : ''}
-                          </td>
-                          
-                          {/* Set Number */}
-                          <td className="px-3 py-2 text-center text-white text-sm border-b border-[#334155]">
-                            {setIdx + 1}
-                          </td>
-                          
-                          {/* Previous Performance */}
-                          <td className="px-3 py-2 text-left text-gray-300 text-sm border-b border-[#334155]">
-                            {ex.prescribedWeight > 0 ? `${ex.prescribedWeight - 5} lb × ${ex.reps}` : 'New'}
-                          </td>
-                          
-                          {/* Weight Input */}
-                          <td className="px-3 py-2 text-center border-b border-[#334155]">
-                            <input
-                              type="number"
-                              defaultValue={ex.prescribedWeight}
-                              disabled={completed}
-                              onBlur={(e) => logSet(Number(e.target.value), ex.reps)}
-                              className={`w-16 p-1 bg-transparent border border-[#334155] rounded text-white text-center text-sm focus:border-[#22C55E] focus:outline-none ${
-                                completed ? 'opacity-50' : ''
-                              }`}
-                              placeholder="0"
-                            />
-                          </td>
-                          
-                          {/* Reps */}
-                          <td className="px-3 py-2 text-center text-white text-sm border-b border-[#334155]">
-                            {ex.reps}
-                          </td>
-                          
-                          {/* Checkbox */}
-                          <td className="px-3 py-2 text-center border-b border-[#334155]">
-                            <button
-                              type="button"
-                              onClick={() => logSet(ex.prescribedWeight, ex.reps)}
-                              disabled={completed}
-                              className={`w-6 h-6 rounded border-2 transition-colors ${
-                                completed
-                                  ? 'bg-[#22C55E] border-[#22C55E] text-white'
-                                  : isCurrent
-                                  ? 'border-[#22C55E] hover:bg-[#22C55E] hover:text-white'
-                                  : 'border-[#334155] hover:border-[#22C55E] hover:bg-[#22C55E] hover:text-white'
-                              }`}
-                            >
-                              {completed && (
-                                <svg className="w-4 h-4 mx-auto" fill="currentColor" viewBox="0 0 20 20">
-                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                </svg>
-                              )}
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              
-              {/* Add Set Button */}
-              <div className="flex justify-center mt-3">
-                <button
-                  type="button"
-                  className="text-[#22C55E] hover:text-[#16a34a] text-sm font-medium transition-colors"
-                >
-                  + ADD SET
-                </button>
-              </div>
-            </div>
+            <article key={ex.id} className="bg-[#1F2937] p-4 rounded-lg">
+              <h2 className="text-2xl font-semibold text-white mb-3">{ex.name}</h2>
+              <table className="w-full text-white">
+                <thead>
+                  <tr className="border-b border-gray-600">
+                    <th className="py-2 text-left">Set</th>
+                    <th className="py-2 text-left">Previous</th>
+                    <th className="py-2 text-left">Lbs</th>
+                    <th className="py-2 text-left">Reps</th>
+                    <th className="py-2 text-center">✓</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Array.from({ length: ex.sets }).map((_, si) => {
+                    const done = logs.some(l => l.exerciseId === ex.id && l.setIndex === si);
+                    const prevLabel = ex.previousWeight
+                      ? `${ex.previousWeight} lb x ${ex.previousReps ?? ex.reps}`
+                      : `—`;
+                    
+                    return (
+                      <tr key={si} className="border-b border-gray-700">
+                        <td className="py-2">{si + 1}</td>
+                        <td className="py-2">{prevLabel}</td>
+                        <td className="py-2">
+                          <input
+                            type="number"
+                            defaultValue={ex.prescribedWeight}
+                            disabled={done}
+                            onBlur={e => logSet(exIdx, si, Number(e.target.value), ex.reps)}
+                            className="w-16 p-1 bg-transparent border border-gray-600 rounded text-white"
+                          />
+                        </td>
+                        <td className="py-2">
+                          <input
+                            type="number"
+                            defaultValue={ex.reps}
+                            disabled={done}
+                            onBlur={e => logSet(exIdx, si, ex.prescribedWeight, Number(e.target.value))}
+                            className="w-12 p-1 bg-transparent border border-gray-600 rounded text-white"
+                          />
+                        </td>
+                        <td className="py-2 text-center">
+                          <input
+                            type="checkbox"
+                            checked={done}
+                            disabled={done}
+                            onChange={() => logSet(exIdx, si, ex.prescribedWeight, ex.reps)}
+                            className="w-4 h-4 text-green-400"
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  <tr>
+                    <td colSpan={5} className="py-2 text-center">
+                      <button
+                        onClick={() => addSet(exIdx)}
+                        className="text-green-400 hover:underline"
+                      >
+                        + ADD SET
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </article>
           ))
         )}
       </section>
@@ -792,7 +757,7 @@ export default function TodaysWorkoutPage() {
       {/* WorkoutChat Section */}
       <section className="bg-[#1F2937] p-4 rounded-lg">
         <h2 className="text-xl font-semibold text-white mb-2">Your Generated Workout</h2>
-        <WorkoutChat concise />
+        <WorkoutChat sessionId={user?.id ?? ''} concise />
       </section>
     </div>
   );
