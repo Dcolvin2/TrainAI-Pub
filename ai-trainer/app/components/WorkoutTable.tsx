@@ -13,7 +13,7 @@ interface GeneratedWorkout {
 }
 
 interface NikeExercise {
-  Workout: number;
+  workout: number;
   'Upper / Lower body': string;
   Sets: number;
   Reps: string;

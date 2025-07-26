@@ -18,7 +18,7 @@ interface WorkoutData {
 }
 
 interface NikeExercise {
-  Workout: number;
+  workout: number;
   'Upper / Lower body': string;
   Sets: number;
   Reps: string;
@@ -125,8 +125,8 @@ export default function TodaysWorkoutPage() {
     const loadNikeWorkout = async () => {
       const { data, error } = await supabase
         .from('nike_workouts')
-        .select('Workout, "Upper / Lower body", Sets, Reps, Exercise, "Exercise Type"')
-        .eq('Workout', 1);
+        .select(`workout, "Upper / Lower body", Sets, Reps, Exercise, "Exercise Type"`)
+        .eq('workout', 1);
 
       if (error) {
         console.error('❌ Error querying nike_workouts:', error);
@@ -185,11 +185,11 @@ export default function TodaysWorkoutPage() {
 
         console.log('⚡ Nike workout number being requested:', nextWorkout);
 
-        // 2. Query nike_workouts where Workout = nextWorkout
+        // 2. Query nike_workouts where workout = nextWorkout
         const { data: rows, error } = await supabase
           .from('nike_workouts')
-          .select(`Workout, Exercise, Sets, Reps, "Exercise Type", "Upper / Lower body"`)
-          .eq('Workout', nextWorkout);
+          .select(`workout, Exercise, Sets, Reps, "Exercise Type", "Upper / Lower body"`)
+          .eq('workout', nextWorkout);
 
         console.log('📊 Nike workout result:', { rows: rows?.length, error, nextWorkout });
 
