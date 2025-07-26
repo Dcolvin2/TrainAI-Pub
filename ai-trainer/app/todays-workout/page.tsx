@@ -183,7 +183,7 @@ export default function TodaysWorkoutPage() {
         const lastWorkout = profile?.last_nike_workout || 0;
         const nextWorkout = lastWorkout + 1;
 
-        console.log('🔍 Nike workout query:', { lastWorkout, nextWorkout, userId: user.id });
+        console.log('⚡ Nike workout number being requested:', nextWorkout);
 
         // 2. Query nike_workouts where Workout = nextWorkout
         const { data: rows, error } = await supabase
