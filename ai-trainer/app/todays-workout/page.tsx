@@ -32,6 +32,15 @@ interface NikeWorkout {
   workoutNumber: number;
 }
 
+interface Exercise {
+  name: string;
+  primary_muscle: string;
+  is_main_lift: boolean;
+  exercise_phase?: string;
+  equipment_required?: string[];
+  [key: string]: unknown;
+}
+
 
 
 
@@ -313,8 +322,6 @@ export default function TodaysWorkoutPage() {
       const chosenAccessories = filteredAccessories.sort(() => 0.5 - Math.random()).slice(0, accessorySlots);
       const chosenCooldown = cooldownExercises?.sort(() => 0.5 - Math.random()).slice(0, cooldownSlots) || [];
 
-      const fullPlan = [...chosenWarmup, coreLift, ...chosenAccessories, ...chosenCooldown];
-
       /* 6️⃣  save to workouts / workout_log_entries */
       await supabase
         .from('workouts')
@@ -323,23 +330,23 @@ export default function TodaysWorkoutPage() {
           program_name: 'DayOfWeek',
           workout_type: `${day} – ${coreLift.primary_muscle}`,
           main_lifts: JSON.stringify([coreLift.name]),
-          accessory_lifts: JSON.stringify(chosenAccessories.map((c: any) => c.name))
+          accessory_lifts: JSON.stringify(chosenAccessories.map((c: Exercise) => c.name))
         });
 
       /* 7️⃣  return chat summary */
       let reply = `**${day} Workout (${minutes} min)**\n`;
       if (chosenWarmup.length > 0) {
         reply += `**Warm-up:**\n`;
-        chosenWarmup.forEach((a: any) => reply += `• ${a.name}\n`);
+        chosenWarmup.forEach((a: Exercise) => reply += `• ${a.name}\n`);
       }
       reply += `**Core lift:** ${coreLift.name}\n`;
       if (chosenAccessories.length > 0) {
         reply += `**Accessories:**\n`;
-        chosenAccessories.forEach((a: any) => reply += `• ${a.name}\n`);
+        chosenAccessories.forEach((a: Exercise) => reply += `• ${a.name}\n`);
       }
       if (chosenCooldown.length > 0) {
         reply += `**Cool-down:**\n`;
-        chosenCooldown.forEach((a: any) => reply += `• ${a.name}\n`);
+        chosenCooldown.forEach((a: Exercise) => reply += `• ${a.name}\n`);
       }
 
       setChatMessages(prev => [
@@ -349,9 +356,9 @@ export default function TodaysWorkoutPage() {
 
       // Convert to workout data format for the table
       const workoutData: WorkoutData = {
-        warmup: chosenWarmup.map((ex: any) => `${ex.name}: 1x5`),
-        workout: [coreLift.name, ...chosenAccessories.map((ex: any) => ex.name)].map(name => `${name}: ${name === coreLift.name ? '4x8' : '3x12'}`),
-        cooldown: chosenCooldown.map((ex: any) => `${ex.name}: 1x5`),
+        warmup: chosenWarmup.map((ex: Exercise) => `${ex.name}: 1x5`),
+        workout: [coreLift.name, ...chosenAccessories.map((ex: Exercise) => ex.name)].map(name => `${name}: ${name === coreLift.name ? '4x8' : '3x12'}`),
+        cooldown: chosenCooldown.map((ex: Exercise) => `${ex.name}: 1x5`),
         prompt: `${day} Day-of-Week Workout`
       };
 
