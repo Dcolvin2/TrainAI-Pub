@@ -156,6 +156,70 @@ export default function TodaysWorkoutPage() {
     }
   }, [chatMessages]);
 
+  // NEW helper - Parse explicit Nike workout number
+  const parseNikeRequest = (msg: string) => {
+    const m = msg.match(/nike(?:\s+workout)?\s*[#]?(\d+)/i);
+    return m ? parseInt(m[1], 10) : null;
+  };
+
+  // Enhanced Nike workout handler
+  const handleNike = async (message: string, userId: string) => {
+    const explicit = parseNikeRequest(message);
+    let workoutNo: number;
+
+    if (!explicit) {
+      const { data: p } = await supabase
+        .from('profiles')
+        .select('last_nike_workout')
+        .eq('id', userId)
+        .single();
+      workoutNo = (p?.last_nike_workout ?? 0) + 1;
+    } else {
+      workoutNo = explicit;
+    }
+
+    const { data: rows } = await supabase
+      .from('nike_workouts')
+      .select('workout, workout_type, sets, reps, exercise, instructions, exercise_type')
+      .eq('workout', workoutNo);
+
+    if (!rows?.length) {
+      setChatMessages(prev => [
+        ...prev,
+        { sender: 'assistant', text: `I couldn't find Nike workout ${workoutNo}.`, timestamp: new Date().toLocaleTimeString() },
+      ]);
+      return;
+    }
+
+    if (!explicit) {
+      await supabase
+        .from('profiles')
+        .update({ last_nike_workout: workoutNo })
+        .eq('id', userId);
+    }
+
+    // Build chat reply
+    const heading = explicit
+      ? `Here's Nike workout ${workoutNo} as requested:`
+      : `You're on the next one—Nike #${workoutNo}:`;
+
+    const summary = rows
+      .map(r => `• ${r.exercise} (${r.sets}x${r.reps})`)
+      .join('\n');
+
+    setChatMessages(prev => [
+      ...prev,
+      { sender: 'assistant', text: `${heading}\n${summary}`, timestamp: new Date().toLocaleTimeString() },
+    ]);
+
+    // Set workout data for the table
+    const nikeWorkout: NikeWorkout = {
+      exercises: rows as NikeExercise[],
+      workoutNumber: workoutNo
+    };
+    setWorkoutData(nikeWorkout);
+  };
+
   // Build day-of-week workout using day_core_lifts table
   const buildDayWorkout = async (day: string, userId: string, minutes: number = 45) => {
     try {
@@ -294,68 +358,7 @@ export default function TodaysWorkoutPage() {
         return;
       }
 
-      try {
-        // 1. Query profiles.last_nike_workout to find the last one completed
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('last_nike_workout')
-          .eq('id', user.id)
-          .single();
-
-        const lastWorkout = profile?.last_nike_workout || 0;
-        const nextWorkout = lastWorkout + 1;
-
-        console.log('⚡ Nike workout number being requested:', nextWorkout);
-
-        // 2. Query nike_workouts where workout = nextWorkout
-        const { data: rows, error } = await supabase
-          .from('nike_workouts')
-          .select('workout, workout_type, sets, reps, exercise, instructions, exercise_type')
-          .eq('workout', nextWorkout);
-
-        console.log(`Nike Workout ${nextWorkout}:`, rows);
-
-        console.log('📊 Nike workout result:', { rows: rows?.length, error, nextWorkout });
-
-        if (error || !rows || rows.length === 0) {
-          setChatMessages(prev => [
-            ...prev,
-            { sender: 'assistant', text: "Sorry, I couldn't load your Nike workout.", timestamp: new Date().toLocaleTimeString() },
-          ]);
-          return;
-        }
-
-        // 3. Extract workout_type from first row
-        const workoutType = rows[0].workout_type || 'Workout';
-
-        // 4. Display in chat with progression info
-        const summary = rows
-          .map((ex) => `• ${ex.exercise}: ${ex.sets}x${ex.reps} (${ex.exercise_type})`)
-          .join('\n');
-
-        setChatMessages(prev => [
-          ...prev,
-          {
-            sender: 'assistant',
-            text: `You last completed Nike workout #${lastWorkout}. Here's #${nextWorkout}: ${workoutType}\n\n${summary}`,
-            timestamp: new Date().toLocaleTimeString()
-          },
-        ]);
-
-        // Set workout data for the table
-        const nikeWorkout: NikeWorkout = {
-          exercises: rows as NikeExercise[],
-          workoutNumber: nextWorkout
-        };
-        setWorkoutData(nikeWorkout);
-
-      } catch (err) {
-        console.error('Error loading Nike workout:', err);
-        setChatMessages(prev => [
-          ...prev,
-          { sender: 'assistant', text: "Sorry, there was an error loading your Nike workout.", timestamp: new Date().toLocaleTimeString() },
-        ]);
-      }
+      await handleNike(message, user.id);
       return;
     }
 
