@@ -6,12 +6,6 @@ interface ExerciseInstructionRequest {
   userId: string;
 }
 
-interface ChatMessage {
-  role: string;
-  content: string;
-  name?: string;
-}
-
 export async function POST(req: NextRequest) {
   try {
     const { exerciseName, userId }: ExerciseInstructionRequest = await req.json();
@@ -28,9 +22,9 @@ export async function POST(req: NextRequest) {
     const systemPrompt = `You are a knowledgeable fitness coach. Provide clear, safe, and concise exercise form instructions. Keep responses under 100 words and focus on key form points.`;
     const userPrompt = `Provide proper form instructions for the exercise: ${exerciseName}. Include key safety tips and common mistakes to avoid.`;
 
-    const history: ChatMessage[] = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt }
+    const history = [
+      { role: 'system' as const, content: systemPrompt },
+      { role: 'user' as const, content: userPrompt }
     ];
 
     const instruction = await chatWithFunctions(history) || 
