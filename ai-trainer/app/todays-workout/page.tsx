@@ -272,7 +272,13 @@ export default function TodaysWorkoutPage() {
 
       const gear = profile?.equipment ?? [];
 
-      /* 4️⃣  pull matching accessories
+      /* 4️⃣  pull warm-up exercises */
+      const { data: warmupExercises } = await supabase
+        .from('exercises')
+        .select('*')
+        .eq('exercise_phase', 'warmup');
+
+      /* 5️⃣  pull matching accessories
              – same primary_muscle group
              – NOT main lifts
              – equipment_required ⊆ user gear (or empty)         */
@@ -281,6 +287,12 @@ export default function TodaysWorkoutPage() {
         .select('*')
         .eq('is_main_lift', false)
         .eq('primary_muscle', coreLift.primary_muscle);
+
+      /* 6️⃣  pull cool-down exercises */
+      const { data: cooldownExercises } = await supabase
+        .from('exercises')
+        .select('*')
+        .eq('exercise_phase', 'cooldown');
 
       // Filter accessories by equipment availability
       let filteredAccessories = accessories || [];
@@ -292,12 +304,16 @@ export default function TodaysWorkoutPage() {
         );
       }
 
-      /* 5️⃣  time-box: assume 10 min core lift warm-up
-             + 5 min per accessory set group                    */
-      const slots = Math.max(0, Math.floor((minutes - 10) / 5));
-      const chosen = filteredAccessories.sort(() => 0.5 - Math.random()).slice(0, slots);
+      /* 7️⃣  time-box: assume 5 min warm-up + 10 min core lift + 5 min per accessory + 5 min cool-down */
+      const warmupSlots = Math.min(2, warmupExercises?.length || 0);
+      const accessorySlots = Math.max(0, Math.floor((minutes - 20) / 5)); // 20 = 5 warmup + 10 core + 5 cooldown
+      const cooldownSlots = Math.min(2, cooldownExercises?.length || 0);
 
-      const fullPlan = [coreLift, ...chosen];
+      const chosenWarmup = warmupExercises?.sort(() => 0.5 - Math.random()).slice(0, warmupSlots) || [];
+      const chosenAccessories = filteredAccessories.sort(() => 0.5 - Math.random()).slice(0, accessorySlots);
+      const chosenCooldown = cooldownExercises?.sort(() => 0.5 - Math.random()).slice(0, cooldownSlots) || [];
+
+      const fullPlan = [...chosenWarmup, coreLift, ...chosenAccessories, ...chosenCooldown];
 
       /* 6️⃣  save to workouts / workout_log_entries */
       await supabase
@@ -307,13 +323,24 @@ export default function TodaysWorkoutPage() {
           program_name: 'DayOfWeek',
           workout_type: `${day} – ${coreLift.primary_muscle}`,
           main_lifts: JSON.stringify([coreLift.name]),
-          accessory_lifts: JSON.stringify(chosen.map(c => c.name))
+          accessory_lifts: JSON.stringify(chosenAccessories.map((c: any) => c.name))
         });
 
       /* 7️⃣  return chat summary */
       let reply = `**${day} Workout (${minutes} min)**\n`;
-      reply += `• **Core lift:** ${coreLift.name}\n`;
-      chosen.forEach(a => reply += `• ${a.name}\n`);
+      if (chosenWarmup.length > 0) {
+        reply += `**Warm-up:**\n`;
+        chosenWarmup.forEach((a: any) => reply += `• ${a.name}\n`);
+      }
+      reply += `**Core lift:** ${coreLift.name}\n`;
+      if (chosenAccessories.length > 0) {
+        reply += `**Accessories:**\n`;
+        chosenAccessories.forEach((a: any) => reply += `• ${a.name}\n`);
+      }
+      if (chosenCooldown.length > 0) {
+        reply += `**Cool-down:**\n`;
+        chosenCooldown.forEach((a: any) => reply += `• ${a.name}\n`);
+      }
 
       setChatMessages(prev => [
         ...prev,
@@ -322,9 +349,9 @@ export default function TodaysWorkoutPage() {
 
       // Convert to workout data format for the table
       const workoutData: WorkoutData = {
-        warmup: [],
-        workout: fullPlan.map(ex => `${ex.name}: ${ex.is_main_lift ? '4x8' : '3x12'}`),
-        cooldown: [],
+        warmup: chosenWarmup.map((ex: any) => `${ex.name}: 1x5`),
+        workout: [coreLift.name, ...chosenAccessories.map((ex: any) => ex.name)].map(name => `${name}: ${name === coreLift.name ? '4x8' : '3x12'}`),
+        cooldown: chosenCooldown.map((ex: any) => `${ex.name}: 1x5`),
         prompt: `${day} Day-of-Week Workout`
       };
 
