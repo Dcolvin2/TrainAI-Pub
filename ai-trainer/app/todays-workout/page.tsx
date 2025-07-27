@@ -159,12 +159,14 @@ export default function TodaysWorkoutPage() {
   // Build day-of-week workout using day_core_lifts table
   const buildDayWorkout = async (day: string, userId: string, minutes: number = 45) => {
     try {
-      /* 1️⃣  look up the core lift for that day */
-      const { data: coreRow } = await supabase
+      console.log('DAY asked for:', day);
+      const { data: coreRow, error } = await supabase
         .from('day_core_lifts')
         .select('core_lift')
-        .eq('day_of_week', day)
+        .ilike('day_of_week', day)   // 👈 case-insensitive match
         .single();
+
+      console.log('coreRow:', coreRow, 'error:', error);
 
       if (!coreRow) {
         setChatMessages(prev => [
