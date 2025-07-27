@@ -229,7 +229,7 @@ export default function TodaysWorkoutPage() {
       const fullPlan = [coreLift, ...chosen];
 
       /* 6️⃣  save to workouts / workout_log_entries */
-      const { data: _ } = await supabase
+      await supabase
         .from('workouts')
         .insert({
           user_id: userId,
@@ -237,9 +237,7 @@ export default function TodaysWorkoutPage() {
           workout_type: `${day} – ${coreLift.primary_muscle}`,
           main_lifts: JSON.stringify([coreLift.name]),
           accessory_lifts: JSON.stringify(chosen.map(c => c.name))
-        })
-        .select('id')
-        .single();
+        });
 
       /* 7️⃣  return chat summary */
       let reply = `**${day} Workout (${minutes} min)**\n`;
