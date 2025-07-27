@@ -395,8 +395,6 @@ export default function TodaysWorkoutPage() {
         .eq('id', userId)
         .single();
 
-      const gear = profile?.equipment ?? [];
-
       // Pull HIIT-appropriate exercises (little setup, full-body coverage)
       const { data: hiitExercises } = await supabase
         .from('exercises')
