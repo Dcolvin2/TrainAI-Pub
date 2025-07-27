@@ -229,7 +229,7 @@ export default function TodaysWorkoutPage() {
       const fullPlan = [coreLift, ...chosen];
 
       /* 6️⃣  save to workouts / workout_log_entries */
-      const { data: workout } = await supabase
+      const { data: _ } = await supabase
         .from('workouts')
         .insert({
           user_id: userId,
