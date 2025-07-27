@@ -1,15 +1,26 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { chatWithFunctions } from '@/lib/chatService'
+
+interface ChatMessage {
+  role: string;
+  content: string;
+  name?: string;
+}
+
+interface WorkoutChatRequest {
+  userId: string;
+  messages: ChatMessage[];
+}
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const { userId, messages } = await req.json()
+    const { userId, messages }: WorkoutChatRequest = await req.json()
 
     if (!userId) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
@@ -34,8 +45,8 @@ export async function POST(req: Request) {
     const equipmentList = equipment?.map(e => e.custom_name || e.equipment_id).join(', ') || 'Bodyweight only'
     const maxesList = maxes?.map(m => `${m.exercise_name}: ${m.max_weight} lbs`).join('\n') || 'No personal bests recorded'
 
-    const systemMsg = {
-      role: 'system' as const,
+    const systemMsg: ChatMessage = {
+      role: 'system',
       content: `
 You are TrainAI, an expert fitness coach.
 
@@ -60,7 +71,7 @@ When you do call the function, you must return a JSON object matching its schema
     }
 
     // C) Build chat history with system message
-    const chatMessages: any[] = [systemMsg, ...messages]
+    const chatMessages: ChatMessage[] = [systemMsg, ...messages]
 
     // D) Call OpenAI with function schema
     const resp = await chatWithFunctions(chatMessages)

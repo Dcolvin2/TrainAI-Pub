@@ -1,9 +1,20 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { chatWithFunctions } from '@/lib/chatService';
 
-export async function POST(req: Request) {
+interface ExerciseInstructionRequest {
+  exerciseName: string;
+  userId: string;
+}
+
+interface ChatMessage {
+  role: string;
+  content: string;
+  name?: string;
+}
+
+export async function POST(req: NextRequest) {
   try {
-    const { exerciseName, userId } = await req.json();
+    const { exerciseName, userId }: ExerciseInstructionRequest = await req.json();
 
     if (!exerciseName) {
       return NextResponse.json({ error: 'Exercise name is required' }, { status: 400 });
@@ -17,7 +28,7 @@ export async function POST(req: Request) {
     const systemPrompt = `You are a knowledgeable fitness coach. Provide clear, safe, and concise exercise form instructions. Keep responses under 100 words and focus on key form points.`;
     const userPrompt = `Provide proper form instructions for the exercise: ${exerciseName}. Include key safety tips and common mistakes to avoid.`;
 
-    const history: any[] = [
+    const history: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt }
     ];

@@ -213,6 +213,7 @@ function TodaysWorkoutPageContent() {
     };
 
     loadNikeWorkout();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Auto-scroll chat to bottom when new messages are added
