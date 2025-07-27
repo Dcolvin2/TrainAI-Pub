@@ -71,11 +71,16 @@ When you do call the function, you must return a JSON object matching its schema
     // C) Build chat history with system message
     const chatMessages = [
       systemMsg,
-      ...messages.map(msg => ({
-        role: msg.role as 'user' | 'assistant' | 'function',
-        content: msg.content,
-        ...(msg.name && { name: msg.name })
-      }))
+      ...messages.map(msg => {
+        const mappedMsg: any = {
+          role: msg.role,
+          content: msg.content
+        };
+        if (msg.name) {
+          mappedMsg.name = msg.name;
+        }
+        return mappedMsg;
+      })
     ]
 
     // D) Call OpenAI with function schema
