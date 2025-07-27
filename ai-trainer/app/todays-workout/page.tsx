@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import WorkoutTable from '../components/WorkoutTable';
 import ChatBubble from '../components/ChatBubble';
 import { supabase } from '@/lib/supabaseClient';
+import { dayCoreLifts, DayConfig } from '../constants/dayCoreLifts';
 
 
 
@@ -338,185 +339,206 @@ export default function TodaysWorkoutPage() {
     setPendingWorkout(nikeWorkout);
   };
 
-  // Build day-of-week workout using day_core_lifts table
+  // Build day-of-week workout using new day configuration
   const buildDayWorkout = async (day: string, userId: string, minutes: number = 45) => {
     try {
-      // Fix: ensure day lookup is case-insensitive and trims whitespace
-      const cleanDay = day.trim();
-      const dayTitle = cleanDay.charAt(0).toUpperCase() + cleanDay.slice(1).toLowerCase();
+      // Get day configuration
+      const dayNumber = new Date().getDay(); // 0 = Sunday, 1 = Monday, etc.
+      const dayCfg = dayCoreLifts[dayNumber];
+      
+      console.log('DAY asked for:', day, 'Day number:', dayNumber, 'Config:', dayCfg);
 
-      console.log('DAY asked for:', day);
-      const { data: coreRow, error } = await supabase
-        .from('day_core_lifts')
-        .select('core_lift')
-        .ilike('day_of_week', dayTitle)   // match 'monday', 'Monday', etc.
-        .single();
-      if (error) console.error(error);
-
-      console.log('coreRow:', coreRow, 'error:', error);
-
-      if (!coreRow) {
+      if (!dayCfg) {
         setChatMessages(prev => [
           ...prev,
-          { sender: 'assistant', text: `I don't have a core lift configured for ${day}.`, timestamp: new Date().toLocaleTimeString() },
+          { sender: 'assistant', text: `I don't have a workout pattern configured for ${day}.`, timestamp: new Date().toLocaleTimeString() },
         ]);
         return;
       }
 
-      const coreLiftName = coreRow.core_lift;
-
-      /* 2️⃣  fetch the core-lift row (is_main_lift = TRUE) */
-      const { data: coreLift } = await supabase
-        .from('exercises')
-        .select('*')
-        .eq('name', coreLiftName)
-        .eq('is_main_lift', true)
-        .single();
-
-      if (!coreLift) {
+      // Handle HIIT pattern (Thursday)
+      if (dayCfg.pattern === 'hiit') {
         setChatMessages(prev => [
           ...prev,
-          { sender: 'assistant', text: `Core lift ${coreLiftName} not found.`, timestamp: new Date().toLocaleTimeString() },
+          { sender: 'assistant', text: `Thursday is HIIT day! I'll build you a ${minutes}-minute circuit workout.`, timestamp: new Date().toLocaleTimeString() },
         ]);
         return;
       }
 
-      /* 3️⃣  get user equipment */
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('equipment')
-        .eq('id', userId)
-        .single();
+      // Handle cardio pattern (Wed, Fri, Sun)
+      if (dayCfg.pattern === 'cardio') {
+        setChatMessages(prev => [
+          ...prev,
+          { sender: 'assistant', text: `${day} is cardio day! I'll build you a ${minutes}-minute cardio session.`, timestamp: new Date().toLocaleTimeString() },
+        ]);
+        return;
+      }
 
-      const gear = profile?.equipment ?? [];
+      // Handle strength pattern with core lift
+      if (dayCfg.pattern === 'strength' && dayCfg.coreLift) {
+        const coreLiftName = dayCfg.coreLift;
 
-      /* 4️⃣  pull warm-up exercises from unified view */
-      const { data: warmupExercises } = await supabase
-        .from('vw_mobility_warmups')
-        .select('*')
-        .ilike('primary_muscle', `%${coreLift.primary_muscle}%`)
-        .eq('exercise_phase', 'warmup');
+        /* 2️⃣  fetch the core-lift row (is_main_lift = TRUE) */
+        const { data: coreLift } = await supabase
+          .from('exercises')
+          .select('*')
+          .eq('name', coreLiftName)
+          .eq('is_main_lift', true)
+          .single();
 
-      // Fallback to full body if not enough warm-ups found
-      let finalWarmups = warmupExercises || [];
-      if (finalWarmups.length < 2) {
-        const { data: fallbackWarmups } = await supabase
+        if (!coreLift) {
+          setChatMessages(prev => [
+            ...prev,
+            { sender: 'assistant', text: `Core lift ${coreLiftName} not found.`, timestamp: new Date().toLocaleTimeString() },
+          ]);
+          return;
+        }
+
+        // Continue with existing logic for strength workouts
+        /* 3️⃣  get user equipment */
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('equipment')
+          .eq('id', userId)
+          .single();
+
+        const gear = profile?.equipment ?? [];
+
+        /* 4️⃣  pull warm-up exercises from unified view */
+        const { data: warmupExercises } = await supabase
           .from('vw_mobility_warmups')
           .select('*')
-          .eq('primary_muscle', 'full_body')
+          .ilike('primary_muscle', `%${coreLift.primary_muscle}%`)
           .eq('exercise_phase', 'warmup');
-        finalWarmups = fallbackWarmups || [];
-      }
 
-      /* 5️⃣  pull matching accessories
-             – same primary_muscle group
-             – NOT main lifts
-             – equipment_required ⊆ user gear (or empty)         */
-      const { data: accessories } = await supabase
-        .from('exercises')
-        .select('*')
-        .eq('is_main_lift', false)
-        .eq('primary_muscle', coreLift.primary_muscle);
+        // Fallback to full body if not enough warm-ups found
+        let finalWarmups = warmupExercises || [];
+        if (finalWarmups.length < 2) {
+          const { data: fallbackWarmups } = await supabase
+            .from('vw_mobility_warmups')
+            .select('*')
+            .eq('primary_muscle', 'full_body')
+            .eq('exercise_phase', 'warmup');
+          finalWarmups = fallbackWarmups || [];
+        }
 
-      /* 6️⃣  pull cool-down exercises from unified view */
-      const { data: cooldownExercises } = await supabase
-        .from('vw_mobility_warmups')
-        .select('*')
-        .ilike('primary_muscle', `%${coreLift.primary_muscle}%`)
-        .eq('exercise_phase', 'cooldown');
+        /* 5️⃣  pull matching accessories
+               – same primary_muscle group
+               – NOT main lifts
+               – equipment_required ⊆ user gear (or empty)         */
+        const { data: accessories } = await supabase
+          .from('exercises')
+          .select('*')
+          .eq('is_main_lift', false)
+          .eq('primary_muscle', coreLift.primary_muscle);
 
-      // Fallback to full body if not enough cool-downs found
-      let finalCooldowns = cooldownExercises || [];
-      if (finalCooldowns.length < 2) {
-        const { data: fallbackCooldowns } = await supabase
+        /* 6️⃣  pull cool-down exercises from unified view */
+        const { data: cooldownExercises } = await supabase
           .from('vw_mobility_warmups')
           .select('*')
-          .eq('primary_muscle', 'full_body')
+          .ilike('primary_muscle', `%${coreLift.primary_muscle}%`)
           .eq('exercise_phase', 'cooldown');
-        finalCooldowns = fallbackCooldowns || [];
-      }
 
-      // Filter accessories by equipment availability
-      let filteredAccessories = accessories || [];
-      if (gear.length > 0) {
-        filteredAccessories = filteredAccessories.filter(acc => 
-          !acc.equipment_required || 
-          acc.equipment_required.length === 0 ||
-          gear.some((eq: string) => acc.equipment_required.includes(eq))
-        );
-      }
+        // Fallback to full body if not enough cool-downs found
+        let finalCooldowns = cooldownExercises || [];
+        if (finalCooldowns.length < 2) {
+          const { data: fallbackCooldowns } = await supabase
+            .from('vw_mobility_warmups')
+            .select('*')
+            .eq('primary_muscle', 'full_body')
+            .eq('exercise_phase', 'cooldown');
+          finalCooldowns = fallbackCooldowns || [];
+        }
 
-      /* 7️⃣  time-box: assume 5 min warm-up + 10 min core lift + 5 min per accessory + 5 min cool-down */
-      const warmupSlots = Math.min(2, finalWarmups.length);
-      const accessorySlots = Math.max(0, Math.floor((minutes - 20) / 5)); // 20 = 5 warmup + 10 core + 5 cooldown
-      const cooldownSlots = Math.min(2, finalCooldowns.length);
+        // Filter accessories by equipment availability
+        let filteredAccessories = accessories || [];
+        if (gear.length > 0) {
+          filteredAccessories = filteredAccessories.filter((acc: Exercise) => 
+            !acc.equipment_required || 
+            acc.equipment_required.length === 0 ||
+            acc.equipment_required.some((req: string) => gear.includes(req))
+          );
+        }
 
-      const chosenWarmup = finalWarmups.sort(() => 0.5 - Math.random()).slice(0, warmupSlots);
-      const chosenAccessories = filteredAccessories.sort(() => 0.5 - Math.random()).slice(0, accessorySlots);
-      const chosenCooldown = finalCooldowns.sort(() => 0.5 - Math.random()).slice(0, cooldownSlots);
+        /* 7️⃣  time-box: assume 5 min warm-up + 10 min core lift + 5 min per accessory + 5 min cool-down */
+        const warmupSlots = Math.min(2, finalWarmups.length);
+        const accessorySlots = Math.max(0, Math.floor((minutes - 20) / 5)); // 20 = 5 warmup + 10 core + 5 cooldown
+        const cooldownSlots = Math.min(2, finalCooldowns.length);
 
-      /* 6️⃣  save to workouts / workout_log_entries */
-      await supabase
-        .from('workouts')
-        .insert({
+        const chosenWarmup = finalWarmups.sort(() => 0.5 - Math.random()).slice(0, warmupSlots);
+        const chosenAccessories = filteredAccessories.sort(() => 0.5 - Math.random()).slice(0, accessorySlots);
+        const chosenCooldown = finalCooldowns.sort(() => 0.5 - Math.random()).slice(0, cooldownSlots);
+
+        /* 8️⃣  save to workouts / workout_log_entries */
+        await supabase.from('workouts').insert({
           user_id: userId,
           program_name: 'DayOfWeek',
-          workout_type: `${day} – ${coreLift.primary_muscle}`,
+          workout_type: `${coreLiftName} – ${coreLift.primary_muscle}`,
+          core_lift_id: coreLift.id, // Include core lift ID for strength workouts
+          duration_minutes: minutes,
           main_lifts: JSON.stringify([coreLift.name]),
-          accessory_lifts: JSON.stringify(chosenAccessories.map((c: Exercise) => c.name))
+          accessory_lifts: JSON.stringify(chosenAccessories.map((c: Exercise) => c.name)),
+          created_at: new Date().toISOString()
         });
 
-      /* 7️⃣  return chat summary */
-      let reply = `**${day} Workout (${minutes} min)**\n`;
-      if (chosenWarmup.length > 0) {
-        reply += `**Warm-up:**\n`;
-        chosenWarmup.forEach((a: Exercise) => reply += `• ${a.name}\n`);
-      }
-      reply += `**Core lift:** ${coreLift.name}\n`;
-      if (chosenAccessories.length > 0) {
-        reply += `**Accessories:**\n`;
-        chosenAccessories.forEach((a: Exercise) => reply += `• ${a.name}\n`);
-      }
-      if (chosenCooldown.length > 0) {
-        reply += `**Cool-down:**\n`;
-        chosenCooldown.forEach((a: Exercise) => reply += `• ${a.name}\n`);
-      }
+        /* 9️⃣  return chat summary */
+        let reply = `**${coreLiftName} Workout (${minutes} min)**\n`;
+        if (chosenWarmup.length > 0) {
+          reply += `**Warm-up:**\n`;
+          chosenWarmup.forEach((a: MobilityDrill) => reply += `• ${a.name}\n`);
+        }
+        reply += `**Core lift:** ${coreLift.name}\n`;
+        if (chosenAccessories.length > 0) {
+          reply += `**Accessories:**\n`;
+          chosenAccessories.forEach((a: Exercise) => reply += `• ${a.name}\n`);
+        }
+        if (chosenCooldown.length > 0) {
+          reply += `**Cool-down:**\n`;
+          chosenCooldown.forEach((a: MobilityDrill) => reply += `• ${a.name}\n`);
+        }
 
-      setChatMessages(prev => [
-        ...prev,
-        { sender: 'assistant', text: reply, timestamp: new Date().toLocaleTimeString() },
-      ]);
+        setChatMessages(prev => [
+          ...prev,
+          { sender: 'assistant', text: reply, timestamp: new Date().toLocaleTimeString() },
+        ]);
 
-      // Convert to workout data format for the table
-      const workoutData: WorkoutData = {
-        warmup: chosenWarmup.map((ex: MobilityDrill) => `${ex.name}: 1x5`),
-        workout: [coreLift.name, ...chosenAccessories.map((ex: Exercise) => ex.name)].map(name => `${name}: ${name === coreLift.name ? '4x8' : '3x12'}`),
-        cooldown: chosenCooldown.map((ex: MobilityDrill) => `${ex.name}: 1x5`),
-        prompt: `${day} Day-of-Week Workout`
-      };
+        // Convert to workout data format for the table
+        const workoutData: WorkoutData = {
+          warmup: chosenWarmup.map((ex: MobilityDrill) => `${ex.name}: 1x5`),
+          workout: [coreLift.name, ...chosenAccessories.map((ex: Exercise) => ex.name)].map(name => `${name}: ${name === coreLift.name ? '4x8' : '3x12'}`),
+          cooldown: chosenCooldown.map((ex: MobilityDrill) => `${ex.name}: 1x5`),
+          prompt: `${coreLiftName} Day-of-Week Workout`
+        };
 
-      // Fetch previous sets data and enrich the workout
-      if (user?.id) {
-        const exerciseNames = [
-          ...chosenWarmup.map((ex: MobilityDrill) => ex.name),
-          coreLift.name,
-          ...chosenAccessories.map((ex: Exercise) => ex.name),
-          ...chosenCooldown.map((ex: MobilityDrill) => ex.name)
-        ];
-        const prevMap = await fetchPrevSets(user.id, exerciseNames);
+        // Fetch previous sets data and enrich the workout
+        if (user?.id) {
+          const exerciseNames = [
+            ...chosenWarmup.map((ex: MobilityDrill) => ex.name),
+            coreLift.name,
+            ...chosenAccessories.map((ex: Exercise) => ex.name),
+            ...chosenCooldown.map((ex: MobilityDrill) => ex.name)
+          ];
+          const prevMap = await fetchPrevSets(user.id, exerciseNames);
+          
+          // Enrich the workout data with previous information
+          // This will be used by WorkoutTable to populate previous columns
+          (workoutData as EnrichedWorkoutData).previousData = prevMap;
+        }
         
-        // Enrich the workout data with previous information
-        // This will be used by WorkoutTable to populate previous columns
-        (workoutData as EnrichedWorkoutData).previousData = prevMap;
+        setPendingWorkout(workoutData);
+        return;
       }
-      
-      setPendingWorkout(workoutData);
 
-    } catch (err) {
-      console.error('Error building day workout:', err);
+      // Fallback for unsupported patterns
       setChatMessages(prev => [
         ...prev,
-        { sender: 'assistant', text: `Sorry, I couldn't create your ${day} workout. Please try again.`, timestamp: new Date().toLocaleTimeString() },
+        { sender: 'assistant', text: `No workout pattern available for ${day}.`, timestamp: new Date().toLocaleTimeString() },
+      ]);
+    } catch (error) {
+      console.error('Error building day workout:', error);
+      setChatMessages(prev => [
+        ...prev,
+        { sender: 'assistant', text: 'Sorry, I encountered an error building your workout.', timestamp: new Date().toLocaleTimeString() },
       ]);
     }
   };
