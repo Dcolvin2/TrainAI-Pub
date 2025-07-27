@@ -568,8 +568,6 @@ export default function TodaysWorkoutPage() {
         .eq('id', userId)
         .single();
 
-      const gear = profile?.equipment ?? [];
-
       // Time-budget algorithm
       const buildPlan = async (mins: number) => {
         const warmupBlock = 0.07 * mins;   // 7% warm-up
