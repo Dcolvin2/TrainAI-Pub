@@ -156,129 +156,116 @@ export default function TodaysWorkoutPage() {
     }
   }, [chatMessages]);
 
-  // Day-of-week workout mapping
-  const workoutMap = {
-    monday: "Back Squat",
-    tuesday: "Bench Press",
-    thursday: "HIIT",
-    saturday: "Deadlift"
-  };
-
-  const upperMuscles = ["Chest", "Shoulders", "Triceps"];
-  const lowerMuscles = ["Hamstrings", "Quadriceps", "Glutes"];
-
-  const getMusclesForLift = (lift: string) => {
-    switch (lift) {
-      case "Bench Press":
-        return upperMuscles;
-      case "Back Squat":
-      case "Deadlift":
-        return lowerMuscles;
-      default:
-        return [];
-    }
-  };
-
-  // Handle day-of-week workout requests
-  const handleDayRequest = async (day: string, userId: string, timeLimit: number = 45) => {
-    const capitalizedDay = day.charAt(0).toUpperCase() + day.slice(1);
-    const coreLift = workoutMap[day as keyof typeof workoutMap];
-    
-    if (!coreLift) {
-      setChatMessages(prev => [
-        ...prev,
-        { sender: 'assistant', text: `${capitalizedDay} is a rest day. Try another day of the week!`, timestamp: new Date().toLocaleTimeString() },
-      ]);
-      return;
-    }
-
-    const muscleGroups = getMusclesForLift(coreLift);
-
+  // Build day-of-week workout using day_core_lifts table
+  const buildDayWorkout = async (day: string, userId: string, minutes: number = 45) => {
     try {
-      // Get user profile
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("equipment")
-        .eq("id", userId)
+      /* 1️⃣  look up the core lift for that day */
+      const { data: coreRow } = await supabase
+        .from('day_core_lifts')
+        .select('core_lift')
+        .eq('day_of_week', day)
         .single();
 
-      const availableEquipment = profile?.equipment || [];
+      if (!coreRow) {
+        setChatMessages(prev => [
+          ...prev,
+          { sender: 'assistant', text: `I don't have a core lift configured for ${day}.`, timestamp: new Date().toLocaleTimeString() },
+        ]);
+        return;
+      }
 
-      // Pull accessories from exercises table
+      const coreLiftName = coreRow.core_lift;
+
+      /* 2️⃣  fetch the core-lift row (is_main_lift = TRUE) */
+      const { data: coreLift } = await supabase
+        .from('exercises')
+        .select('*')
+        .eq('name', coreLiftName)
+        .eq('is_main_lift', true)
+        .single();
+
+      if (!coreLift) {
+        setChatMessages(prev => [
+          ...prev,
+          { sender: 'assistant', text: `Core lift ${coreLiftName} not found.`, timestamp: new Date().toLocaleTimeString() },
+        ]);
+        return;
+      }
+
+      /* 3️⃣  get user equipment */
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('equipment')
+        .eq('id', userId)
+        .single();
+
+      const gear = profile?.equipment ?? [];
+
+      /* 4️⃣  pull matching accessories
+             – same primary_muscle group
+             – NOT main lifts
+             – equipment_required ⊆ user gear (or empty)         */
       const { data: accessories } = await supabase
-        .from("exercises")
-        .select("*")
-        .in("primary_muscle", muscleGroups)
-        .eq("is_main_lift", false);
+        .from('exercises')
+        .select('*')
+        .eq('is_main_lift', false)
+        .eq('primary_muscle', coreLift.primary_muscle);
 
-      // Filter by available equipment if we have accessories
+      // Filter accessories by equipment availability
       let filteredAccessories = accessories || [];
-      if (availableEquipment.length > 0) {
+      if (gear.length > 0) {
         filteredAccessories = filteredAccessories.filter(acc => 
           !acc.equipment_required || 
-          availableEquipment.some((eq: string) => acc.equipment_required.includes(eq))
+          acc.equipment_required.length === 0 ||
+          gear.some((eq: string) => acc.equipment_required.includes(eq))
         );
       }
 
-      // Estimate how many we can include
-      const totalMinutes = timeLimit;
-      const minutesPerExercise = 5;
-      const accessoryCount = Math.floor((totalMinutes - 10) / minutesPerExercise);
+      /* 5️⃣  time-box: assume 10 min core lift warm-up
+             + 5 min per accessory set group                    */
+      const slots = Math.max(0, Math.floor((minutes - 10) / 5));
+      const chosen = filteredAccessories.sort(() => 0.5 - Math.random()).slice(0, slots);
 
-      const selectedAccessories = filteredAccessories.slice(0, accessoryCount);
+      const fullPlan = [coreLift, ...chosen];
 
-      const finalWorkout = [
-        {
-          name: coreLift,
-          is_main_lift: true,
-          sets: 4,
-          reps: 8,
-          exercise_type: 'strength'
-        },
-        ...selectedAccessories.map(a => ({
-          name: a.name,
-          is_main_lift: false,
-          sets: 3,
-          reps: 12,
-          exercise_type: 'accessory'
-        }))
-      ];
+      /* 6️⃣  save to workouts / workout_log_entries */
+      const { data: workout } = await supabase
+        .from('workouts')
+        .insert({
+          user_id: userId,
+          program_name: 'DayOfWeek',
+          workout_type: `${day} – ${coreLift.primary_muscle}`,
+          main_lifts: JSON.stringify([coreLift.name]),
+          accessory_lifts: JSON.stringify(chosen.map(c => c.name))
+        })
+        .select('id')
+        .single();
 
-      // Save to workouts table
-      await supabase.from("workouts").insert({
-        user_id: userId,
-        program_name: "DayOfWeek",
-        workout_type: `${capitalizedDay} Workout`,
-        date: new Date().toISOString().split("T")[0],
-        created_at: new Date(),
-        main_lift: coreLift,
-        accessory_lifts: JSON.stringify(selectedAccessories.map(e => e.name))
-      });
-
-      // Create workout summary for chat
-      const accessoryList = selectedAccessories.map(a => `• ${a.name}: 3x12`).join('\n');
-      const summary = `${capitalizedDay} Workout:\n\nMain Lift:\n• ${coreLift}: 4x8\n\nAccessories:\n${accessoryList}`;
+      /* 7️⃣  return chat summary */
+      let reply = `**${day} Workout (${minutes} min)**\n`;
+      reply += `• **Core lift:** ${coreLift.name}\n`;
+      chosen.forEach(a => reply += `• ${a.name}\n`);
 
       setChatMessages(prev => [
         ...prev,
-        { sender: 'assistant', text: summary, timestamp: new Date().toLocaleTimeString() },
+        { sender: 'assistant', text: reply, timestamp: new Date().toLocaleTimeString() },
       ]);
 
       // Convert to workout data format for the table
       const workoutData: WorkoutData = {
         warmup: [],
-        workout: finalWorkout.map(ex => `${ex.name}: ${ex.sets}x${ex.reps}`),
+        workout: fullPlan.map(ex => `${ex.name}: ${ex.is_main_lift ? '4x8' : '3x12'}`),
         cooldown: [],
-        prompt: `${capitalizedDay} Day-of-Week Workout`
+        prompt: `${day} Day-of-Week Workout`
       };
 
       setWorkoutData(workoutData);
 
     } catch (err) {
-      console.error('Error creating day-of-week workout:', err);
+      console.error('Error building day workout:', err);
       setChatMessages(prev => [
         ...prev,
-        { sender: 'assistant', text: `Sorry, I couldn't create your ${capitalizedDay} workout. Please try again.`, timestamp: new Date().toLocaleTimeString() },
+        { sender: 'assistant', text: `Sorry, I couldn't create your ${day} workout. Please try again.`, timestamp: new Date().toLocaleTimeString() },
       ]);
     }
   };
@@ -408,7 +395,7 @@ export default function TodaysWorkoutPage() {
     const dayMatch = lower.match(/(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/);
     if (dayMatch && user?.id) {
       const day = dayMatch[1];
-      await handleDayRequest(day, user.id, timeAvailable);
+      await buildDayWorkout(day, user.id, timeAvailable);
       return;
     }
 
