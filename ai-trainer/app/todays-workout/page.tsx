@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import WorkoutTable from '../components/WorkoutTable';
 import ChatBubble from '../components/ChatBubble';
 import { supabase } from '@/lib/supabaseClient';
-import { dayCoreLifts, DayConfig } from '../constants/dayCoreLifts';
+import { dayCoreLifts } from '../constants/dayCoreLifts';
 
 
 
