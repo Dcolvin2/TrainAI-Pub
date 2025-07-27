@@ -97,6 +97,9 @@ export default function TodaysWorkoutPage() {
   
 
   const [workoutData, setWorkoutData] = useState<WorkoutData | NikeWorkout | null>(null);
+  const [pendingWorkout, setPendingWorkout] = useState<WorkoutData | NikeWorkout | null>(null);
+  const [activeWorkout, setActiveWorkout] = useState<WorkoutData | NikeWorkout | null>(null);
+  const [showPrevious, setShowPrevious] = useState(false);
   const [chatMessages, setChatMessages] = useState<Array<{sender: 'user' | 'assistant', text: string, timestamp?: string}>>([]);
 
   const [inputText, setInputText] = useState('');
@@ -165,6 +168,63 @@ export default function TodaysWorkoutPage() {
     }
   }, [chatMessages]);
 
+  // Clear state on auth change
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        setActiveWorkout(null);
+        setPendingWorkout(null);
+        setShowPrevious(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Helper to fetch previous sets data from most recent workout
+  const fetchPrevSets = async (userId: string, exerciseNames: string[]) => {
+    try {
+      // Get the most recent workout session before today
+      const today = new Date().toISOString().split('T')[0];
+      const { data: recentSession } = await supabase
+        .from('workout_sessions')
+        .select('id, date')
+        .eq('user_id', userId)
+        .lt('date', today)
+        .order('date', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (!recentSession) {
+        return {};
+      }
+
+      // Get sets from that session
+      const { data: prevSets } = await supabase
+        .from('workout_log_entries')
+        .select('exercise_name, set_number, weight, reps')
+        .eq('session_id', recentSession.id)
+        .in('exercise_name', exerciseNames);
+
+      // Group by exercise name and set number
+      const prevMap: Record<string, Record<number, { weight: number; reps: number }>> = {};
+      prevSets?.forEach(set => {
+        if (!prevMap[set.exercise_name]) {
+          prevMap[set.exercise_name] = {};
+        }
+        prevMap[set.exercise_name][set.set_number] = {
+          weight: set.weight,
+          reps: set.reps
+        };
+      });
+
+      return prevMap;
+    } catch (error) {
+      console.error('Error fetching previous sets:', error);
+      return {};
+    }
+  };
+
   // NEW helper - Parse explicit Nike workout number
   const parseNikeRequest = (msg: string) => {
     const m = msg.match(/nike(?:\s+workout)?\s*[#]?(\d+)/i);
@@ -226,7 +286,23 @@ export default function TodaysWorkoutPage() {
       exercises: rows as NikeExercise[],
       workoutNumber: workoutNo
     };
-    setWorkoutData(nikeWorkout);
+    
+    // Fetch previous sets data and enrich the workout
+    if (user?.id) {
+      const exerciseNames = rows.map(row => row.exercise);
+      const prevMap = await fetchPrevSets(user.id, exerciseNames);
+      
+      // Enrich the workout with previous data
+      nikeWorkout.exercises.forEach(exercise => {
+        const prevData = prevMap[exercise.exercise];
+        if (prevData) {
+          // Add previous data to the exercise (this will be used by WorkoutTable)
+          (exercise as any).previousSets = prevData;
+        }
+      });
+    }
+    
+    setPendingWorkout(nikeWorkout);
   };
 
   // Build day-of-week workout using day_core_lifts table
@@ -362,7 +438,22 @@ export default function TodaysWorkoutPage() {
         prompt: `${day} Day-of-Week Workout`
       };
 
-      setWorkoutData(workoutData);
+      // Fetch previous sets data and enrich the workout
+      if (user?.id) {
+        const exerciseNames = [
+          ...chosenWarmup.map((ex: Exercise) => ex.name),
+          coreLift.name,
+          ...chosenAccessories.map((ex: Exercise) => ex.name),
+          ...chosenCooldown.map((ex: Exercise) => ex.name)
+        ];
+        const prevMap = await fetchPrevSets(user.id, exerciseNames);
+        
+        // Enrich the workout data with previous information
+        // This will be used by WorkoutTable to populate previous columns
+        (workoutData as any).previousData = prevMap;
+      }
+      
+      setPendingWorkout(workoutData);
 
     } catch (err) {
       console.error('Error building day workout:', err);
@@ -574,21 +665,40 @@ export default function TodaysWorkoutPage() {
 
       {/* Workout Table Section */}
       <section className="mb-6">
-        {!workoutData ? (
+        {!pendingWorkout && !activeWorkout ? (
           <div className="text-center text-gray-400 py-8">
             <p className="mb-4">No workout found for today.</p>
             <p className="text-sm">Use the AI builder above to create your first workout!</p>
           </div>
+        ) : pendingWorkout && !activeWorkout ? (
+          <div className="text-center py-8">
+            <div className="bg-[#1E293B] rounded-xl p-6 mb-4">
+              <h3 className="text-xl font-semibold text-white mb-4">Workout Ready!</h3>
+              <p className="text-gray-300 mb-6">Your workout has been generated and is ready to start.</p>
+              <button
+                onClick={() => {
+                  setActiveWorkout(pendingWorkout);
+                  setPendingWorkout(null);
+                  setShowPrevious(true);
+                }}
+                className="bg-[#22C55E] hover:bg-[#16a34a] text-white px-8 py-3 rounded-xl font-semibold transition-colors"
+              >
+                Start Workout
+              </button>
+            </div>
+          </div>
         ) : (
           <WorkoutTable 
-            workout={workoutData} 
+            workout={activeWorkout!} 
             onFinishWorkout={() => {
-              setWorkoutData(null);
+              setActiveWorkout(null);
+              setShowPrevious(false);
             }}
             onStopTimer={() => {
               setMainTimerRunning(false);
             }}
             elapsedTime={elapsedTime}
+            showPrevious={showPrevious}
           />
         )}
       </section>

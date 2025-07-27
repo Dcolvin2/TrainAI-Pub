@@ -49,7 +49,12 @@ interface WorkoutTableProps {
   onFinishWorkout?: () => void;
   onStopTimer?: () => void;
   elapsedTime?: number;
+  showPrevious?: boolean;
 }
+
+// Format previous weight and reps for display
+const formatPrev = (w?: number | null, r?: number | null) => 
+  w && r ? `${w} lb × ${r}` : '—';
 
 // Parse workout string into structured data
 const parseWorkoutString = (workoutString: string, section: 'warmup' | 'workout' | 'cooldown'): WorkoutSet => {
@@ -208,8 +213,12 @@ const convertWorkoutToSets = (workout: GeneratedWorkout | NikeWorkout): WorkoutS
         prescribedReps = timeMatch ? Number(timeMatch[1]) * 60 : 60;
       }
       
+      // Get previous data for this exercise if available
+      const previousSets = (exercise as any).previousSets || {};
+      
       // Create the correct number of sets based on database
       for (let i = 0; i < exercise.sets; i++) {
+        const prevSet = previousSets[i + 1]; // Set numbers are 1-indexed
         const set: WorkoutSet = {
           id: `${exercise.exercise}-${section}-${Date.now()}-${Math.random()}-${i}`,
           exerciseName: exercise.exercise,
@@ -219,8 +228,8 @@ const convertWorkoutToSets = (workout: GeneratedWorkout | NikeWorkout): WorkoutS
           completed: false,
           restSeconds: 60, // Default rest
           section: section,
-          previousWeight: 0,
-          previousReps: prescribedReps
+          previousWeight: prevSet?.weight || null,
+          previousReps: prevSet?.reps || null
         };
         sets.push(set);
       }
@@ -228,16 +237,21 @@ const convertWorkoutToSets = (workout: GeneratedWorkout | NikeWorkout): WorkoutS
   } else {
     // Handle GeneratedWorkout format (existing logic)
     const generatedWorkout = workout;
+    const previousData = (workout as any).previousData || {};
     
     // Process warmup
     generatedWorkout.warmup.forEach((item: string) => {
       const baseSet = parseWorkoutString(item, 'warmup');
       const setCount = getDefaultSetCount('warmup', baseSet.exerciseName);
+      const exercisePrevData = previousData[baseSet.exerciseName] || {};
       
       for (let i = 0; i < setCount; i++) {
         const set = { ...baseSet };
         set.id = `${baseSet.exerciseName}-warmup-${Date.now()}-${Math.random()}-${i}`;
         set.setNumber = i + 1;
+        const prevSet = exercisePrevData[i + 1];
+        set.previousWeight = prevSet?.weight || null;
+        set.previousReps = prevSet?.reps || null;
         sets.push(set);
       }
     });
@@ -246,11 +260,15 @@ const convertWorkoutToSets = (workout: GeneratedWorkout | NikeWorkout): WorkoutS
     generatedWorkout.workout.forEach((item: string) => {
       const baseSet = parseWorkoutString(item, 'workout');
       const setCount = getDefaultSetCount('workout', baseSet.exerciseName);
+      const exercisePrevData = previousData[baseSet.exerciseName] || {};
       
       for (let i = 0; i < setCount; i++) {
         const set = { ...baseSet };
         set.id = `${baseSet.exerciseName}-workout-${Date.now()}-${Math.random()}-${i}`;
         set.setNumber = i + 1;
+        const prevSet = exercisePrevData[i + 1];
+        set.previousWeight = prevSet?.weight || null;
+        set.previousReps = prevSet?.reps || null;
         sets.push(set);
       }
     });
@@ -259,11 +277,15 @@ const convertWorkoutToSets = (workout: GeneratedWorkout | NikeWorkout): WorkoutS
     generatedWorkout.cooldown.forEach((item: string) => {
       const baseSet = parseWorkoutString(item, 'cooldown');
       const setCount = getDefaultSetCount('cooldown', baseSet.exerciseName);
+      const exercisePrevData = previousData[baseSet.exerciseName] || {};
       
       for (let i = 0; i < setCount; i++) {
         const set = { ...baseSet };
         set.id = `${baseSet.exerciseName}-cooldown-${Date.now()}-${Math.random()}-${i}`;
         set.setNumber = i + 1;
+        const prevSet = exercisePrevData[i + 1];
+        set.previousWeight = prevSet?.weight || null;
+        set.previousReps = prevSet?.reps || null;
         sets.push(set);
       }
     });
@@ -272,7 +294,7 @@ const convertWorkoutToSets = (workout: GeneratedWorkout | NikeWorkout): WorkoutS
   return sets;
 };
 
-export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer, elapsedTime = 0 }: WorkoutTableProps) {
+export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer, elapsedTime = 0, showPrevious = false }: WorkoutTableProps) {
   const { user } = useAuth();
   const router = useRouter();
   
@@ -471,7 +493,7 @@ export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer, el
                       <thead>
                         <tr className="border-b border-gray-600">
                           <th className="py-2 text-left text-sm">Set</th>
-                          <th className="py-2 text-left text-sm">Previous</th>
+                          {showPrevious && <th className="py-2 text-left text-sm">Previous</th>}
                           <th className="py-2 text-left text-sm">Lbs</th>
                           <th className="py-2 text-left text-sm">Reps</th>
                           <th className="py-2 text-center text-sm">✓</th>
@@ -479,14 +501,14 @@ export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer, el
                       </thead>
                       <tbody>
                         {exerciseSets.map((set) => {
-                          const prevLabel = set.previousWeight !== undefined
-                            ? `${set.previousWeight} lb x ${set.previousReps || set.prescribedReps}`
-                            : '—';
-                          
                           return (
                             <tr key={set.id} className="border-b border-gray-700">
                               <td className="py-2 text-sm">{set.setNumber}</td>
-                              <td className="py-2 text-sm">{prevLabel}</td>
+                              {showPrevious && (
+                                <td className="py-2 text-sm">
+                                  {formatPrev(set.previousWeight, set.previousReps)}
+                                </td>
+                              )}
                               <td className="py-2">
                                 <input
                                   type="number"
