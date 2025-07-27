@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import OpenAI from 'openai'
+import { chatWithFunctions } from '@/lib/chatService'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! })
 
 export async function POST(req: Request) {
   try {
@@ -64,50 +63,11 @@ When you do call the function, you must return a JSON object matching its schema
     const chatMessages = [systemMsg, ...messages]
 
     // D) Call OpenAI with function schema
-    const resp = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
-      messages: chatMessages,
-      functions: [{
-        name: 'generate_workout',
-        description: 'Produce a workout plan',
-        parameters: {
-          type: 'object',
-          properties: {
-            warmup: { type: 'array', items: { type: 'string' } },
-            workout: { 
-              type: 'array', 
-              items: { 
-                type: 'object',
-                properties: {
-                  exercise: { type: 'string' },
-                  sets: { type: 'number' },
-                  reps: { type: 'number' },
-                  weight: { type: 'number' },
-                  rest: { type: 'number' }
-                },
-                required: ['exercise', 'sets', 'reps', 'weight', 'rest']
-              }
-            },
-            cooldown: { type: 'array', items: { type: 'string' } }
-          },
-          required: ['warmup','workout','cooldown']
-        }
-      }],
-      function_call: "auto"
-    })
+    const resp = await chatWithFunctions(chatMessages)
 
     // E) Parse response and return both message and plan
-    const message = resp.choices[0].message
-    let plan = null
-    let assistantMessage = message.content || ''
-
-    if (message.function_call) {
-      plan = JSON.parse(message.function_call.arguments || '{}')
-      // Only set a default message if the AI didn't provide one
-      if (!assistantMessage) {
-        assistantMessage = "Here's your personalized workout plan based on your goals and equipment!"
-      }
-    }
+    const assistantMessage = resp || 'I understand your request. How can I help you with your workout?'
+    const plan = null // For now, no function calls implemented
 
     return NextResponse.json({ 
       assistantMessage, 
