@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import WorkoutTable from '../components/WorkoutTable';
 import ChatBubble from '../components/ChatBubble';
 import { supabase } from '@/lib/supabaseClient';
-import { dayCoreLifts } from '../constants/dayCoreLifts';
+import { getTodayCfg, getDayCfg } from '@/lib/dayConfig';
+import { useWorkoutStore, WorkoutProvider } from '@/lib/workoutStore';
 
 
 
@@ -119,23 +120,28 @@ function WorkoutTimer({ elapsedTime, running, onToggle, className = '' }: {
 
 
 
-export default function TodaysWorkoutPage() {
+function TodaysWorkoutPageContent() {
   const { user } = useAuth();
   const router = useRouter();
   
   // Timer state - counts UP from 0
   const [elapsedTime, setElapsedTime] = useState(0); // seconds
-  const [timeAvailable, setTimeAvailable] = useState(45); // minutes, default
   const [mainTimerRunning, setMainTimerRunning] = useState(false);
 
-  
+  // Workout store
+  const {
+    active: activeWorkout,
+    pending: pendingWorkout,
+    timeAvailable,
+    lastInit,
+    setActive: setActiveWorkout,
+    setPending: setPendingWorkout,
+    setTimeAvailable,
+    reset: resetWorkout
+  } = useWorkoutStore();
 
-  const [workoutData, setWorkoutData] = useState<WorkoutData | NikeWorkout | null>(null);
-  const [pendingWorkout, setPendingWorkout] = useState<WorkoutData | NikeWorkout | null>(null);
-  const [activeWorkout, setActiveWorkout] = useState<WorkoutData | NikeWorkout | null>(null);
-  const [showPrevious, setShowPrevious] = useState(false);
   const [chatMessages, setChatMessages] = useState<Array<{sender: 'user' | 'assistant', text: string, timestamp?: string}>>([]);
-
+  const [showPrevious, setShowPrevious] = useState(false);
   const [inputText, setInputText] = useState('');
   const chatHistoryRef = useRef<HTMLDivElement>(null);
 
@@ -154,10 +160,10 @@ export default function TodaysWorkoutPage() {
 
   // Start timer when workout data is generated
   useEffect(() => {
-    if (workoutData && !mainTimerRunning) {
+    if (activeWorkout && !mainTimerRunning) {
       setMainTimerRunning(true);
     }
-  }, [workoutData, mainTimerRunning]);
+  }, [activeWorkout, mainTimerRunning]);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -187,7 +193,14 @@ export default function TodaysWorkoutPage() {
             exercises: data as NikeExercise[],
             workoutNumber: 1
           };
-          setWorkoutData(nikeWorkout);
+          // Convert NikeWorkout to WorkoutData format for the store
+          const workoutData: WorkoutData = {
+            warmup: [],
+            workout: nikeWorkout.exercises.map(ex => `${ex.exercise}: ${ex.sets}x${ex.reps}`),
+            cooldown: [],
+            prompt: `Nike Workout ${nikeWorkout.workoutNumber}`
+          };
+          setPendingWorkout(workoutData);
         }
       }
     };
@@ -202,18 +215,25 @@ export default function TodaysWorkoutPage() {
     }
   }, [chatMessages]);
 
+  // Auto-reset on day change
+  useEffect(() => {
+    const today = new Date().toISOString().split('T')[0];
+    if (lastInit !== today) {
+      resetWorkout();
+    }
+  }, [lastInit, resetWorkout]);
+
   // Clear state on auth change
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session) {
-        setActiveWorkout(null);
-        setPendingWorkout(null);
+        resetWorkout();
         setShowPrevious(false);
       }
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [resetWorkout]);
 
   // Helper to fetch previous sets data from most recent workout
   const fetchPrevSets = async (userId: string, exerciseNames: string[]) => {
@@ -336,17 +356,23 @@ export default function TodaysWorkoutPage() {
       });
     }
     
-    setPendingWorkout(nikeWorkout);
+    // Convert NikeWorkout to WorkoutData format for the store
+    const workoutData: WorkoutData = {
+      warmup: [],
+      workout: nikeWorkout.exercises.map(ex => `${ex.exercise}: ${ex.sets}x${ex.reps}`),
+      cooldown: [],
+      prompt: `Nike Workout ${nikeWorkout.workoutNumber}`
+    };
+    setPendingWorkout(workoutData);
   };
 
   // Build day-of-week workout using new day configuration
   const buildDayWorkout = async (day: string, userId: string, minutes: number = 45) => {
     try {
-      // Get day configuration
-      const dayNumber = new Date().getDay(); // 0 = Sunday, 1 = Monday, etc.
-      const dayCfg = dayCoreLifts[dayNumber];
+      // Get day configuration using new system
+      const dayCfg = getDayCfg(day) || getTodayCfg();
       
-      console.log('DAY asked for:', day, 'Day number:', dayNumber, 'Config:', dayCfg, 'Minutes:', minutes);
+      console.log('DAY asked for:', day, 'Config:', dayCfg, 'Minutes:', minutes);
 
       if (!dayCfg) {
         setChatMessages(prev => [
@@ -554,11 +580,12 @@ export default function TodaysWorkoutPage() {
         .single();
 
       if (!coreLift) {
+        console.warn(`Core lift "${coreLiftName}" missing in DB – continuing without it`);
         setChatMessages(prev => [
           ...prev,
-          { sender: 'assistant', text: `Core lift ${coreLiftName} not found.`, timestamp: new Date().toLocaleTimeString() },
+          { sender: 'assistant', text: `Core lift ${coreLiftName} not found in database. Building accessory-only workout.`, timestamp: new Date().toLocaleTimeString() },
         ]);
-        return;
+        // Continue with accessory-only workout
       }
 
       /* 2️⃣  get user equipment */
@@ -566,12 +593,12 @@ export default function TodaysWorkoutPage() {
       const buildPlan = async (mins: number) => {
         const warmupBlock = 0.07 * mins;   // 7% warm-up
         const cooldownBlock = 0.07 * mins; // 7% cool-down
-        const coreBlock = 0.45 * mins;     // 45% core lift
+        const coreBlock = coreLift ? 0.45 * mins : 0;     // 45% core lift if available
 
         let remaining = mins - warmupBlock - cooldownBlock - coreBlock;
 
         // 1. Core-lift sets – scale by time bucket
-        const coreSets = Math.max(3, Math.round((coreBlock / 10))); // ≈10 min per heavy set incl. rest
+        const coreSets = coreLift ? Math.max(3, Math.round((coreBlock / 10))) : 0; // ≈10 min per heavy set incl. rest
 
         // 2. Accessories – allocate until remaining ≤ 2 min buffer
         const accessories: Exercise[] = [];
@@ -580,7 +607,7 @@ export default function TodaysWorkoutPage() {
             .from('exercises')
             .select('*')
             .eq('is_main_lift', false)
-            .eq('primary_muscle', coreLift.primary_muscle)
+            .eq('primary_muscle', coreLift?.primary_muscle || 'full_body')
             .limit(10);
 
           if (accessoryExercises && accessoryExercises.length > 0) {
@@ -594,7 +621,7 @@ export default function TodaysWorkoutPage() {
         const { data: warmupExercises } = await supabase
           .from('vw_mobility_warmups')
           .select('*')
-          .ilike('primary_muscle', `%${coreLift.primary_muscle}%`)
+          .ilike('primary_muscle', `%${coreLift?.primary_muscle || 'full_body'}%`)
           .eq('exercise_phase', 'warmup');
 
         // Fallback to full body if not enough warm-ups found
@@ -611,7 +638,7 @@ export default function TodaysWorkoutPage() {
         const { data: cooldownExercises } = await supabase
           .from('vw_mobility_warmups')
           .select('*')
-          .ilike('primary_muscle', `%${coreLift.primary_muscle}%`)
+          .ilike('primary_muscle', `%${coreLift?.primary_muscle || 'full_body'}%`)
           .eq('exercise_phase', 'cooldown');
 
         // Fallback to full body if not enough cool-downs found
@@ -651,10 +678,10 @@ export default function TodaysWorkoutPage() {
       await supabase.from('workouts').insert({
         user_id: userId,
         program_name: 'DayOfWeek',
-        workout_type: `${coreLiftName} – ${coreLift.primary_muscle}`,
-        core_lift_id: coreLift.id, // Include core lift ID for strength workouts
+        workout_type: coreLift ? `${coreLiftName} – ${coreLift.primary_muscle}` : `${coreLiftName} – Accessory Only`,
+        core_lift_id: coreLift?.id || null, // Include core lift ID for strength workouts
         duration_minutes: minutes,
-        main_lifts: JSON.stringify([coreLift.name]),
+        main_lifts: JSON.stringify(coreLift ? [coreLift.name] : []),
         accessory_lifts: JSON.stringify(plan.accessories.map((c: Exercise) => c.name)),
         created_at: new Date().toISOString()
       });
@@ -665,7 +692,11 @@ export default function TodaysWorkoutPage() {
         reply += `**Warm-up:**\n`;
         plan.warmups.forEach((a: MobilityDrill) => reply += `• ${a.name}\n`);
       }
-      reply += `**Core lift:** ${coreLift.name} (${plan.coreSets} sets)\n`;
+      if (coreLift) {
+        reply += `**Core lift:** ${coreLift.name} (${plan.coreSets} sets)\n`;
+      } else {
+        reply += `**Core lift:** ${coreLiftName} not found - accessory workout only\n`;
+      }
       if (plan.accessories.length > 0) {
         reply += `**Accessories:**\n`;
         plan.accessories.forEach((a: Exercise) => reply += `• ${a.name}\n`);
@@ -683,8 +714,11 @@ export default function TodaysWorkoutPage() {
       // Convert to workout data format for the table
       const workoutData: WorkoutData = {
         warmup: plan.warmups.map((ex: MobilityDrill) => `${ex.name}: 1x5`),
-        workout: [coreLift.name, ...plan.accessories.map((ex: Exercise) => ex.name)].map(name => 
-          `${name}: ${name === coreLift.name ? `${plan.coreSets}x8` : '3x12'}`
+        workout: [
+          ...(coreLift ? [coreLift.name] : []),
+          ...plan.accessories.map((ex: Exercise) => ex.name)
+        ].map(name => 
+          `${name}: ${name === coreLift?.name ? `${plan.coreSets}x8` : '3x12'}`
         ),
         cooldown: plan.cooldowns.map((ex: MobilityDrill) => `${ex.name}: 1x5`),
         prompt: `${coreLiftName} Day-of-Week Workout`
@@ -694,7 +728,7 @@ export default function TodaysWorkoutPage() {
       if (user?.id) {
         const exerciseNames = [
           ...plan.warmups.map((ex: MobilityDrill) => ex.name),
-          coreLift.name,
+          ...(coreLift ? [coreLift.name] : []),
           ...plan.accessories.map((ex: Exercise) => ex.name),
           ...plan.cooldowns.map((ex: MobilityDrill) => ex.name)
         ];
@@ -945,22 +979,38 @@ export default function TodaysWorkoutPage() {
             </div>
           </div>
         ) : (
-          <WorkoutTable 
-            workout={activeWorkout!} 
-            onFinishWorkout={() => {
-              setActiveWorkout(null);
-              setShowPrevious(false);
-            }}
-            onStopTimer={() => {
-              setMainTimerRunning(false);
-            }}
-            elapsedTime={elapsedTime}
-            showPrevious={showPrevious}
-          />
+          <>
+            <WorkoutTable 
+              workout={activeWorkout!} 
+              onFinishWorkout={() => {
+                setActiveWorkout(null);
+                setShowPrevious(false);
+              }}
+              onStopTimer={() => {
+                setMainTimerRunning(false);
+              }}
+              elapsedTime={elapsedTime}
+              showPrevious={showPrevious}
+            />
+            <button
+              onClick={resetWorkout}
+              className="mt-4 bg-yellow-600 hover:bg-yellow-700 text-white px-6 py-2 rounded-xl font-semibold transition-colors"
+            >
+              Reset Workout
+            </button>
+          </>
         )}
       </section>
 
 
     </div>
+  );
+} 
+
+export default function TodaysWorkoutPage() {
+  return (
+    <WorkoutProvider>
+      <TodaysWorkoutPageContent />
+    </WorkoutProvider>
   );
 } 
