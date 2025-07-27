@@ -159,12 +159,17 @@ export default function TodaysWorkoutPage() {
   // Build day-of-week workout using day_core_lifts table
   const buildDayWorkout = async (day: string, userId: string, minutes: number = 45) => {
     try {
+      // Fix: ensure day lookup is case-insensitive and trims whitespace
+      const cleanDay = day.trim();
+      const dayTitle = cleanDay.charAt(0).toUpperCase() + cleanDay.slice(1).toLowerCase();
+
       console.log('DAY asked for:', day);
       const { data: coreRow, error } = await supabase
         .from('day_core_lifts')
         .select('core_lift')
-        .ilike('day_of_week', day)   // 👈 case-insensitive match
+        .ilike('day_of_week', dayTitle)   // match 'monday', 'Monday', etc.
         .single();
+      if (error) console.error(error);
 
       console.log('coreRow:', coreRow, 'error:', error);
 
