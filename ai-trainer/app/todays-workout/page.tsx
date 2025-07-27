@@ -177,14 +177,15 @@ function TodaysWorkoutPageContent() {
   useEffect(() => {
     const loadNikeWorkout = async () => {
       const { data, error } = await supabase
-        .from('nike_workouts')
-        .select('workout, workout_type, sets, reps, exercise, instructions, exercise_type')
-        .eq('workout', 1);
+        .from('vw_clean_nike_workouts')
+        .select('*')
+        .eq('workout', 1)
+        .order('sets', { ascending: true });
 
       console.log('Nike Workout 1:', data);
 
       if (error) {
-        console.error('❌ Error querying nike_workouts:', error);
+        console.error('❌ Error querying vw_clean_nike_workouts:', error);
       } else {
         console.log('✅ Nike Workout 1:', data);
         // Convert to NikeWorkout format and set as workout data
@@ -193,11 +194,17 @@ function TodaysWorkoutPageContent() {
             exercises: data as NikeExercise[],
             workoutNumber: 1
           };
+          
+          // Explicitly pick phases for proper warm-up/cool-down recognition
+          const warmups = data.filter(r => r.exercise_phase === 'warmup');
+          const cooldowns = data.filter(r => r.exercise_phase === 'cooldown');
+          const mains = data.filter(r => r.exercise_phase === 'main');
+          
           // Convert NikeWorkout to WorkoutData format for the store
           const workoutData: WorkoutData = {
-            warmup: [],
-            workout: nikeWorkout.exercises.map(ex => `${ex.exercise}: ${ex.sets}x${ex.reps}`),
-            cooldown: [],
+            warmup: warmups.map(ex => `${ex.exercise}: ${ex.sets}x${ex.reps}`),
+            workout: mains.map(ex => `${ex.exercise}: ${ex.sets}x${ex.reps}`),
+            cooldown: cooldowns.map(ex => `${ex.exercise}: ${ex.sets}x${ex.reps}`),
             prompt: `Nike Workout ${nikeWorkout.workoutNumber}`
           };
           setPendingWorkout(workoutData);
@@ -302,9 +309,10 @@ function TodaysWorkoutPageContent() {
     }
 
     const { data: rows } = await supabase
-      .from('nike_workouts')
-      .select('workout, workout_type, sets, reps, exercise, instructions, exercise_type')
-      .eq('workout', workoutNo);
+      .from('vw_clean_nike_workouts')
+      .select('*')
+      .eq('workout', workoutNo)
+      .order('sets', { ascending: true });
 
     if (!rows?.length) {
       setChatMessages(prev => [
@@ -320,6 +328,11 @@ function TodaysWorkoutPageContent() {
         .update({ last_nike_workout: workoutNo })
         .eq('id', userId);
     }
+
+    // Explicitly pick phases for proper warm-up/cool-down recognition
+    const warmups = rows.filter(r => r.exercise_phase === 'warmup');
+    const cooldowns = rows.filter(r => r.exercise_phase === 'cooldown');
+    const mains = rows.filter(r => r.exercise_phase === 'main');
 
     // Build chat reply
     const heading = explicit
@@ -358,9 +371,9 @@ function TodaysWorkoutPageContent() {
     
     // Convert NikeWorkout to WorkoutData format for the store
     const workoutData: WorkoutData = {
-      warmup: [],
-      workout: nikeWorkout.exercises.map(ex => `${ex.exercise}: ${ex.sets}x${ex.reps}`),
-      cooldown: [],
+      warmup: warmups.map(ex => `${ex.exercise}: ${ex.sets}x${ex.reps}`),
+      workout: mains.map(ex => `${ex.exercise}: ${ex.sets}x${ex.reps}`),
+      cooldown: cooldowns.map(ex => `${ex.exercise}: ${ex.sets}x${ex.reps}`),
       prompt: `Nike Workout ${nikeWorkout.workoutNumber}`
     };
     setPendingWorkout(workoutData);
