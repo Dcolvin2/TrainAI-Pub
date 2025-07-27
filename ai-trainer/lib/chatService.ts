@@ -9,7 +9,7 @@ interface FunctionSchema {
 }
 
 export async function chatWithFunctions(
-  history: { role: 'system'|'user'|'assistant'|'function'; name?: string; content: string }[]
+  history: OpenAI.Chat.Completions.ChatCompletionMessageParam[]
 ): Promise<string> {
   const functions: FunctionSchema[] = []; // we'll add schemas later
   while (true) {

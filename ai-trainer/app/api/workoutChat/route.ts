@@ -60,7 +60,7 @@ When you do call the function, you must return a JSON object matching its schema
     }
 
     // C) Build chat history with system message
-    const chatMessages = [systemMsg, ...messages]
+    const chatMessages: any[] = [systemMsg, ...messages]
 
     // D) Call OpenAI with function schema
     const resp = await chatWithFunctions(chatMessages)

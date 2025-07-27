@@ -204,9 +204,9 @@ export async function POST(req: Request) {
     }
 
     // Call OpenAI
-    const history = [
-      { role: 'system' as const, content: systemPrompt },
-      { role: 'user' as const, content: userPrompt }
+    const history: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
     ];
     
     await chatWithFunctions(history);

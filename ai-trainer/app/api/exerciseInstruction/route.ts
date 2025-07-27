@@ -14,15 +14,12 @@ export async function POST(req: Request) {
     }
 
     // Generate exercise instruction using GPT
-    const history = [
-      {
-        role: 'system' as const,
-        content: `You are a knowledgeable fitness coach. Provide clear, safe, and concise exercise form instructions. Keep responses under 100 words and focus on key form points.`
-      },
-      {
-        role: 'user' as const,
-        content: `Provide proper form instructions for the exercise: ${exerciseName}. Include key safety tips and common mistakes to avoid.`
-      }
+    const systemPrompt = `You are a knowledgeable fitness coach. Provide clear, safe, and concise exercise form instructions. Keep responses under 100 words and focus on key form points.`;
+    const userPrompt = `Provide proper form instructions for the exercise: ${exerciseName}. Include key safety tips and common mistakes to avoid.`;
+
+    const history: any[] = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
     ];
 
     const instruction = await chatWithFunctions(history) || 
