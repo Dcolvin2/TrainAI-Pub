@@ -388,13 +388,6 @@ export default function TodaysWorkoutPage() {
   // Build HIIT workout (Thursday)
   const buildHIITWorkout = async (userId: string, minutes: number = 25) => {
     try {
-      // Get user equipment
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('equipment')
-        .eq('id', userId)
-        .single();
-
       // Pull HIIT-appropriate exercises (little setup, full-body coverage)
       const { data: hiitExercises } = await supabase
         .from('exercises')
@@ -473,11 +466,9 @@ export default function TodaysWorkoutPage() {
         .eq('id', userId)
         .single();
 
-      const gear = profile?.equipment ?? [];
-
       // Select cardio equipment from user's gear
       const cardioOptions = ['treadmill', 'bike', 'elliptical', 'rower', 'stairmaster'];
-      const availableCardio = cardioOptions.filter(option => gear.includes(option));
+      const availableCardio = cardioOptions.filter(option => profile?.equipment?.includes(option) || false);
       const selectedCardio = availableCardio.length > 0 ? availableCardio[0] : 'running';
 
       // Pull warm-ups and cool-downs
