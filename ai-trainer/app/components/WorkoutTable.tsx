@@ -27,12 +27,33 @@ interface NikeWorkout {
   workoutNumber: number;
 }
 
+interface PreviousSetData {
+  weight: number;
+  reps: number;
+}
+
+interface PreviousExerciseData {
+  [setNumber: number]: PreviousSetData;
+}
+
+interface PreviousWorkoutData {
+  [exerciseName: string]: PreviousExerciseData;
+}
+
+interface EnrichedNikeExercise extends NikeExercise {
+  previousSets?: PreviousExerciseData;
+}
+
+interface EnrichedGeneratedWorkout extends GeneratedWorkout {
+  previousData?: PreviousWorkoutData;
+}
+
 interface WorkoutSet {
   id: string;
   exerciseName: string;
   setNumber: number;
-  previousWeight?: number;
-  previousReps?: number;
+  previousWeight?: number | null;
+  previousReps?: number | null;
   prescribedWeight: number;
   prescribedReps: number;
   actualWeight?: number;
@@ -45,7 +66,7 @@ interface WorkoutSet {
 
 
 interface WorkoutTableProps {
-  workout: GeneratedWorkout | NikeWorkout;
+  workout: EnrichedGeneratedWorkout | NikeWorkout;
   onFinishWorkout?: () => void;
   onStopTimer?: () => void;
   elapsedTime?: number;
@@ -183,7 +204,7 @@ const getDefaultSetCount = (section: 'warmup' | 'workout' | 'cooldown', exercise
 
 
 // Convert workout arrays to structured sets with proper set counts
-const convertWorkoutToSets = (workout: GeneratedWorkout | NikeWorkout): WorkoutSet[] => {
+const convertWorkoutToSets = (workout: EnrichedGeneratedWorkout | NikeWorkout): WorkoutSet[] => {
   const sets: WorkoutSet[] = [];
   
   // If it's a Nike workout, use the actual exercise data
@@ -214,7 +235,7 @@ const convertWorkoutToSets = (workout: GeneratedWorkout | NikeWorkout): WorkoutS
       }
       
       // Get previous data for this exercise if available
-      const previousSets = (exercise as any).previousSets || {};
+      const previousSets = (exercise as EnrichedNikeExercise).previousSets || {};
       
       // Create the correct number of sets based on database
       for (let i = 0; i < exercise.sets; i++) {
@@ -237,7 +258,7 @@ const convertWorkoutToSets = (workout: GeneratedWorkout | NikeWorkout): WorkoutS
   } else {
     // Handle GeneratedWorkout format (existing logic)
     const generatedWorkout = workout;
-    const previousData = (workout as any).previousData || {};
+    const previousData = (workout as EnrichedGeneratedWorkout).previousData || {};
     
     // Process warmup
     generatedWorkout.warmup.forEach((item: string) => {

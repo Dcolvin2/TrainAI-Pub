@@ -41,6 +41,27 @@ interface Exercise {
   [key: string]: unknown;
 }
 
+interface PreviousSetData {
+  weight: number;
+  reps: number;
+}
+
+interface PreviousExerciseData {
+  [setNumber: number]: PreviousSetData;
+}
+
+interface PreviousWorkoutData {
+  [exerciseName: string]: PreviousExerciseData;
+}
+
+interface EnrichedNikeExercise extends NikeExercise {
+  previousSets?: PreviousExerciseData;
+}
+
+interface EnrichedWorkoutData extends WorkoutData {
+  previousData?: PreviousWorkoutData;
+}
+
 
 
 
@@ -297,7 +318,7 @@ export default function TodaysWorkoutPage() {
         const prevData = prevMap[exercise.exercise];
         if (prevData) {
           // Add previous data to the exercise (this will be used by WorkoutTable)
-          (exercise as any).previousSets = prevData;
+          (exercise as EnrichedNikeExercise).previousSets = prevData;
         }
       });
     }
@@ -450,7 +471,7 @@ export default function TodaysWorkoutPage() {
         
         // Enrich the workout data with previous information
         // This will be used by WorkoutTable to populate previous columns
-        (workoutData as any).previousData = prevMap;
+        (workoutData as EnrichedWorkoutData).previousData = prevMap;
       }
       
       setPendingWorkout(workoutData);
