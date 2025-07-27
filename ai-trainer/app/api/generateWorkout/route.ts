@@ -209,7 +209,7 @@ export async function POST(req: Request) {
       { role: 'user' as const, content: userPrompt }
     ];
     
-    const response = await chatWithFunctions(history);
+    await chatWithFunctions(history);
     
     // For now, return a simple response since we're not using function calls yet
     const plan = {

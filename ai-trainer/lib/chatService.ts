@@ -2,10 +2,16 @@ import OpenAI from 'openai';
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+interface FunctionSchema {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+
 export async function chatWithFunctions(
   history: { role: 'system'|'user'|'assistant'|'function'; name?: string; content: string }[]
 ): Promise<string> {
-  const functions: any[] = []; // we'll add schemas later
+  const functions: FunctionSchema[] = []; // we'll add schemas later
   while (true) {
     const resp = await client.chat.completions.create({
       model: 'gpt-4o',
