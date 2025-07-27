@@ -562,12 +562,6 @@ export default function TodaysWorkoutPage() {
       }
 
       /* 2️⃣  get user equipment */
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('equipment')
-        .eq('id', userId)
-        .single();
-
       // Time-budget algorithm
       const buildPlan = async (mins: number) => {
         const warmupBlock = 0.07 * mins;   // 7% warm-up
