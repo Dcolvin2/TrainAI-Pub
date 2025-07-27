@@ -567,8 +567,8 @@ function TodaysWorkoutPageContent() {
     }
   };
 
-  // Build strength workout with core lift using time-budget algorithm
-  const buildStrengthWorkout = async (coreLiftName: string, userId: string, minutes: number = 45) => {
+  // Build strength workout with core lift using improved time-budget algorithm
+  const buildStrengthWorkout = async (coreLiftName: string, userId: string, timeAvailable: number = 45) => {
     try {
       // Query guard for Saturday lift
       if (coreLiftName === 'Trap-Bar Deadlift') {
@@ -601,122 +601,111 @@ function TodaysWorkoutPageContent() {
         // Continue with accessory-only workout
       }
 
-      /* 2️⃣  get user equipment */
-      // Time-budget algorithm
-      const buildPlan = async (mins: number) => {
-        const warmupBlock = 0.07 * mins;   // 7% warm-up
-        const cooldownBlock = 0.07 * mins; // 7% cool-down
-        const coreBlock = coreLift ? 0.45 * mins : 0;     // 45% core lift if available
+      /* 2️⃣  Compute time buckets */
+      const warmupTime = Math.round(timeAvailable * 0.1);    // 10% for warm-up
+      const cooldownTime = Math.round(timeAvailable * 0.1);  // 10% for cool-down
+      const coreTime = coreLift 
+        ? Math.round(timeAvailable * 0.5)                    // 50% for core if exists
+        : 0;
+      let accessoryTime = timeAvailable - warmupTime - coreTime - cooldownTime;
 
-        let remaining = mins - warmupBlock - cooldownBlock - coreBlock;
+      /* 3️⃣  Fetch warm-ups */
+      const warmupCount = Math.max(1, Math.floor(warmupTime / 5)); // ~5 min each
+      const { data: warmupExercises } = await supabase
+        .from('vw_mobility_warmups')
+        .select('*')
+        .ilike('primary_muscle', `%${coreLift?.primary_muscle || 'full_body'}%`)
+        .eq('exercise_phase', 'warmup');
 
-        // 1. Core-lift sets – scale by time bucket
-        const coreSets = coreLift ? Math.max(3, Math.round((coreBlock / 10))) : 0; // ≈10 min per heavy set incl. rest
-
-        // 2. Accessories – allocate until remaining ≤ 2 min buffer
-        const accessories: Exercise[] = [];
-        while (remaining > 2) {
-          const { data: accessoryExercises } = await supabase
-            .from('exercises')
-            .select('*')
-            .eq('is_main_lift', false)
-            .eq('primary_muscle', coreLift?.primary_muscle || 'full_body')
-            .limit(10);
-
-          if (accessoryExercises && accessoryExercises.length > 0) {
-            const randomAccessory = accessoryExercises[Math.floor(Math.random() * accessoryExercises.length)];
-            accessories.push(randomAccessory);
-          }
-          remaining -= 6; // assume 6 min per accessory set trio
-        }
-
-        // 3. Pull warm-ups and cool-downs
-        const { data: warmupExercises } = await supabase
+      // Fallback to full body if not enough warm-ups found
+      let finalWarmups = warmupExercises || [];
+      if (finalWarmups.length < warmupCount) {
+        const { data: fallbackWarmups } = await supabase
           .from('vw_mobility_warmups')
           .select('*')
-          .ilike('primary_muscle', `%${coreLift?.primary_muscle || 'full_body'}%`)
+          .eq('primary_muscle', 'full_body')
           .eq('exercise_phase', 'warmup');
-
-        // Fallback to full body if not enough warm-ups found
-        let finalWarmups = warmupExercises || [];
-        if (finalWarmups.length < 2) {
-          const { data: fallbackWarmups } = await supabase
-            .from('vw_mobility_warmups')
-            .select('*')
-            .eq('primary_muscle', 'full_body')
-            .eq('exercise_phase', 'warmup');
-          finalWarmups = fallbackWarmups || [];
-        }
-
-        const { data: cooldownExercises } = await supabase
-          .from('vw_mobility_warmups')
-          .select('*')
-          .ilike('primary_muscle', `%${coreLift?.primary_muscle || 'full_body'}%`)
-          .eq('exercise_phase', 'cooldown');
-
-        // Fallback to full body if not enough cool-downs found
-        let finalCooldowns = cooldownExercises || [];
-        if (finalCooldowns.length < 2) {
-          const { data: fallbackCooldowns } = await supabase
-            .from('vw_mobility_warmups')
-            .select('*')
-            .eq('primary_muscle', 'full_body')
-            .eq('exercise_phase', 'cooldown');
-          finalCooldowns = fallbackCooldowns || [];
-        }
-
-        const chosenWarmups = finalWarmups.sort(() => 0.5 - Math.random()).slice(0, 2);
-        const chosenCooldowns = finalCooldowns.sort(() => 0.5 - Math.random()).slice(0, 2);
-
-        return {
-          warmups: chosenWarmups,
-          coreSets,
-          accessories,
-          cooldowns: chosenCooldowns
-        };
-      };
-
-      // Build plan based on time
-      let plan;
-      if (minutes < 30) {
-        // Compact plan for short workouts
-        plan = await buildPlan(minutes);
-        plan.coreSets = Math.max(2, Math.floor(plan.coreSets / 2)); // Halve core sets
-        plan.accessories = []; // Skip accessories entirely
-      } else {
-        plan = await buildPlan(minutes);
+        finalWarmups = fallbackWarmups || [];
       }
 
-      /* 3️⃣  save to workouts / workout_log_entries */
+      const warmups = finalWarmups.sort(() => 0.5 - Math.random()).slice(0, warmupCount);
+
+      /* 4️⃣  Core-lift sets */
+      const coreSetsCount = coreLift 
+        ? Math.max(2, Math.round(coreTime / 7))              // ~7 min per heavy set, min 2
+        : 0;
+
+      /* 5️⃣  Accessories */
+      const accessories: Exercise[] = [];
+      while (accessoryTime >= 5) {                           // ~5 min per accessory
+        const { data: accessoryExercises } = await supabase
+          .from('exercises')
+          .select('*')
+          .eq('is_main_lift', false)
+          .eq('primary_muscle', coreLift?.primary_muscle || 'full_body')
+          .limit(10);
+
+        if (accessoryExercises && accessoryExercises.length > 0) {
+          const randomAccessory = accessoryExercises[Math.floor(Math.random() * accessoryExercises.length)];
+          // Avoid duplicates
+          if (!accessories.find(ex => ex.name === randomAccessory.name)) {
+            accessories.push(randomAccessory);
+          }
+        }
+        accessoryTime -= 5;
+      }
+
+      /* 6️⃣  Fetch cool-downs */
+      const cooldownCount = Math.max(1, Math.floor(cooldownTime / 5)); // ~5 min each
+      const { data: cooldownExercises } = await supabase
+        .from('vw_mobility_warmups')
+        .select('*')
+        .ilike('primary_muscle', `%${coreLift?.primary_muscle || 'full_body'}%`)
+        .eq('exercise_phase', 'cooldown');
+
+      // Fallback to full body if not enough cool-downs found
+      let finalCooldowns = cooldownExercises || [];
+      if (finalCooldowns.length < cooldownCount) {
+        const { data: fallbackCooldowns } = await supabase
+          .from('vw_mobility_warmups')
+          .select('*')
+          .eq('primary_muscle', 'full_body')
+          .eq('exercise_phase', 'cooldown');
+        finalCooldowns = fallbackCooldowns || [];
+      }
+
+      const cooldowns = finalCooldowns.sort(() => 0.5 - Math.random()).slice(0, cooldownCount);
+
+      /* 7️⃣  Save to workouts table */
       await supabase.from('workouts').insert({
         user_id: userId,
         program_name: 'DayOfWeek',
         workout_type: coreLift ? `${coreLiftName} – ${coreLift.primary_muscle}` : `${coreLiftName} – Accessory Only`,
-        core_lift_id: coreLift?.id || null, // Include core lift ID for strength workouts
-        duration_minutes: minutes,
+        core_lift_id: coreLift?.id || null,
+        duration_minutes: timeAvailable,
         main_lifts: JSON.stringify(coreLift ? [coreLift.name] : []),
-        accessory_lifts: JSON.stringify(plan.accessories.map((c: Exercise) => c.name)),
+        accessory_lifts: JSON.stringify(accessories.map((c: Exercise) => c.name)),
         created_at: new Date().toISOString()
       });
 
-      /* 4️⃣  return chat summary */
-      let reply = `**${coreLiftName} Workout (${minutes} min)**\n`;
-      if (plan.warmups.length > 0) {
+      /* 8️⃣  Build chat summary */
+      let reply = `**${coreLiftName} Workout (${timeAvailable} min)**\n`;
+      if (warmups.length > 0) {
         reply += `**Warm-up:**\n`;
-        plan.warmups.forEach((a: MobilityDrill) => reply += `• ${a.name}\n`);
+        warmups.forEach((a: MobilityDrill) => reply += `• ${a.name}\n`);
       }
-      if (coreLift) {
-        reply += `**Core lift:** ${coreLift.name} (${plan.coreSets} sets)\n`;
-      } else {
+      if (coreLift && coreSetsCount > 0) {
+        reply += `**Core lift:** ${coreLift.name} (${coreSetsCount} sets)\n`;
+      } else if (!coreLift) {
         reply += `**Core lift:** ${coreLiftName} not found - accessory workout only\n`;
       }
-      if (plan.accessories.length > 0) {
+      if (accessories.length > 0) {
         reply += `**Accessories:**\n`;
-        plan.accessories.forEach((a: Exercise) => reply += `• ${a.name}\n`);
+        accessories.forEach((a: Exercise) => reply += `• ${a.name}\n`);
       }
-      if (plan.cooldowns.length > 0) {
+      if (cooldowns.length > 0) {
         reply += `**Cool-down:**\n`;
-        plan.cooldowns.forEach((a: MobilityDrill) => reply += `• ${a.name}\n`);
+        cooldowns.forEach((a: MobilityDrill) => reply += `• ${a.name}\n`);
       }
 
       setChatMessages(prev => [
@@ -724,31 +713,30 @@ function TodaysWorkoutPageContent() {
         { sender: 'assistant', text: reply, timestamp: new Date().toLocaleTimeString() },
       ]);
 
-      // Convert to workout data format for the table
+      /* 9️⃣  Convert to workout data format for the table */
       const workoutData: WorkoutData = {
-        warmup: plan.warmups.map((ex: MobilityDrill) => `${ex.name}: 1x5`),
+        warmup: warmups.map((ex: MobilityDrill) => `${ex.name}: 1x5`),
         workout: [
-          ...(coreLift ? [coreLift.name] : []),
-          ...plan.accessories.map((ex: Exercise) => ex.name)
+          ...(coreLift && coreSetsCount > 0 ? [coreLift.name] : []),
+          ...accessories.map((ex: Exercise) => ex.name)
         ].map(name => 
-          `${name}: ${name === coreLift?.name ? `${plan.coreSets}x8` : '3x12'}`
+          `${name}: ${name === coreLift?.name ? `${coreSetsCount}x8` : '3x12'}`
         ),
-        cooldown: plan.cooldowns.map((ex: MobilityDrill) => `${ex.name}: 1x5`),
+        cooldown: cooldowns.map((ex: MobilityDrill) => `${ex.name}: 1x5`),
         prompt: `${coreLiftName} Day-of-Week Workout`
       };
 
-      // Fetch previous sets data and enrich the workout
+      /* 🔟  Fetch previous sets data and enrich the workout */
       if (user?.id) {
         const exerciseNames = [
-          ...plan.warmups.map((ex: MobilityDrill) => ex.name),
-          ...(coreLift ? [coreLift.name] : []),
-          ...plan.accessories.map((ex: Exercise) => ex.name),
-          ...plan.cooldowns.map((ex: MobilityDrill) => ex.name)
+          ...warmups.map((ex: MobilityDrill) => ex.name),
+          ...(coreLift && coreSetsCount > 0 ? [coreLift.name] : []),
+          ...accessories.map((ex: Exercise) => ex.name),
+          ...cooldowns.map((ex: MobilityDrill) => ex.name)
         ];
         const prevMap = await fetchPrevSets(user.id, exerciseNames);
         
         // Enrich the workout data with previous information
-        // This will be used by WorkoutTable to populate previous columns
         (workoutData as EnrichedWorkoutData).previousData = prevMap;
       }
       
