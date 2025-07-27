@@ -62,6 +62,18 @@ interface EnrichedWorkoutData extends WorkoutData {
   previousData?: PreviousWorkoutData;
 }
 
+interface BaseExercise {
+  id: number;
+  name: string;
+  primary_muscle: string;
+  exercise_phase: string;
+  instruction?: string;
+}
+
+interface MobilityDrill extends BaseExercise {
+  source: 'nike' | 'exercises';
+}
+
 
 
 
@@ -378,11 +390,23 @@ export default function TodaysWorkoutPage() {
 
       const gear = profile?.equipment ?? [];
 
-      /* 4️⃣  pull warm-up exercises */
+      /* 4️⃣  pull warm-up exercises from unified view */
       const { data: warmupExercises } = await supabase
-        .from('exercises')
+        .from('vw_mobility_warmups')
         .select('*')
+        .ilike('primary_muscle', `%${coreLift.primary_muscle}%`)
         .eq('exercise_phase', 'warmup');
+
+      // Fallback to full body if not enough warm-ups found
+      let finalWarmups = warmupExercises || [];
+      if (finalWarmups.length < 2) {
+        const { data: fallbackWarmups } = await supabase
+          .from('vw_mobility_warmups')
+          .select('*')
+          .eq('primary_muscle', 'full_body')
+          .eq('exercise_phase', 'warmup');
+        finalWarmups = fallbackWarmups || [];
+      }
 
       /* 5️⃣  pull matching accessories
              – same primary_muscle group
@@ -394,11 +418,23 @@ export default function TodaysWorkoutPage() {
         .eq('is_main_lift', false)
         .eq('primary_muscle', coreLift.primary_muscle);
 
-      /* 6️⃣  pull cool-down exercises */
+      /* 6️⃣  pull cool-down exercises from unified view */
       const { data: cooldownExercises } = await supabase
-        .from('exercises')
+        .from('vw_mobility_warmups')
         .select('*')
+        .ilike('primary_muscle', `%${coreLift.primary_muscle}%`)
         .eq('exercise_phase', 'cooldown');
+
+      // Fallback to full body if not enough cool-downs found
+      let finalCooldowns = cooldownExercises || [];
+      if (finalCooldowns.length < 2) {
+        const { data: fallbackCooldowns } = await supabase
+          .from('vw_mobility_warmups')
+          .select('*')
+          .eq('primary_muscle', 'full_body')
+          .eq('exercise_phase', 'cooldown');
+        finalCooldowns = fallbackCooldowns || [];
+      }
 
       // Filter accessories by equipment availability
       let filteredAccessories = accessories || [];
@@ -411,13 +447,13 @@ export default function TodaysWorkoutPage() {
       }
 
       /* 7️⃣  time-box: assume 5 min warm-up + 10 min core lift + 5 min per accessory + 5 min cool-down */
-      const warmupSlots = Math.min(2, warmupExercises?.length || 0);
+      const warmupSlots = Math.min(2, finalWarmups.length);
       const accessorySlots = Math.max(0, Math.floor((minutes - 20) / 5)); // 20 = 5 warmup + 10 core + 5 cooldown
-      const cooldownSlots = Math.min(2, cooldownExercises?.length || 0);
+      const cooldownSlots = Math.min(2, finalCooldowns.length);
 
-      const chosenWarmup = warmupExercises?.sort(() => 0.5 - Math.random()).slice(0, warmupSlots) || [];
+      const chosenWarmup = finalWarmups.sort(() => 0.5 - Math.random()).slice(0, warmupSlots);
       const chosenAccessories = filteredAccessories.sort(() => 0.5 - Math.random()).slice(0, accessorySlots);
-      const chosenCooldown = cooldownExercises?.sort(() => 0.5 - Math.random()).slice(0, cooldownSlots) || [];
+      const chosenCooldown = finalCooldowns.sort(() => 0.5 - Math.random()).slice(0, cooldownSlots);
 
       /* 6️⃣  save to workouts / workout_log_entries */
       await supabase
@@ -453,19 +489,19 @@ export default function TodaysWorkoutPage() {
 
       // Convert to workout data format for the table
       const workoutData: WorkoutData = {
-        warmup: chosenWarmup.map((ex: Exercise) => `${ex.name}: 1x5`),
+        warmup: chosenWarmup.map((ex: MobilityDrill) => `${ex.name}: 1x5`),
         workout: [coreLift.name, ...chosenAccessories.map((ex: Exercise) => ex.name)].map(name => `${name}: ${name === coreLift.name ? '4x8' : '3x12'}`),
-        cooldown: chosenCooldown.map((ex: Exercise) => `${ex.name}: 1x5`),
+        cooldown: chosenCooldown.map((ex: MobilityDrill) => `${ex.name}: 1x5`),
         prompt: `${day} Day-of-Week Workout`
       };
 
       // Fetch previous sets data and enrich the workout
       if (user?.id) {
         const exerciseNames = [
-          ...chosenWarmup.map((ex: Exercise) => ex.name),
+          ...chosenWarmup.map((ex: MobilityDrill) => ex.name),
           coreLift.name,
           ...chosenAccessories.map((ex: Exercise) => ex.name),
-          ...chosenCooldown.map((ex: Exercise) => ex.name)
+          ...chosenCooldown.map((ex: MobilityDrill) => ex.name)
         ];
         const prevMap = await fetchPrevSets(user.id, exerciseNames);
         
