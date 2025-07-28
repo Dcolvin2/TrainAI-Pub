@@ -10,6 +10,7 @@
     "lint:fix": "next lint --fix",
         "type-check": "tsc --noEmit",
     "pre-commit": "lint-staged",
+    "pre-commit-check": "./scripts/pre-commit-check.sh",
     "setup-hooks": "chmod +x setup-git-hooks.sh && ./setup-git-hooks.sh",
     "pre-check": "chmod +x scripts/local-checks.sh && ./scripts/local-checks.sh",
     "auto-fix": "chmod +x scripts/auto-fix.sh && ./scripts/auto-fix.sh",
