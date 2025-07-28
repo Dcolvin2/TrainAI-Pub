@@ -754,7 +754,7 @@ function TodaysWorkoutPageContent() {
     
     // ── TRACE STEP 2: Normalized input ──
     const input = (message ?? '').trim().toLowerCase();
-    console.log('[TRACE] normalised:', input);
+    console.log('[TRACE] input:', input);
     
     // ── TRACE STEP 3: Early debug exit ──
     if (input === '/debug') {
@@ -772,7 +772,7 @@ function TodaysWorkoutPageContent() {
     setChatMessages(prev => [...prev, { sender: 'user', text: message, timestamp: new Date().toLocaleTimeString() }]);
 
     // ── TRACE STEP 4: Nike branch check ──
-    console.log('[TRACE] checking Nike branch');
+    console.log('[TRACE] hit Nike branch');
     // 2. Handle Nike workout request
     if (lower.includes('nike')) {
       console.log('[TRACE] matched Nike branch');
@@ -789,7 +789,7 @@ function TodaysWorkoutPageContent() {
     }
 
     // ── TRACE STEP 5: Exercise guidance branch check ──
-    console.log('[TRACE] checking exercise guidance branch');
+    console.log('[TRACE] hit exercise guidance branch');
     // 3. Handle exercise guidance: "How should I perform Romanian Deadlift?"
     if (lower.startsWith('how should i perform') || lower.startsWith('how do i do')) {
       console.log('[TRACE] matched exercise guidance branch');
@@ -829,7 +829,7 @@ function TodaysWorkoutPageContent() {
     }
 
     // ── TRACE STEP 6: Day-of-week branch check ──
-    console.log('[TRACE] checking day-of-week branch');
+    console.log('[TRACE] hit day-of-week branch');
     // 4. Handle day-of-week workout requests
     const dayMatch = lower.match(/(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/);
     if (dayMatch && user?.id) {
@@ -844,8 +844,35 @@ function TodaysWorkoutPageContent() {
       return;
     }
 
+    // ── CATCH-ALL GPT ROUTE ──
+    try {
+      console.log('[TRACE] catch-all GPT route fires');
+      const response = await fetch('/api/workoutChat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user?.id || 'anonymous',
+          messages: [
+            { role: 'system', content: 'You are a concise fitness coach. Reply in ≤120 words.' },
+            { role: 'user', content: message }
+          ]
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setChatMessages(prev => [
+          ...prev,
+          { sender: 'assistant', text: data.assistantMessage, timestamp: new Date().toLocaleTimeString() },
+        ]);
+        return;         // stop; don't fall through
+      }
+    } catch (e) {
+      console.error('[TRACE] OpenAI error', e);
+    }
+
     // ── TRACE STEP 7: Fallback branch ──
-    console.log('[TRACE] FALLBACK branch firing');
+    console.log('[TRACE] FALLBACK');
     // 5. Default fallback
     setChatMessages(prev => [
       ...prev,
