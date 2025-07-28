@@ -44,20 +44,8 @@ interface PreviousExerciseData {
   [setNumber: number]: PreviousSetData;
 }
 
-interface PreviousWorkoutData {
-  [exerciseName: string]: PreviousExerciseData;
-}
-
 interface EnrichedNikeExercise extends NikeExercise {
   previousSets?: PreviousExerciseData;
-}
-
-interface BaseExercise {
-  id: number;
-  name: string;
-  primary_muscle: string;
-  exercise_phase: string;
-  instruction?: string;
 }
 
 // Simple Timer Component - Counts UP from 0
