@@ -84,7 +84,7 @@ When you do call the function, you must return a JSON object matching its schema
     ]
 
     // D) Call OpenAI with function schema
-    const resp = await chatWithFunctions(chatMessages)
+    const resp = await chatWithFunctions(chatMessages as any)
 
     // E) Parse response and return both message and plan
     const assistantMessage = resp || 'I understand your request. How can I help you with your workout?'
