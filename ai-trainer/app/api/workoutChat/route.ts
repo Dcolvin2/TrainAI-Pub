@@ -18,6 +18,9 @@ const supabase = createClient(
 
 // Nike Workout Shortcut Handler
 async function handleNikeShortcut(rawInput: string, userId: string) {
+  // 1️⃣ VERIFY WE'RE HITTING THE INTENDED PROJECT
+  console.log('SUPA URL', process.env.NEXT_PUBLIC_SUPABASE_URL);
+  
   // STEP 0: Match "Nike" or "Nike 2" (case-insensitive)
   const m = /^nike\s*(\d+)?/i.exec(rawInput.trim());
   if (!m) return false;
@@ -41,8 +44,24 @@ async function handleNikeShortcut(rawInput: string, userId: string) {
     .select("*")
     .eq("workout", workoutNo);    // integer comparison (workout is int)
 
-  // Debug helper – comment out in prod
-  console.debug("NIKE QUERY", { workoutNo, rows: rows?.length, error });
+  // 2️⃣ LOG EXACT QUERY RESULTS
+  console.debug('NIKE rows', { workoutNo, rows: rows?.length, error });
+
+  // 3️⃣ DUMP DISTINCT WORKOUT NUMBERS DIRECTLY THROUGH SUPABASE
+  const { data: availableWorkouts } = await supabase
+    .from('nike_workouts')
+    .select('workout')
+    .order('workout', { ascending: true })
+    .limit(100);
+  console.debug('Available Nike workouts', availableWorkouts?.map(r => r.workout));
+
+  // 4️⃣ CHECK COLUMN NAME & TYPE ON THE FLY
+  try {
+    const { data: info } = await supabase.rpc('pg_catalog.get_columns', { table_name: 'nike_workouts' });
+    console.debug('Table schema info', info);
+  } catch (schemaError) {
+    console.debug('Schema check failed:', schemaError);
+  }
 
   if (error) {
     return {
