@@ -25,49 +25,66 @@ const supabase = createClient(
 )
 
 // Nike Workout Shortcut Handler
-async function handleNikeShortcut(userInput: string, userId: string): Promise<NikeWorkout | null> {
-  const nikeRegex = /nike\s*(\d+)?/i;
-  const match = nikeRegex.exec(userInput);
-  if (!match) return null; // Not a Nike command
+async function handleNikeShortcut(rawInput: string, userId: string) {
+  // STEP 0: Match "Nike" or "Nike 2" (case-insensitive)
+  const m = /^nike\s*(\d+)?/i.exec(rawInput.trim());
+  if (!m) return false;
 
-  // 1️⃣ STEP 1: Figure out which workout number to load
-  const explicitNumber = match[1] ? parseInt(match[1], 10) : null;
+  // STEP 1: Determine which workout #
+  const explicit = m[1] ? parseInt(m[1], 10) : null;
 
-  // Read current progress
+  // always fetch profile progress so we can increment if needed
   const { data: profile } = await supabase
-    .from('profiles')
-    .select('last_nike_workout')
-    .eq('user_id', userId)
+    .from("profiles")
+    .select("last_nike_workout")
+    .eq("user_id", userId)
     .single();
 
-  const lastDone = profile?.last_nike_workout ?? 0;
-  const workoutNumber = explicitNumber ?? lastDone + 1;
+  const last = profile?.last_nike_workout ?? 0;
+  const workoutNo = explicit ?? last + 1;
 
-  // 2️⃣ STEP 2: Fetch workout rows
+  // STEP 2: 👇  THE ONLY QUERY – points at **public.nike_workouts**
   const { data: rows, error } = await supabase
-    .from('vw_clean_nike_workouts')
-    .select('*')
-    .eq('workout', workoutNumber)
-    .order('sets', { ascending: true });
+    .from("nike_workouts")        // << ensure table name is all-lowercase
+    .select("*")
+    .eq("workout", workoutNo);    // integer comparison (workout is int)
 
-  if (error || !rows?.length) {
-    return null; // Workout not found
+  // Debug helper – comment out in prod
+  console.debug("NIKE QUERY", { workoutNo, rows: rows?.length, error });
+
+  if (error) {
+    return {
+      assistantMessage: `Supabase error: ${error.message}`,
+      plan: null
+    };
+  }
+  if (!rows || rows.length === 0) {
+    return {
+      assistantMessage: `I couldn't find Nike workout ${workoutNo}.`,
+      plan: null
+    };
   }
 
-  // 3️⃣ STEP 3: Bucket by phase for rendering order
-  const phases = { warmup: [] as string[], main: [] as string[], cooldown: [] as string[] };
-  rows.forEach(r => {
-    const exercise = `${r.exercise}: ${r.sets}x${r.reps}`;
-    const phase = r.exercise_phase || 'main';
-    phases[phase as keyof typeof phases].push(exercise);
-  });
+  // STEP 3: Group rows by phase and render
+  const phases = { warmup: [], main: [], cooldown: [] } as Record<string, any[]>;
+  rows.forEach(r => phases[r.exercise_phase || "main"].push(r));
+
+  const nikeWorkout = {
+    workoutType: "Nike",
+    workoutNumber: workoutNo,
+    warmup: phases.warmup.map(r => `${r.exercise}: ${r.sets}x${r.reps}`),
+    workout: phases.main.map(r => `${r.exercise}: ${r.sets}x${r.reps}`),
+    cooldown: phases.cooldown.map(r => `${r.exercise}: ${r.sets}x${r.reps}`)
+  };
+
+  // STEP 4: Return appropriate message based on whether it's the next workout
+  const assistantMessage = workoutNo === last + 1
+    ? `Loaded Nike Workout ${workoutNo}. Ready to begin?`
+    : `Loaded Nike Workout ${workoutNo}.`;
 
   return {
-    warmup: phases.warmup,
-    workout: phases.main,
-    cooldown: phases.cooldown,
-    workoutType: 'Nike',
-    workoutNumber
+    assistantMessage,
+    plan: nikeWorkout
   };
 }
 
@@ -82,22 +99,10 @@ export async function POST(req: NextRequest) {
     // Check for Nike shortcut in the latest message
     const latestMessage = messages[messages.length - 1];
     if (latestMessage && latestMessage.role === 'user') {
-      const nikeWorkout = await handleNikeShortcut(latestMessage.content, userId);
+      const nikeResult = await handleNikeShortcut(latestMessage.content, userId);
       
-      if (nikeWorkout) {
-        // Return Nike workout directly without calling AI
-        const assistantMessage = nikeWorkout.workoutNumber === (await supabase
-          .from('profiles')
-          .select('last_nike_workout')
-          .eq('user_id', userId)
-          .single()).data?.last_nike_workout + 1
-          ? `Loaded Nike Workout ${nikeWorkout.workoutNumber}. Ready to begin?`
-          : `Loaded Nike Workout ${nikeWorkout.workoutNumber}.`;
-
-        return NextResponse.json({ 
-          assistantMessage, 
-          plan: nikeWorkout 
-        });
+      if (nikeResult) {
+        return NextResponse.json(nikeResult);
       }
     }
 
