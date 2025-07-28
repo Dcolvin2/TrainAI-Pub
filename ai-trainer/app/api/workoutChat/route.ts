@@ -114,6 +114,17 @@ export async function POST(req: NextRequest) {
       if (nikeResult) {
         return NextResponse.json(nikeResult);
       }
+
+      // Check for debug command
+      if (latestMessage.content.trim() === "/debug") {
+        const debugResponse = await chatWithFunctions([
+          { role: "user", content: "Say the model name you are using." }
+        ]);
+        return NextResponse.json({
+          assistantMessage: `Model: ${debugResponse}`,
+          plan: null
+        });
+      }
     }
 
     // A) Fetch comprehensive user context
