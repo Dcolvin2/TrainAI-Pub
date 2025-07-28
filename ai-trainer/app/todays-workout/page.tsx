@@ -749,13 +749,33 @@ function TodaysWorkoutPageContent() {
 
   // Handle chat messages
   const handleChatMessage = async (message: string) => {
+    // ── TRACE STEP 1: Input logging ──
+    console.log('[TRACE] input raw:', message);
+    
+    // ── TRACE STEP 2: Normalized input ──
+    const input = (message ?? '').trim().toLowerCase();
+    console.log('[TRACE] normalised:', input);
+    
+    // ── TRACE STEP 3: Early debug exit ──
+    if (input === '/debug') {
+      console.log('[TRACE] matched /debug early-exit');
+      setChatMessages(prev => [
+        ...prev,
+        { sender: 'assistant', text: 'Model: gpt-4o-mini', timestamp: new Date().toLocaleTimeString() },
+      ]);
+      return;
+    }
+
     const lower = message.toLowerCase();
 
     // 1. Append user message to chat history
     setChatMessages(prev => [...prev, { sender: 'user', text: message, timestamp: new Date().toLocaleTimeString() }]);
 
+    // ── TRACE STEP 4: Nike branch check ──
+    console.log('[TRACE] checking Nike branch');
     // 2. Handle Nike workout request
     if (lower.includes('nike')) {
+      console.log('[TRACE] matched Nike branch');
       if (!user?.id) {
         setChatMessages(prev => [
           ...prev,
@@ -768,8 +788,11 @@ function TodaysWorkoutPageContent() {
       return;
     }
 
+    // ── TRACE STEP 5: Exercise guidance branch check ──
+    console.log('[TRACE] checking exercise guidance branch');
     // 3. Handle exercise guidance: "How should I perform Romanian Deadlift?"
     if (lower.startsWith('how should i perform') || lower.startsWith('how do i do')) {
+      console.log('[TRACE] matched exercise guidance branch');
       const exerciseName = message.split('perform ')[1] || message.split('do ')[1];
 
       if (!exerciseName) {
@@ -805,9 +828,12 @@ function TodaysWorkoutPageContent() {
       return;
     }
 
+    // ── TRACE STEP 6: Day-of-week branch check ──
+    console.log('[TRACE] checking day-of-week branch');
     // 4. Handle day-of-week workout requests
     const dayMatch = lower.match(/(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/);
     if (dayMatch && user?.id) {
+      console.log('[TRACE] matched day-of-week branch:', dayMatch[1]);
       const day = dayMatch[1];
       
       // Extract time from message if specified (e.g., "saturday 60m", "thursday 30m")
@@ -818,6 +844,8 @@ function TodaysWorkoutPageContent() {
       return;
     }
 
+    // ── TRACE STEP 7: Fallback branch ──
+    console.log('[TRACE] FALLBACK branch firing');
     // 5. Default fallback
     setChatMessages(prev => [
       ...prev,
