@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { chatWithFunctions } from '@/lib/chatService'
 import { fetchNikeWorkout } from '@/lib/nikeWorkoutHelper'
+import OpenAI from 'openai'
+
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 interface WorkoutChatRequest {
   userId: string;
@@ -116,12 +119,18 @@ export async function POST(req: NextRequest) {
       }
 
       // Check for debug command
-      if (latestMessage.content.trim() === "/debug") {
-        const debugResponse = await chatWithFunctions([
-          { role: "user", content: "Say the model name you are using." }
-        ]);
+      if (latestMessage.content.trim().toLowerCase() === "/debug") {
+        const { choices, model } = await client.chat.completions.create({
+          model: "gpt-4o-mini",               // same model you hard-coded
+          temperature: 0.3,
+          messages: [
+            { role: "system", content: "Identify your model." },
+            { role: "assistant", content: "Model: gpt-4o-mini" }
+          ],
+        });
+
         return NextResponse.json({
-          assistantMessage: `Model: ${debugResponse}`,
+          assistantMessage: choices[0].message.content, // sends "Model: gpt-4o-mini"
           plan: null
         });
       }
