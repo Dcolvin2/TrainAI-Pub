@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
 
       // Check for debug command
       if (latestMessage.content.trim().toLowerCase() === "/debug") {
-        const { choices, model } = await client.chat.completions.create({
+        const { choices } = await client.chat.completions.create({
           model: "gpt-4o-mini",               // same model you hard-coded
           temperature: 0.3,
           messages: [
