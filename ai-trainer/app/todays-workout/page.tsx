@@ -461,7 +461,7 @@ function TodaysWorkoutPageContent() {
     // ── CATCH-ALL GPT ROUTE ──
     try {
       console.log('[TRACE] catch-all GPT route fires');
-      const response = await fetch('/api/workoutChat', {
+      const coachReply = await fetch('/api/workoutChat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -473,25 +473,24 @@ function TodaysWorkoutPageContent() {
         })
       });
 
-      if (response.ok) {
-        const data = await response.json();
+      if (coachReply.ok) {
+        const data = await coachReply.json();
+        console.log('[TRACE] coach reply OK');
         setChatMessages(prev => [
           ...prev,
           { sender: 'assistant', text: data.assistantMessage, timestamp: new Date().toLocaleTimeString() },
         ]);
-        return;         // stop; don't fall through
+        return;                                  // stop; no fallback
       }
-    } catch (e) {
-      console.error('[TRACE] OpenAI error', e);
+    } catch (err) {
+      console.error('[TRACE] OpenAI error ↓↓↓', err); // log full error
+      setChatMessages(prev => [
+        ...prev,
+        { sender: 'assistant', text: '⚠️ OpenAI error — see console for details', timestamp: new Date().toLocaleTimeString() },
+      ]);
+      return;                                  // still stop fallback
     }
-
-    // ── TRACE STEP 7: Fallback branch ──
-    console.log('[TRACE] FALLBACK');
-    // 5. Default fallback
-    setChatMessages(prev => [
-      ...prev,
-      { sender: 'assistant', text: "I'm still learning. Try asking me for your Nike workout, a day of the week, or how to perform an exercise.", timestamp: new Date().toLocaleTimeString() },
-    ]);
+    // ─────────────────────────────────────────────────────────────
   };
 
 
