@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { chatWithFunctions } from '@/lib/chatService'
+import { fetchNikeWorkout } from '@/lib/nikeWorkoutHelper'
 
 interface WorkoutChatRequest {
   userId: string;
@@ -39,10 +40,7 @@ async function handleNikeShortcut(rawInput: string, userId: string) {
   const workoutNo = explicit ?? last + 1;
 
   // STEP 2: 👇  THE ONLY QUERY – points at **public.nike_workouts**
-  const { data: rows, error } = await supabase
-    .from("nike_workouts")        // << ensure table name is all-lowercase
-    .select("*")
-    .eq("workout", workoutNo);    // integer comparison (workout is int)
+  const { data: rows, error } = await fetchNikeWorkout(workoutNo);
 
   // 2️⃣ LOG EXACT QUERY RESULTS
   console.debug('NIKE rows', { workoutNo, rows: rows?.length, error });

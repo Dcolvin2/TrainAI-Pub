@@ -7,6 +7,7 @@ import ChatBubble from '../components/ChatBubble';
 import { supabase } from '@/lib/supabaseClient';
 import { getTodayCfg, getDayCfg } from '@/lib/dayConfig';
 import { useWorkoutStore, WorkoutProvider } from '@/lib/workoutStore';
+import { fetchNikeWorkout } from '@/lib/nikeWorkoutHelper';
 
 
 
@@ -176,16 +177,12 @@ function TodaysWorkoutPageContent() {
   // Load Nike workout data
   useEffect(() => {
     const loadNikeWorkout = async () => {
-      const { data, error } = await supabase
-        .from('vw_clean_nike_workouts')
-        .select('*')
-        .eq('workout', 1)
-        .order('sets', { ascending: true });
+      const { data, error } = await fetchNikeWorkout(1);
 
       console.log('Nike Workout 1:', data);
 
       if (error) {
-        console.error('❌ Error querying vw_clean_nike_workouts:', error);
+        console.error('❌ Error querying nike_workouts:', error);
       } else {
         console.log('✅ Nike Workout 1:', data);
         // Convert to NikeWorkout format and set as workout data
@@ -309,11 +306,7 @@ function TodaysWorkoutPageContent() {
       workoutNo = explicit;
     }
 
-    const { data: rows } = await supabase
-      .from('vw_clean_nike_workouts')
-      .select('*')
-      .eq('workout', workoutNo)
-      .order('sets', { ascending: true });
+    const { data: rows } = await fetchNikeWorkout(workoutNo);
 
     if (!rows?.length) {
       setChatMessages(prev => [
