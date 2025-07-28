@@ -11,14 +11,6 @@ interface WorkoutChatRequest {
   }>;
 }
 
-interface NikeWorkout {
-  warmup: string[];
-  workout: string[];
-  cooldown: string[];
-  workoutType: string;
-  workoutNumber: number;
-}
-
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -66,6 +58,7 @@ async function handleNikeShortcut(rawInput: string, userId: string) {
   }
 
   // STEP 3: Group rows by phase and render
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const phases = { warmup: [], main: [], cooldown: [] } as Record<string, any[]>;
   rows.forEach(r => phases[r.exercise_phase || "main"].push(r));
 
