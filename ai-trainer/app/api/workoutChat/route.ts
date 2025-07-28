@@ -72,6 +72,7 @@ When you do call the function, you must return a JSON object matching its schema
     const chatMessages = [
       systemMsg,
       ...messages.map(msg => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const mappedMsg: any = {
           role: msg.role,
           content: msg.content
@@ -84,6 +85,7 @@ When you do call the function, you must return a JSON object matching its schema
     ]
 
     // D) Call OpenAI with function schema
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const resp = await chatWithFunctions(chatMessages as any)
 
     // E) Parse response and return both message and plan
