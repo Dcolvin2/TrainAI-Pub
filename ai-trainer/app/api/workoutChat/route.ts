@@ -106,20 +106,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
     }
 
-    // ── /debug shortcut – answer with model name ──
-    const latestMessage = messages[messages.length - 1];
-    if (latestMessage && latestMessage.role === 'user' && latestMessage.content.trim().toLowerCase() === "/debug") {
-      const modelName = "gpt-4o-mini";           // ← hard-coded model you use
-      return NextResponse.json({
-        assistantMessage: `Model: ${modelName}`,
-        plan: null
-      });
-    }
-    // ─────────────────────────────────────────────
-
     // Check for Nike shortcut in the latest message
-    if (latestMessage && latestMessage.role === 'user') {
-      const nikeResult = await handleNikeShortcut(latestMessage.content, userId);
+    if (messages[messages.length - 1] && messages[messages.length - 1].role === 'user') {
+      const nikeResult = await handleNikeShortcut(messages[messages.length - 1].content, userId);
       
       if (nikeResult) {
         return NextResponse.json(nikeResult);
@@ -189,6 +178,16 @@ When you do call the function, you must return a JSON object matching its schema
     // D) Call OpenAI with function schema
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const resp = await chatWithFunctions(chatMessages as any)
+
+    // ─── /debug early-exit ─────────────────────────────────
+    const userInput = messages[messages.length - 1]?.content;
+    if (userInput?.trim?.().toLowerCase() === "/debug") {
+      return NextResponse.json({
+        assistantMessage: "Model: gpt-4o-mini",   // <-- hard-coded model
+        plan: null
+      });
+    }
+    // ───────────────────────────────────────────────────────
 
     // E) Parse response and return both message and plan
     const assistantMessage = resp || 'I understand your request. How can I help you with your workout?'
