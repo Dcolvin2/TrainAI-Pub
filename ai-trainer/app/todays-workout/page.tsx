@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { getTodayCfg, getDayCfg } from '@/lib/dayConfig';
 import { useWorkoutStore, WorkoutProvider } from '@/lib/workoutStore';
 import { fetchNikeWorkout } from '@/lib/nikeWorkoutHelper';
+import { buildWorkoutByDay } from "@/lib/buildWorkoutByDay";
 
 
 
@@ -831,17 +832,38 @@ function TodaysWorkoutPageContent() {
     // ── TRACE STEP 6: Day-of-week branch check ──
     console.log('[TRACE] hit day-of-week branch');
     // 4. Handle day-of-week workout requests
-    const dayMatch = lower.match(/(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/);
+    const dayMatch = lower.match(/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i);
     if (dayMatch && user?.id) {
       console.log('[TRACE] matched day-of-week branch:', dayMatch[1]);
-      const day = dayMatch[1];
-      
-      // Extract time from message if specified (e.g., "saturday 60m", "thursday 30m")
-      const timeMatch = message.match(/(\d+)\s*m/);
-      const requestedTime = timeMatch ? parseInt(timeMatch[1], 10) : timeAvailable;
-      
-      await buildDayWorkout(day, user.id, requestedTime);
-      return;
+      const day = dayMatch[1][0].toUpperCase() + dayMatch[1].slice(1).toLowerCase();
+
+      // look for explicit minutes: "i have 25 minutes"
+      const minMatch = message.match(/(\d{2})\s*minutes?/i);
+      const minutes = minMatch ? parseInt(minMatch[1], 10) : timeAvailable;
+
+      try {
+        const plan = await buildWorkoutByDay(user.id, day, minutes);
+        
+        const workoutText = 
+          `**${day} Workout (${minutes} min)**\n\n` +
+          `*Warm-up*: ${plan.warmupSel?.name ?? "—"}\n` +
+          (plan.coreLift ? `*Core Lift*: ${plan.coreLift.name}\n` : "") +
+          `*Accessories*: ${plan.accessories.map(a => a.name).join(", ") || "—"}\n` +
+          `*Cooldown*: ${plan.cooldownSel?.name ?? "—"}`;
+
+        setChatMessages(prev => [
+          ...prev,
+          { sender: 'assistant', text: workoutText, timestamp: new Date().toLocaleTimeString() },
+        ]);
+        return;
+      } catch (error) {
+        console.error('Day workout generation error:', error);
+        setChatMessages(prev => [
+          ...prev,
+          { sender: 'assistant', text: `Sorry, I couldn't generate a ${day} workout. Please try again.`, timestamp: new Date().toLocaleTimeString() },
+        ]);
+        return;
+      }
     }
 
     // ── CATCH-ALL GPT ROUTE ──
