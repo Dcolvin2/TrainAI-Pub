@@ -8,12 +8,19 @@ interface FunctionSchema {
   parameters: Record<string, unknown>;
 }
 
+interface ChatCompletionPayload {
+  model: string;
+  messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
+  functions?: FunctionSchema[];
+  function_call?: string;
+}
+
 export async function chatWithFunctions(
   history: OpenAI.Chat.Completions.ChatCompletionMessageParam[]
 ): Promise<string> {
   const functions: FunctionSchema[] = []; // we'll add schemas later
   while (true) {
-    const payload: any = {
+    const payload: ChatCompletionPayload = {
       model: "gpt-4o-mini",   // ← hard-coded upgrade
       messages: history,
       // functions: [],     // ← remove or build only when needed
