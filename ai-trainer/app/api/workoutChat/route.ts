@@ -189,6 +189,23 @@ When you do call the function, you must return a JSON object matching its schema
     }
     // ───────────────────────────────────────────────────────
 
+    // ─── General chat pass-through ──────────────────────────
+    try {
+      const coachReply = await chatWithFunctions([
+        { role: "system", content: "You are a concise fitness coach." },
+        { role: "user", content: userInput }
+      ]);
+
+      return NextResponse.json({
+        assistantMessage: coachReply,
+        plan: null
+      });
+    } catch (err) {
+      console.error("OpenAI error", err);
+      // If it errors, we fall through to the existing fallback.
+    }
+    // ─────────────────────────────────────────────────────────
+
     // E) Parse response and return both message and plan
     const assistantMessage = resp || 'I understand your request. How can I help you with your workout?'
     const plan = null // For now, no function calls implemented
