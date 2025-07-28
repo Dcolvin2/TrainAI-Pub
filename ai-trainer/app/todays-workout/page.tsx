@@ -35,15 +35,6 @@ interface NikeWorkout {
   workoutNumber: number;
 }
 
-interface Exercise {
-  name: string;
-  primary_muscle: string;
-  is_main_lift: boolean;
-  exercise_phase?: string;
-  equipment_required?: string[];
-  [key: string]: unknown;
-}
-
 interface PreviousSetData {
   weight: number;
   reps: number;
@@ -61,10 +52,6 @@ interface EnrichedNikeExercise extends NikeExercise {
   previousSets?: PreviousExerciseData;
 }
 
-interface EnrichedWorkoutData extends WorkoutData {
-  previousData?: PreviousWorkoutData;
-}
-
 interface BaseExercise {
   id: number;
   name: string;
@@ -73,21 +60,13 @@ interface BaseExercise {
   instruction?: string;
 }
 
-interface MobilityDrill extends BaseExercise {
-  source: 'nike' | 'exercises';
-}
-
-
-
-
-
 // Simple Timer Component - Counts UP from 0
 function WorkoutTimer({ elapsedTime, running, onToggle, className = '' }: { 
   elapsedTime: number; 
   running: boolean; 
   onToggle: () => void;
   className?: string;
-}) {
+}): React.JSX.Element {
   const hh = String(Math.floor(elapsedTime / 3600)).padStart(2, '0');
   const mm = String(Math.floor((elapsedTime % 3600) / 60)).padStart(2, '0');
   const ss = String(elapsedTime % 60).padStart(2, '0');
