@@ -11,10 +11,65 @@ interface WorkoutChatRequest {
   }>;
 }
 
+interface NikeWorkout {
+  warmup: string[];
+  workout: string[];
+  cooldown: string[];
+  workoutType: string;
+  workoutNumber: number;
+}
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
+
+// Nike Workout Shortcut Handler
+async function handleNikeShortcut(userInput: string, userId: string): Promise<NikeWorkout | null> {
+  const nikeRegex = /nike\s*(\d+)?/i;
+  const match = nikeRegex.exec(userInput);
+  if (!match) return null; // Not a Nike command
+
+  // 1️⃣ STEP 1: Figure out which workout number to load
+  const explicitNumber = match[1] ? parseInt(match[1], 10) : null;
+
+  // Read current progress
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('last_nike_workout')
+    .eq('user_id', userId)
+    .single();
+
+  const lastDone = profile?.last_nike_workout ?? 0;
+  const workoutNumber = explicitNumber ?? lastDone + 1;
+
+  // 2️⃣ STEP 2: Fetch workout rows
+  const { data: rows, error } = await supabase
+    .from('vw_clean_nike_workouts')
+    .select('*')
+    .eq('workout', workoutNumber)
+    .order('sets', { ascending: true });
+
+  if (error || !rows?.length) {
+    return null; // Workout not found
+  }
+
+  // 3️⃣ STEP 3: Bucket by phase for rendering order
+  const phases = { warmup: [] as string[], main: [] as string[], cooldown: [] as string[] };
+  rows.forEach(r => {
+    const exercise = `${r.exercise}: ${r.sets}x${r.reps}`;
+    const phase = r.exercise_phase || 'main';
+    phases[phase as keyof typeof phases].push(exercise);
+  });
+
+  return {
+    warmup: phases.warmup,
+    workout: phases.main,
+    cooldown: phases.cooldown,
+    workoutType: 'Nike',
+    workoutNumber
+  };
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -22,6 +77,28 @@ export async function POST(req: NextRequest) {
 
     if (!userId) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
+    }
+
+    // Check for Nike shortcut in the latest message
+    const latestMessage = messages[messages.length - 1];
+    if (latestMessage && latestMessage.role === 'user') {
+      const nikeWorkout = await handleNikeShortcut(latestMessage.content, userId);
+      
+      if (nikeWorkout) {
+        // Return Nike workout directly without calling AI
+        const assistantMessage = nikeWorkout.workoutNumber === (await supabase
+          .from('profiles')
+          .select('last_nike_workout')
+          .eq('user_id', userId)
+          .single()).data?.last_nike_workout + 1
+          ? `Loaded Nike Workout ${nikeWorkout.workoutNumber}. Ready to begin?`
+          : `Loaded Nike Workout ${nikeWorkout.workoutNumber}.`;
+
+        return NextResponse.json({ 
+          assistantMessage, 
+          plan: nikeWorkout 
+        });
+      }
     }
 
     // A) Fetch comprehensive user context
