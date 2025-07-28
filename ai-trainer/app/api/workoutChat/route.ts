@@ -2,9 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { chatWithFunctions } from '@/lib/chatService'
 import { fetchNikeWorkout } from '@/lib/nikeWorkoutHelper'
-import OpenAI from 'openai'
-
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 interface WorkoutChatRequest {
   userId: string;
@@ -109,30 +106,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
     }
 
-    // Check for Nike shortcut in the latest message
+    // ── /debug shortcut – answer with model name ──
     const latestMessage = messages[messages.length - 1];
+    if (latestMessage && latestMessage.role === 'user' && latestMessage.content.trim().toLowerCase() === "/debug") {
+      const modelName = "gpt-4o-mini";           // ← hard-coded model you use
+      return NextResponse.json({
+        assistantMessage: `Model: ${modelName}`,
+        plan: null
+      });
+    }
+    // ─────────────────────────────────────────────
+
+    // Check for Nike shortcut in the latest message
     if (latestMessage && latestMessage.role === 'user') {
       const nikeResult = await handleNikeShortcut(latestMessage.content, userId);
       
       if (nikeResult) {
         return NextResponse.json(nikeResult);
-      }
-
-      // Check for debug command
-      if (latestMessage.content.trim().toLowerCase() === "/debug") {
-        const { choices } = await client.chat.completions.create({
-          model: "gpt-4o-mini",               // same model you hard-coded
-          temperature: 0.3,
-          messages: [
-            { role: "system", content: "Identify your model." },
-            { role: "assistant", content: "Model: gpt-4o-mini" }
-          ],
-        });
-
-        return NextResponse.json({
-          assistantMessage: choices[0].message.content, // sends "Model: gpt-4o-mini"
-          plan: null
-        });
       }
     }
 
