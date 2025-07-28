@@ -14,7 +14,7 @@ export async function chatWithFunctions(
   const functions: FunctionSchema[] = []; // we'll add schemas later
   while (true) {
     const resp = await client.chat.completions.create({
-      model: 'gpt-4o',
+      model: "gpt-4o-mini",   // ← hard-coded upgrade
       messages: history,
       functions,
       function_call: 'auto',
