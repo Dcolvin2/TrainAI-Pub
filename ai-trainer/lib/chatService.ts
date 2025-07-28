@@ -12,7 +12,7 @@ interface ChatCompletionPayload {
   model: string;
   messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
   functions?: FunctionSchema[];
-  function_call?: string;
+  function_call?: "auto" | "none";
 }
 
 export async function chatWithFunctions(
@@ -28,6 +28,7 @@ export async function chatWithFunctions(
 
     if (functions && functions.length > 0) {
       payload.functions = functions;      // include only if non-empty
+      payload.function_call = "auto";    // only set when functions exist
     }
 
     const resp = await client.chat.completions.create(payload);
