@@ -374,51 +374,6 @@ function TodaysWorkoutPageContent() {
     setPendingWorkout(workoutData);
   };
 
-  // Build day-of-week workout using new day configuration
-  const buildDayWorkout = async (day: string, userId: string, minutes: number = 45) => {
-    try {
-      // Get day configuration using new system
-      const dayCfg = getDayCfg(day) || getTodayCfg();
-      
-      console.log('DAY asked for:', day, 'Config:', dayCfg, 'Minutes:', minutes);
-
-      if (!dayCfg) {
-        setChatMessages(prev => [
-          ...prev,
-          { sender: 'assistant', text: `I don't have a workout pattern configured for ${day}.`, timestamp: new Date().toLocaleTimeString() },
-        ]);
-        return;
-      }
-
-      // Handle HIIT pattern (Thursday)
-      if (dayCfg.pattern === 'hiit') {
-        return await buildHIITWorkout(userId, minutes);
-      }
-
-      // Handle cardio pattern (Wed, Fri, Sun)
-      if (dayCfg.pattern === 'cardio') {
-        return await buildCardioWorkout(userId, minutes);
-      }
-
-      // Handle strength pattern with core lift
-      if (dayCfg.pattern === 'strength' && dayCfg.coreLift) {
-        return await buildStrengthWorkout(dayCfg.coreLift, userId, minutes);
-      }
-
-      // Fallback
-      setChatMessages(prev => [
-        ...prev,
-        { sender: 'assistant', text: `No workout pattern available for ${day}.`, timestamp: new Date().toLocaleTimeString() },
-      ]);
-    } catch (error) {
-      console.error('Error building day workout:', error);
-      setChatMessages(prev => [
-        ...prev,
-        { sender: 'assistant', text: 'Sorry, I encountered an error building your workout.', timestamp: new Date().toLocaleTimeString() },
-      ]);
-    }
-  };
-
   // Build HIIT workout (Thursday)
   const buildHIITWorkout = async (userId: string, minutes: number = 25) => {
     try {
