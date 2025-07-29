@@ -21,7 +21,7 @@ interface QuickEntryData {
   entries: QuickEntrySet[];
 }
 
-interface LocalSet {
+export interface LocalSet {
   exerciseName: string;
   setNumber: number;
   reps: number;

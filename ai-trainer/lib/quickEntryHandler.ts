@@ -1,6 +1,11 @@
 import { QuickEntry } from '@/utils/parseQuickEntry';
+import { LocalSet } from '@/lib/workoutStore';
 
-export function quickEntryHandler(entries: QuickEntry[], firstPostWarmupExercise: string | null, addLocalSet: (set: any) => void): void {
+export function quickEntryHandler(
+  entries: QuickEntry[], 
+  firstPostWarmupExercise: string | null, 
+  addLocalSet: (set: LocalSet) => void
+): void {
   if (!firstPostWarmupExercise) {
     console.error('No exercise found after warm-up');
     return;
