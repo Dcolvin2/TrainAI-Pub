@@ -557,7 +557,12 @@ function TodaysWorkoutPageContent() {
           >
             {mainTimerRunning ? 'Pause' : 'Start'}
           </button>
-
+          <button
+            onClick={() => handleChatMessage("generate workout")}
+            className="bg-[#22C55E] hover:bg-[#16a34a] text-white px-6 py-2 rounded-lg font-semibold transition-colors"
+          >
+            Generate Workout
+          </button>
         </div>
       </header>
 
