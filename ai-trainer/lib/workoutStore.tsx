@@ -1,4 +1,4 @@
-import { createContext, useContext, useReducer, ReactNode } from 'react';
+import { createContext, useContext, useReducer, ReactNode, JSX } from 'react';
 
 interface WorkoutData {
   warmup: string[];
@@ -53,7 +53,7 @@ const WorkoutContext = createContext<{
   dispatch: React.Dispatch<WorkoutAction>;
 } | null>(null);
 
-export function WorkoutProvider({ children }: { children: ReactNode }): React.JSX.Element {
+export function WorkoutProvider({ children }: { children: ReactNode }): JSX.Element {
   const [state, dispatch] = useReducer(workoutReducer, initialState);
 
   return (

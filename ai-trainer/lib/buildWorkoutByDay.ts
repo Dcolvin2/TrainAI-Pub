@@ -1,4 +1,5 @@
 import { fetchEquipmentAndExercises } from "./fetchEquipmentAndExercises";
+import { pickAccessories } from "./rotateAccessories";
 
 interface ExerciseRow {
   id: string;
@@ -58,9 +59,7 @@ export async function buildWorkoutByDay(
 
   // estimate 20 min for warm-up/core/cooldown; 5 min per accessory
   const accCount = Math.max(0, Math.floor((minutes - 20)/5));
-  const accessories = accessoriesPool
-    .sort(() => 0.5 - Math.random())   // shuffle
-    .slice(0, accCount);
+  const accessories = pickAccessories(accessoriesPool, accCount);
 
   return { warmupSel, coreLift, accessories, cooldownSel };
 } 

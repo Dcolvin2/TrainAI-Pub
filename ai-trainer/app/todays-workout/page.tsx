@@ -489,8 +489,8 @@ function TodaysWorkoutPageContent() {
             warmup: data.plan.warmup || [],
             workout: data.plan.workout || [],
             cooldown: data.plan.cooldown || [],
-            accessories: data.plan.accessories || []
-          });
+            accessories: (data.plan as any).accessories || []
+          } as WorkoutData);
         }
         
         return;                                  // stop; no fallback
@@ -657,6 +657,7 @@ function TodaysWorkoutPageContent() {
         ) : (
           <>
             <WorkoutTable 
+              key={JSON.stringify(activeWorkout)}  // ← forces fresh render
               workout={activeWorkout!} 
               onFinishWorkout={() => {
                 setActiveWorkout(null);
