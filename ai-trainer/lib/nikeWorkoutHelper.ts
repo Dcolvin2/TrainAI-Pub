@@ -5,9 +5,20 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+interface NikeWorkoutRow {
+  workout: number;
+  workout_type: string;
+  sets: number;
+  reps: string;
+  exercise: string;
+  exercise_type: string;
+  instructions?: string;
+  exercise_phase?: string;
+}
+
 interface NikeWorkoutResult {
-  data: any[] | null;
-  error: any;
+  data: NikeWorkoutRow[] | null;
+  error: Error | null;
 }
 
 export async function fetchNikeWorkout(workoutNo: number): Promise<NikeWorkoutResult> {

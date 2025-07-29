@@ -10,11 +10,18 @@ const TEMPLATE = {
   Sunday:   { core: null,          muscles: ["Cardio"] },
 };
 
+interface WorkoutByDayResult {
+  warmupSel: any;
+  coreLift: any;
+  accessories: any[];
+  cooldownSel: any;
+}
+
 export async function buildWorkoutByDay(
   userId: string,
   day: string,               // e.g. "Saturday"
   minutes = 45
-) {
+): Promise<WorkoutByDayResult> {
   const { exercises } = await fetchEquipmentAndExercises(userId);
 
   // 1️⃣ choose template
@@ -28,9 +35,9 @@ export async function buildWorkoutByDay(
 
   // 3️⃣ warm-up / cooldown matching muscles
   const warmups   = exercises.filter(e => e.exercise_phase === "warmup"   &&
-      t.muscles.some(m => e.primary_muscle.includes(m)));
+      e.primary_muscle && t.muscles.some(m => e.primary_muscle!.includes(m)));
   const cooldowns = exercises.filter(e => e.exercise_phase === "cooldown" &&
-      t.muscles.some(m => e.primary_muscle.includes(m)));
+      e.primary_muscle && t.muscles.some(m => e.primary_muscle!.includes(m)));
 
   const warmupSel  = warmups[Math.floor(Math.random()*warmups.length)];
   const cooldownSel= cooldowns[Math.floor(Math.random()*cooldowns.length)];
@@ -39,7 +46,7 @@ export async function buildWorkoutByDay(
   const accessoriesPool = exercises.filter(e =>
       e.exercise_phase === "main" &&
       (!coreLift || e.id !== coreLift.id) &&
-      t.muscles.some(m => e.primary_muscle.includes(m)));
+      e.primary_muscle && t.muscles.some(m => e.primary_muscle!.includes(m)));
 
   // estimate 20 min for warm-up/core/cooldown; 5 min per accessory
   const accCount = Math.max(0, Math.floor((minutes - 20)/5));

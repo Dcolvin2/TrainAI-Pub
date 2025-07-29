@@ -5,7 +5,7 @@ import { useAuth } from '@/context/AuthContext'
 import { useRouter } from 'next/navigation'
 import WorkoutChatBuilder from '@/app/components/WorkoutChatBuilder'
 
-export default function WorkoutChatPage() {
+export default function WorkoutChatPage(): React.JSX.Element {
   const { user } = useAuth()
   const router = useRouter()
 

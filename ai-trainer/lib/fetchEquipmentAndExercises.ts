@@ -5,9 +5,17 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+interface ExerciseRow {
+  id: string;
+  name: string;
+  equipment_required?: string[];
+  exercise_phase?: string;
+  primary_muscle?: string;
+}
+
 interface EquipmentAndExercises {
   equipment: Set<string>;
-  exercises: any[];
+  exercises: ExerciseRow[];
 }
 
 /** Returns { equipment:Set<string>, exercises: ExerciseRow[] } */
