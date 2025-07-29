@@ -392,9 +392,9 @@ function TodaysWorkoutPageContent() {
         // Convert to WorkoutData format for the table
         const workoutData: WorkoutData = {
           planId: crypto.randomUUID(),
-          warmup: plan.warmupSel ? [`${plan.warmupSel.name}: 1x5`] : [],
+          warmup: plan.warmupArr.map(ex => `${ex.name}: 1x5`),
           workout: plan.coreLift ? [`${plan.coreLift.name}: 3x8`] : [],
-          cooldown: plan.cooldownSel ? [`${plan.cooldownSel.name}: 1x5`] : [],
+          cooldown: plan.cooldownArr.map(ex => `${ex.name}: 1x5`),
           accessories: plan.accessories.map(a => `${a.name}: 3x10`),
           prompt: `${day} Workout (${minutes} min)`
         };
@@ -403,10 +403,10 @@ function TodaysWorkoutPageContent() {
         
         const workoutText = 
           `**${day} Workout (${minutes} min)**\n\n` +
-          `*Warm-up*: ${plan.warmupSel?.name ?? "—"}\n` +
+          `*Warm-up*: ${plan.warmupArr.map(ex => ex.name).join(", ") || "—"}\n` +
           (plan.coreLift ? `*Core Lift*: ${plan.coreLift.name}\n` : "") +
           `*Accessories*: ${plan.accessories.map(a => a.name).join(", ") || "—"}\n` +
-          `*Cooldown*: ${plan.cooldownSel?.name ?? "—"}`;
+          `*Cooldown*: ${plan.cooldownArr.map(ex => ex.name).join(", ") || "—"}`;
 
         setChatMessages(prev => [
           ...prev,
