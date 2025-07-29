@@ -75,15 +75,52 @@ export async function buildWorkoutByDay(
   console.log("[TRACE] warmup picked", warmupArr.map(e => e.name));
   console.log("[TRACE] cooldown picked", cooldownArr.map(e => e.name));
 
-  // 5️⃣ accessories: main-phase, matching muscles, exclude core lift itself
-  const accessoriesPool = exercises.filter(e =>
+  // 5️⃣ Balanced accessories with muscle group targeting
+  function pickBalancedAccessories(): Exercise[] {
+    // Determine target muscle groups based on day
+    const isLegDay = day === "Monday" || day === "Saturday"; // squat/deadlift days
+    const isUpperBodyDay = day === "Tuesday"; // bench/press days
+    
+    let targetMuscles: string[] = [];
+    if (isLegDay) {
+      targetMuscles = ["Quadriceps", "Hamstrings", "Glutes"];
+    } else if (isUpperBodyDay) {
+      targetMuscles = ["Chest", "Shoulders", "Triceps"];
+    } else {
+      targetMuscles = t.muscles; // cardio/HIIT days
+    }
+
+    // Filter exercises by target muscles and phase
+    let pool = exercises.filter(e =>
       e.exercise_phase === "main" &&
       (!coreLift || e.id !== coreLift.id) &&
-      e.primary_muscle && t.muscles.some(m => e.primary_muscle.includes(m)));
+      e.primary_muscle && 
+      targetMuscles.some(m => parseMuscles(e.primary_muscle).includes(m))
+    );
 
-  // estimate 20 min for warm-up/core/cooldown; 5 min per accessory
-  const accCount = Math.max(0, Math.floor((minutes - 20)/5));
-  const accessories = pickAccessories(accessoriesPool, accCount);
+    // Limit posterior-chain hinges to 2 max
+    if (isLegDay) {
+      const hinges = pool.filter(e => 
+        e.name.toLowerCase().includes('deadlift') ||
+        e.name.toLowerCase().includes('clean') ||
+        e.name.toLowerCase().includes('snatch') ||
+        e.name.toLowerCase().includes('kettlebell swing')
+      );
+      if (hinges.length > 2) {
+        const nonHinges = pool.filter(e => !hinges.includes(e));
+        pool = [...nonHinges, ...hinges.slice(0, 2)];
+      }
+    }
+
+    // Calculate target count based on minutes (≈5 min each)
+    const targetCount = Math.max(0, Math.floor((minutes - 20) / 5));
+    
+    return pool
+      .sort(() => 0.5 - Math.random())
+      .slice(0, targetCount);
+  }
+
+  const accessories = pickBalancedAccessories();
 
   return { warmupArr, coreLift, accessories, cooldownArr };
 } 

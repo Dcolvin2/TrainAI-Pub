@@ -9,6 +9,7 @@ import { useWorkoutStore, WorkoutProvider } from '@/lib/workoutStore';
 import { fetchNikeWorkout } from '@/lib/nikeWorkoutHelper';
 import { buildWorkoutByDay } from "@/lib/buildWorkoutByDay";
 import { getExerciseInstructions } from '@/lib/getExerciseInstructions';
+import { fetchInstructions } from '@/lib/fetchInstructions';
 
 
 
@@ -509,7 +510,7 @@ function TodaysWorkoutPageContent() {
     if (howMatch) {
       console.log('[TRACE] matched instruction look-up:', howMatch[1]);
       const exName = howMatch[1].trim();
-      const instr = await getExerciseInstructions(exName);
+      const instr = await fetchInstructions(exName);
 
       const response = instr
         ? `**${exName}**:\n${instr}`
