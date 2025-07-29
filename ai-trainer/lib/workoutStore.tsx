@@ -1,4 +1,4 @@
-import { createContext, useContext, useReducer, ReactNode, JSX } from 'react';
+import React, { createContext, useContext, useReducer, ReactNode, JSX } from 'react';
 
 interface WorkoutData {
   planId: string;
@@ -21,6 +21,14 @@ interface QuickEntryData {
   entries: QuickEntrySet[];
 }
 
+interface LocalSet {
+  exerciseName: string;
+  setNumber: number;
+  reps: number;
+  actualWeight: number;
+  completed: boolean;
+}
+
 interface WorkoutSet {
   id: string;
   exerciseName: string;
@@ -38,6 +46,8 @@ interface WorkoutState {
   lastInit: string | null;
   quickEntrySets: QuickEntryData[];
   workoutSets: WorkoutSet[];
+  localSets: Record<string, LocalSet[]>;  // key = exerciseName
+  firstPostWarmupExercise: string | null;
 }
 
 type WorkoutAction = 
@@ -48,6 +58,9 @@ type WorkoutAction =
   | { type: 'CLEAR_QUICK_ENTRY_SETS'; payload: void }
   | { type: 'ADD_OR_UPDATE_SET'; payload: WorkoutSet }
   | { type: 'CLEAR_WORKOUT_SETS'; payload: void }
+  | { type: 'ADD_LOCAL_SET'; payload: LocalSet }
+  | { type: 'CLEAR_LOCAL_SETS'; payload: void }
+  | { type: 'SET_FIRST_POST_WARMUP_EXERCISE'; payload: string }
   | { type: 'RESET' };
 
 const initialState: WorkoutState = {
@@ -56,7 +69,9 @@ const initialState: WorkoutState = {
   timeAvailable: 45,
   lastInit: null,
   quickEntrySets: [],
-  workoutSets: []
+  workoutSets: [],
+  localSets: {},
+  firstPostWarmupExercise: null
 };
 
 function workoutReducer(state: WorkoutState, action: WorkoutAction): WorkoutState {
@@ -83,6 +98,21 @@ function workoutReducer(state: WorkoutState, action: WorkoutAction): WorkoutStat
       };
     case 'CLEAR_WORKOUT_SETS':
       return { ...state, workoutSets: [] };
+    case 'ADD_LOCAL_SET':
+      return {
+        ...state,
+        localSets: {
+          ...state.localSets,
+          [action.payload.exerciseName]: [
+            ...(state.localSets[action.payload.exerciseName] || []).filter(s => s.setNumber !== action.payload.setNumber),
+            action.payload
+          ].sort((a, b) => a.setNumber - b.setNumber)
+        }
+      };
+    case 'CLEAR_LOCAL_SETS':
+      return { ...state, localSets: {} };
+    case 'SET_FIRST_POST_WARMUP_EXERCISE':
+      return { ...state, firstPostWarmupExercise: action.payload };
     case 'RESET':
       return {
         ...state,
@@ -90,7 +120,9 @@ function workoutReducer(state: WorkoutState, action: WorkoutAction): WorkoutStat
         pending: null,
         lastInit: new Date().toISOString().split('T')[0],
         quickEntrySets: [],
-        workoutSets: []
+        workoutSets: [],
+        localSets: {},
+        firstPostWarmupExercise: null
       };
     default:
       return state;
@@ -119,6 +151,8 @@ export function useWorkoutStore(): {
   lastInit: string | null;
   quickEntrySets: QuickEntryData[];
   workoutSets: WorkoutSet[];
+  localSets: Record<string, LocalSet[]>;
+  firstPostWarmupExercise: string | null;
   setActive: (active: WorkoutData | null) => void;
   setPending: (pending: WorkoutData | null) => void;
   setTimeAvailable: (time: number) => void;
@@ -126,6 +160,10 @@ export function useWorkoutStore(): {
   clearQuickEntrySets: () => void;
   addOrUpdateSet: (set: WorkoutSet) => void;
   clearWorkoutSets: () => void;
+  addLocalSet: (set: LocalSet) => void;
+  getLocalSetsForExercise: (exerciseName: string) => LocalSet[];
+  clearLocalSets: () => void;
+  setFirstPostWarmupExercise: (exerciseName: string) => void;
   reset: () => void;
 } {
   const context = useContext(WorkoutContext);
@@ -144,6 +182,10 @@ export function useWorkoutStore(): {
     clearQuickEntrySets: (): void => dispatch({ type: 'CLEAR_QUICK_ENTRY_SETS', payload: undefined }),
     addOrUpdateSet: (set: WorkoutSet): void => dispatch({ type: 'ADD_OR_UPDATE_SET', payload: set }),
     clearWorkoutSets: (): void => dispatch({ type: 'CLEAR_WORKOUT_SETS', payload: undefined }),
+    addLocalSet: (set: LocalSet): void => dispatch({ type: 'ADD_LOCAL_SET', payload: set }),
+    getLocalSetsForExercise: (exerciseName: string): LocalSet[] => state.localSets[exerciseName] || [],
+    clearLocalSets: (): void => dispatch({ type: 'CLEAR_LOCAL_SETS', payload: undefined }),
+    setFirstPostWarmupExercise: (exerciseName: string): void => dispatch({ type: 'SET_FIRST_POST_WARMUP_EXERCISE', payload: exerciseName }),
     reset: (): void => dispatch({ type: 'RESET' })
   };
 } 

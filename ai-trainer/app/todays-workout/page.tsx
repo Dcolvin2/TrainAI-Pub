@@ -11,6 +11,7 @@ import { buildWorkoutByDay } from "@/lib/buildWorkoutByDay";
 import { getExerciseInstructions } from '@/lib/getExerciseInstructions';
 import { fetchInstructions } from '@/lib/fetchInstructions';
 import { isQuickEntry, parseQuickEntry } from '@/utils/parseQuickEntry';
+import { quickEntryHandler } from '@/lib/quickEntryHandler';
 
 
 
@@ -114,7 +115,9 @@ function TodaysWorkoutPageContent() {
     setQuickEntrySets,
     quickEntrySets,
     clearQuickEntrySets,
-    addOrUpdateSet
+    addOrUpdateSet,
+    addLocalSet,
+    setFirstPostWarmupExercise
   } = useWorkoutStore();
 
   const [chatMessages, setChatMessages] = useState<Array<{sender: 'user' | 'assistant', text: string, timestamp?: string}>>([]);
@@ -536,8 +539,11 @@ function TodaysWorkoutPageContent() {
         const firstMainExercise = currentPlan.find(ex => ex.exercise_phase === 'main');
         
         if (firstMainExercise) {
-          // Update the workout table with the quick-entry sets
-          quickEntryHandler(setEntries, firstMainExercise.name);
+          // Set the first post-warmup exercise for future quick entries
+          setFirstPostWarmupExercise(firstMainExercise.name);
+          
+          // Use the new quick entry handler
+          quickEntryHandler(setEntries, firstMainExercise.name, addLocalSet);
 
           const response = `✅ Added ${setEntries.length} sets to ${firstMainExercise.name} — will save when you finish workout 🏁`;
           setChatMessages(prev => [
