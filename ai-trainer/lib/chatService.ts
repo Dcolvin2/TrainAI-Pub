@@ -42,7 +42,13 @@ export async function chatWithFunctions(
   
   // Get the last user message to choose model
   const lastUserMessage = history.find(msg => msg.role === 'user');
-  const userInput = lastUserMessage?.content || '';
+  const userInput = typeof lastUserMessage?.content === 'string' 
+    ? lastUserMessage.content 
+    : Array.isArray(lastUserMessage?.content) 
+      ? lastUserMessage.content.map((part: any) => 
+          typeof part === 'string' ? part : part.text || ''
+        ).join(' ')
+      : '';
   const model = chooseModel(userInput);
   
   while (true) {
