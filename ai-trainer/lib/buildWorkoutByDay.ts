@@ -147,4 +147,21 @@ export async function buildWorkoutByDay(
     cooldownArr,
     estimatedMinutes: runningMin
   };
-} 
+}
+
+// ---------- DEV HELPER ----------
+if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+  // @ts-ignore – expose helper only in dev
+  (window as any).__showPlan = async (day: string = 'Monday') => {
+    const plan = await buildWorkoutByDay('test-user', day, 45);
+    console.table([
+      ['Target min',        plan.estimatedMinutes?.toFixed(1) || 'N/A'],
+      ['Warm-up drills',    plan.warmupArr.length],
+      ['Accessories',       plan.accessories.length],
+      ['Cooldown drills',   plan.cooldownArr.length],
+    ]);
+    return plan;  // so I can expand it in DevTools
+  };
+  console.info('👋  Dev helper ready – type  __showPlan("Monday")  in the console');
+}
+// -------------------------------- 
