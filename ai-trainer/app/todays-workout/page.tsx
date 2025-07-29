@@ -12,6 +12,8 @@ import { getExerciseInstructions } from '@/lib/getExerciseInstructions';
 import { fetchInstructions } from '@/lib/fetchInstructions';
 import { isQuickEntry, parseQuickEntry } from '@/utils/parseQuickEntry';
 import { quickEntryHandler } from '@/lib/quickEntryHandler';
+import { getInstructionRequest } from '@/utils/detectInstructionRequest';
+import { getExerciseInstruction } from '@/lib/getExerciseInstruction';
 
 
 
@@ -542,15 +544,14 @@ function TodaysWorkoutPageContent() {
 
     // ── 4️⃣ INSTRUCTION LOOK-UP FOURTH ──
     console.log('[TRACE] hit instruction look-up branch');
-    const howMatch = input.match(/how (?:do|to) (?:i|you)? ?(?:do)? ?(.+?)\?*$/i);
-    if (howMatch) {
-      console.log('[TRACE] matched instruction look-up:', howMatch[1]);
-      const exName = howMatch[1].trim();
-      const instr = await fetchInstructions(exName);
-
-      const response = instr
-        ? `**${exName}**:\n${instr}`
-        : `Sorry, I couldn't find "${exName}" in the database.`;
+    const instrReq = getInstructionRequest(message);
+    if (instrReq) {
+      console.log('[TRACE] matched instruction request:', instrReq.exercise);
+      const instruction = await getExerciseInstruction(instrReq.exercise);
+      
+      const response = instruction
+        ? `**${instrReq.exercise} – How to**\n\n${instruction}`
+        : `Sorry, I couldn't find instructions for **${instrReq.exercise}** in the database.`;
 
       setChatMessages(prev => [
         ...prev,
@@ -558,45 +559,6 @@ function TodaysWorkoutPageContent() {
       ]);
       setMessages(prev => [...prev, { role: 'assistant', content: response }]);
       return;                      // stop further routing
-    }
-
-    // ── 5️⃣ EXERCISE GUIDANCE FIFTH ──
-    console.log('[TRACE] hit exercise guidance branch');
-    if (lower.startsWith('how should i perform') || lower.startsWith('how do i do')) {
-      console.log('[TRACE] matched exercise guidance branch');
-      const exerciseName = message.split('perform ')[1] || message.split('do ')[1];
-
-      if (!exerciseName) {
-        setChatMessages(prev => [
-          ...prev,
-          { sender: 'assistant', text: "Can you tell me the exercise you're asking about?", timestamp: new Date().toLocaleTimeString() },
-        ]);
-        return;
-      }
-
-      const { data } = await supabase
-        .from('exercises')
-        .select('instruction_text')
-        .ilike('name', `%${exerciseName.trim()}%`)
-        .limit(1);
-
-      if (data && data[0]?.instruction_text) {
-        setChatMessages(prev => [
-          ...prev,
-          { sender: 'assistant', text: data[0].instruction_text, timestamp: new Date().toLocaleTimeString() },
-        ]);
-      } else {
-        // fallback
-        setChatMessages(prev => [
-          ...prev,
-          {
-            sender: 'assistant',
-            text: `I couldn't find that in the database, but generally: maintain good form, start light, and control the movement. Let me know the exact name if you want more detail.`,
-            timestamp: new Date().toLocaleTimeString()
-          },
-        ]);
-      }
-      return;
     }
 
     // ── 6️⃣ REGENERATE WORKOUT SIXTH ──
