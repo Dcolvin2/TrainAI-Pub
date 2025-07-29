@@ -17,6 +17,7 @@ interface WorkoutData {
   warmup: string[];
   workout: string[];
   cooldown: string[];
+  accessories?: string[];
   prompt?: string;
 }
 
@@ -480,6 +481,18 @@ function TodaysWorkoutPageContent() {
           ...prev,
           { sender: 'assistant', text: data.assistantMessage, timestamp: new Date().toLocaleTimeString() },
         ]);
+        
+        // Handle workout data from function calls
+        if (data.plan) {
+          console.log('[TRACE] workout data received:', data.plan);
+          setPendingWorkout({
+            warmup: data.plan.warmup || [],
+            workout: data.plan.workout || [],
+            cooldown: data.plan.cooldown || [],
+            accessories: data.plan.accessories || []
+          });
+        }
+        
         return;                                  // stop; no fallback
       }
     } catch (err) {

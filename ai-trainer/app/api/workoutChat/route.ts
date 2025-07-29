@@ -151,7 +151,9 @@ You know:
 · Equipment: ${equipmentList || 'None'}.
 · Personal bests: ${maxesList || 'None'}.
 
-— Only invoke the function "generate_workout" when the user explicitly requests a workout plan, using phrases like "generate a workout", "plan my routine", "I need a workout routine", "nike workout", or day-of-week cues like "It's Tuesday".
+When asked to create or revise a workout, call the updateWorkout function. Include only the warmup, core_lift, accessories, cooldown arrays and total minutes.
+
+— Only invoke the function "updateWorkout" when the user explicitly requests a workout plan, using phrases like "generate a workout", "plan my routine", "I need a workout routine", "nike workout", or day-of-week cues like "It's Tuesday".
 — Otherwise, respond in plain language: give advice, ask follow-up questions, and never return the JSON plan.
 — When generating workouts, always respect these personal bests and equipment constraints.
 
@@ -189,6 +191,22 @@ When you do call the function, you must return a JSON object matching its schema
     }
     // ───────────────────────────────────────────────────────
 
+    // Handle function call response
+    if (resp.functionCall && resp.functionCall.name === 'updateWorkout') {
+      const workoutData = resp.functionCall.arguments;
+      return NextResponse.json({
+        assistantMessage: "✅ Workout updated!",
+        plan: {
+          workoutType: "Custom",
+          warmup: workoutData.warmup || [],
+          workout: workoutData.core_lift ? [workoutData.core_lift] : [],
+          cooldown: workoutData.cooldown || [],
+          accessories: workoutData.accessories || [],
+          minutes: workoutData.minutes || 45
+        }
+      });
+    }
+
     // ─── General chat pass-through ──────────────────────────
     try {
       const coachReply = await chatWithFunctions([
@@ -197,7 +215,7 @@ When you do call the function, you must return a JSON object matching its schema
       ]);
 
       return NextResponse.json({
-        assistantMessage: coachReply,
+        assistantMessage: coachReply.content,
         plan: null
       });
     } catch (err) {
@@ -207,7 +225,7 @@ When you do call the function, you must return a JSON object matching its schema
     // ─────────────────────────────────────────────────────────
 
     // E) Parse response and return both message and plan
-    const assistantMessage = resp || 'I understand your request. How can I help you with your workout?'
+    const assistantMessage = resp.content || 'I understand your request. How can I help you with your workout?'
     const plan = null // For now, no function calls implemented
 
     return NextResponse.json({ 
