@@ -4,7 +4,8 @@ import { LocalSet } from '@/lib/workoutStore';
 export function quickEntryHandler(
   entries: QuickEntry[], 
   firstPostWarmupExercise: string | null, 
-  addLocalSet: (set: LocalSet) => void
+  addLocalSet: (set: LocalSet) => void,
+  addChatMessage?: (message: { id: string; role: 'assistant'; content: string; createdAt: string }) => void
 ): void {
   console.log('🔍 QUICK ENTRY HANDLER CALLED:', { entries, firstPostWarmupExercise });
   
@@ -25,4 +26,14 @@ export function quickEntryHandler(
   });
 
   console.log(`Added ${entries.length} set${entries.length > 1 ? 's' : ''} to ${firstPostWarmupExercise} — will save when you finish workout 🏁`);
+  
+  // 🆕 push assistant confirmation **every time**
+  if (addChatMessage) {
+    addChatMessage({
+      id: crypto.randomUUID(),                      // unique key for React list
+      role: 'assistant',
+      content: `✅ Added ${entries.length} set${entries.length > 1 ? 's' : ''} to **${firstPostWarmupExercise}** — will save when you finish workout 🏁`,
+      createdAt: new Date().toISOString()
+    });
+  }
 } 

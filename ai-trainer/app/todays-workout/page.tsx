@@ -528,15 +528,18 @@ function TodaysWorkoutPageContent() {
           // Set the first post-warmup exercise for future quick entries
           setFirstPostWarmupExercise(firstMainExercise.name);
           
-          // Use the new quick entry handler
-          quickEntryHandler(setEntries, firstMainExercise.name, addLocalSet);
-
-          const response = `✅ Added ${setEntries.length} sets to ${firstMainExercise.name} — will save when you finish workout 🏁`;
-          setChatMessages(prev => [
-            ...prev,
-            { sender: 'assistant', text: response, timestamp: new Date().toLocaleTimeString() },
-          ]);
-          setMessages(prev => [...prev, { role: 'assistant', content: response }]);
+          // Create helper function to add chat messages
+          const addChatMessage = (message: { id: string; role: 'assistant'; content: string; createdAt: string }) => {
+            setChatMessages(prev => [
+              ...prev,
+              { sender: 'assistant', text: message.content, timestamp: new Date().toLocaleTimeString() },
+            ]);
+            setMessages(prev => [...prev, { role: 'assistant', content: message.content }]);
+          };
+          
+          // Use the new quick entry handler with chat confirmation
+          quickEntryHandler(setEntries, firstMainExercise.name, addLocalSet, addChatMessage);
+          
           return;
         }
       }
