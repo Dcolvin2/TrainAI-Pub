@@ -5,8 +5,13 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+interface EquipmentAndExercises {
+  equipment: Set<string>;
+  exercises: any[];
+}
+
 /** Returns { equipment:Set<string>, exercises: ExerciseRow[] } */
-export async function fetchEquipmentAndExercises(userId: string) {
+export async function fetchEquipmentAndExercises(userId: string): Promise<EquipmentAndExercises> {
   const { data: eq } = await supabase
     .from("user_equipment")
     .select("equipment!inner(name)")

@@ -16,9 +16,19 @@ interface ChatCompletionPayload {
   function_call?: "auto" | "none";
 }
 
+interface FunctionCallResult {
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+interface ChatResponse {
+  content: string;
+  functionCall?: FunctionCallResult;
+}
+
 export async function chatWithFunctions(
   history: OpenAI.Chat.Completions.ChatCompletionMessageParam[]
-): Promise<{ content: string; functionCall?: any }> {
+): Promise<ChatResponse> {
   const functions: FunctionSchema[] = [workoutSchema]; // Add workout schema
   while (true) {
     const payload: ChatCompletionPayload = {

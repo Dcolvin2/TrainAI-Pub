@@ -5,13 +5,18 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-export async function fetchNikeWorkout(workoutNo: number) {
+interface NikeWorkoutResult {
+  data: any[] | null;
+  error: any;
+}
+
+export async function fetchNikeWorkout(workoutNo: number): Promise<NikeWorkoutResult> {
   const { data, error } = await supabase
     .from("nike_workouts")          // <— correct table
     .select("*")
     .eq("workout", workoutNo)       // integer filter
     .order("sets", { ascending: true }); // optional
 
-  console.debug("NIKE rows", workoutNo, data?.length, error);
+  console.info("NIKE rows", workoutNo, data?.length, error);
   return { data, error };
 } 
