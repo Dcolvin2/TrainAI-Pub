@@ -3,12 +3,12 @@ import { pickAccessories } from "./rotateAccessories";
 import { Exercise } from "@/types/Exercise";
 
 const TEMPLATE = {
-  Monday:   { core: "Back Squat",   muscles: ["Quadriceps","Glutes"] },
+  Monday:   { core: "Back Squat",   muscles: ["Quadriceps","Glutes","Hamstrings"] },
   Tuesday:  { core: "Bench Press",  muscles: ["Chest","Triceps","Shoulders"] },
   Wednesday:{ core: null,          muscles: ["Cardio"] },   // cardio day
   Thursday: { core: null,          muscles: ["HIIT"] },     // HIIT WOD
   Friday:   { core: null,          muscles: ["Cardio"] },
-  Saturday: { core: "Deadlift",    muscles: ["Hamstrings","Back"] },
+  Saturday: { core: "Deadlift",     muscles: ["Hamstrings","Back"] },
   Sunday:   { core: null,          muscles: ["Cardio"] },
 };
 
@@ -35,47 +35,44 @@ export async function buildWorkoutByDay(
     ? exercises.find(e => e.name.toLowerCase().includes(t.core!.toLowerCase())) || null
     : null;
 
-  // 3️⃣ Capture core lift's primary muscles for strict matching
+  // 3️⃣ Robust coreMuscles extraction
+  function parseMuscles(str: string | string[] | null): string[] {
+    if (!str) return [];
+    if (Array.isArray(str)) return str;
+    return str.split(/[,/]/).map(s => s.trim());  // "Chest, Triceps" → ["Chest","Triceps"]
+  }
+
   const coreMuscles = coreLift
-    ? [coreLift.primary_muscle].flat()   // ensure array
-    : t.muscles;                         // cardio/HIIT days fallback
+    ? parseMuscles(coreLift.primary_muscle)
+    : t.muscles;
 
   console.log("[TRACE] core muscles", coreMuscles);
 
-  // 4️⃣ Unified pickPhase helper for strict muscle matching
-  function pickPhase(phase: "warmup" | "cooldown", targetCount: number): Exercise[] {
-    // 1️⃣ strict match on coreMuscles
+  // 4️⃣ Rewrite pickPhase for strict match (+ fallback)
+  function pickPhase(phase: "warmup" | "cooldown", target: number): Exercise[] {
+    /** 1️⃣ strict pool – same primary muscle */
     let pool = exercises.filter(
       e => e.exercise_phase === phase &&
-           coreMuscles.some(m => e.primary_muscle?.includes(m))
+           parseMuscles(e.primary_muscle).some(m => coreMuscles.includes(m))
     );
 
-    // 2️⃣ if not enough, allow any body-weight in that phase
-    if (pool.length < targetCount) {
-      pool = pool.concat(
-        exercises.filter(
-          e => e.exercise_phase === phase && (!e.equipment_required?.length)
-        )
-      );
+    if (pool.length >= target) {
+      return pool.sort(() => 0.5 - Math.random()).slice(0, target);
     }
 
-    // 3️⃣ if still short, allow any exercise tagged for that phase
-    if (pool.length < targetCount) {
-      pool = pool.concat(
-        exercises.filter(e => e.exercise_phase === phase)
-      );
-    }
+    /** 2️⃣ fallback – full-body or body-weight moves in that phase */
+    const fallbackPool = exercises.filter(
+      e => e.exercise_phase === phase && (!e.equipment_required?.length)
+    );
 
-    // shuffle and slice
-    return pool
-      .sort(() => 0.5 - Math.random())
-      .slice(0, targetCount);
+    const combined = [...pool, ...fallbackPool];
+    return combined.sort(() => 0.5 - Math.random()).slice(0, target);
   }
 
   const warmupArr = pickPhase("warmup", minutes <= 30 ? 2 : 3);
   const cooldownArr = pickPhase("cooldown", minutes <= 30 ? 2 : 3);
 
-  console.log("[TRACE] warm-up picked", warmupArr.map(e => e.name));
+  console.log("[TRACE] warmup picked", warmupArr.map(e => e.name));
   console.log("[TRACE] cooldown picked", cooldownArr.map(e => e.name));
 
   // 5️⃣ accessories: main-phase, matching muscles, exclude core lift itself
