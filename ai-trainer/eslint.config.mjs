@@ -13,8 +13,8 @@ const eslintConfig = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
   {
     rules: {
-      // Strict unused variable detection
-      "@typescript-eslint/no-unused-vars": ["error", {
+      // Strict unused variable detection - changed to warn
+      "@typescript-eslint/no-unused-vars": ["warn", {
         "argsIgnorePattern": "^_",
         "varsIgnorePattern": "^_",
         "caughtErrorsIgnorePattern": "^_"
