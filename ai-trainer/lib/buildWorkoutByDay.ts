@@ -110,8 +110,8 @@ export async function buildWorkoutByDay(
     const pick = pool.splice(idx, 1)[0];
 
     const addMin = calcExerciseMinutes(
-      pick.set_duration_seconds ?? 30,
-      pick.rest_seconds_default ?? 60,
+      pick.setSec ?? 30,
+      pick.rest ?? 60,
       accessorySets
     );
 
@@ -126,7 +126,7 @@ export async function buildWorkoutByDay(
       name: pick.name,
       category: 'accessory',
       primary_muscle: '', // Will be filled by the pool data
-      equipment_required: pick.required_equipment || [],
+      equipment_required: [], // Simplified for now
       is_main_lift: false,
       exercise_phase: 'main',
       instruction: ''
