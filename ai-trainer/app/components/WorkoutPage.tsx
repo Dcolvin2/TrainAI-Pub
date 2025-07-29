@@ -28,6 +28,7 @@ interface WorkoutData {
   details?: WorkoutExercise[];
   workout?: string[];
   cooldown?: string[];
+  accessories?: string[];
 }
 
 export default function WorkoutPage() {

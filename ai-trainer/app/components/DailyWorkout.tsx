@@ -5,6 +5,7 @@ interface WorkoutData {
   warmup: string[]
   workout: string[]
   cooldown: string[]
+  accessories?: string[]
   prompt?: string
 }
 
