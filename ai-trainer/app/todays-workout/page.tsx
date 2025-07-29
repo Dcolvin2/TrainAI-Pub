@@ -10,6 +10,7 @@ import { fetchNikeWorkout } from '@/lib/nikeWorkoutHelper';
 import { buildWorkoutByDay } from "@/lib/buildWorkoutByDay";
 import { getExerciseInstructions } from '@/lib/getExerciseInstructions';
 import { fetchInstructions } from '@/lib/fetchInstructions';
+import { isQuickEntry, parseQuickEntry } from '@/utils/parseQuickEntry';
 
 
 
@@ -112,7 +113,8 @@ function TodaysWorkoutPageContent() {
     reset: resetWorkout,
     setQuickEntrySets,
     quickEntrySets,
-    clearQuickEntrySets
+    clearQuickEntrySets,
+    addOrUpdateSet
   } = useWorkoutStore();
 
   const [chatMessages, setChatMessages] = useState<Array<{sender: 'user' | 'assistant', text: string, timestamp?: string}>>([]);
@@ -383,7 +385,22 @@ function TodaysWorkoutPageContent() {
     setPendingWorkout(workoutData);
   };
 
-  // Handle chat messages
+  // Quick entry handler function
+  const quickEntryHandler = (entries: any[], exerciseName: string) => {
+    entries.forEach(({ setNumber, reps, weight }) => {
+      const setId = `${exerciseName}-workout-${Date.now()}-${Math.random()}-${setNumber}`;
+      addOrUpdateSet({
+        id: setId,
+        exerciseName,
+        setNumber,
+        actualReps: reps,
+        actualWeight: weight,
+        completed: true,
+        section: 'workout'
+      });
+    });
+  };
+
   const handleChatMessage = async (message: string) => {
     // ── TRACE STEP 1: Input logging ──
     console.log('[TRACE] input raw:', message);
@@ -509,22 +526,10 @@ function TodaysWorkoutPageContent() {
 
     // ── 3️⃣ QUICK-ENTRY SETS THIRD ──
     console.log('[TRACE] hit quick-entry sets branch');
-    const quickEntryMatch = input.match(/^(\d+,\d+,\d+(?:\s*;\s*\d+,\d+,\d+)*)$/);
-    if (quickEntryMatch) {
-      console.log('[TRACE] matched quick-entry sets:', quickEntryMatch[1]);
+    if (isQuickEntry(input)) {
+      console.log('[TRACE] matched quick-entry sets:', input);
       
-      // Parse the input into individual set entries
-      const setEntries = quickEntryMatch[1].split(/;\s*/).map(chunk => {
-        const parts = chunk.split(',').map(Number);
-        if (parts.length === 3 && parts.every(p => !isNaN(p))) {
-          return {
-            setNumber: parts[0],
-            reps: parts[1],
-            weight: parts[2]
-          };
-        }
-        return null;
-      }).filter(Boolean);
+      const setEntries = parseQuickEntry(input);
 
       if (setEntries.length > 0) {
         // Find the first post-warm-up exercise
@@ -532,15 +537,7 @@ function TodaysWorkoutPageContent() {
         
         if (firstMainExercise) {
           // Update the workout table with the quick-entry sets
-          setQuickEntrySets({
-            exerciseName: firstMainExercise.name,
-            entries: setEntries.map(entry => ({
-              setNumber: entry!.setNumber,
-              reps: entry!.reps,
-              actualWeight: entry!.weight,
-              completed: true
-            }))
-          });
+          quickEntryHandler(setEntries, firstMainExercise.name);
 
           const response = `✅ Added ${setEntries.length} sets to ${firstMainExercise.name} — will save when you finish workout 🏁`;
           setChatMessages(prev => [

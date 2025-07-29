@@ -21,12 +21,23 @@ interface QuickEntryData {
   entries: QuickEntrySet[];
 }
 
+interface WorkoutSet {
+  id: string;
+  exerciseName: string;
+  setNumber: number;
+  actualReps?: number;
+  actualWeight?: number;
+  completed: boolean;
+  section: 'warmup' | 'workout' | 'cooldown' | 'accessories';
+}
+
 interface WorkoutState {
   active: WorkoutData | null;
   pending: WorkoutData | null;
   timeAvailable: number;
   lastInit: string | null;
   quickEntrySets: QuickEntryData[];
+  workoutSets: WorkoutSet[];
 }
 
 type WorkoutAction = 
@@ -35,6 +46,8 @@ type WorkoutAction =
   | { type: 'SET_TIME_AVAILABLE'; payload: number }
   | { type: 'ADD_QUICK_ENTRY_SETS'; payload: QuickEntryData }
   | { type: 'CLEAR_QUICK_ENTRY_SETS'; payload: void }
+  | { type: 'ADD_OR_UPDATE_SET'; payload: WorkoutSet }
+  | { type: 'CLEAR_WORKOUT_SETS'; payload: void }
   | { type: 'RESET' };
 
 const initialState: WorkoutState = {
@@ -42,7 +55,8 @@ const initialState: WorkoutState = {
   pending: null,
   timeAvailable: 45,
   lastInit: null,
-  quickEntrySets: []
+  quickEntrySets: [],
+  workoutSets: []
 };
 
 function workoutReducer(state: WorkoutState, action: WorkoutAction): WorkoutState {
@@ -60,13 +74,23 @@ function workoutReducer(state: WorkoutState, action: WorkoutAction): WorkoutStat
       };
     case 'CLEAR_QUICK_ENTRY_SETS':
       return { ...state, quickEntrySets: [] };
+    case 'ADD_OR_UPDATE_SET':
+      return {
+        ...state,
+        workoutSets: state.workoutSets.map(set => 
+          set.id === action.payload.id ? action.payload : set
+        )
+      };
+    case 'CLEAR_WORKOUT_SETS':
+      return { ...state, workoutSets: [] };
     case 'RESET':
       return {
         ...state,
         active: null,
         pending: null,
         lastInit: new Date().toISOString().split('T')[0],
-        quickEntrySets: []
+        quickEntrySets: [],
+        workoutSets: []
       };
     default:
       return state;
@@ -94,11 +118,14 @@ export function useWorkoutStore(): {
   timeAvailable: number;
   lastInit: string | null;
   quickEntrySets: QuickEntryData[];
+  workoutSets: WorkoutSet[];
   setActive: (active: WorkoutData | null) => void;
   setPending: (pending: WorkoutData | null) => void;
   setTimeAvailable: (time: number) => void;
   setQuickEntrySets: (data: QuickEntryData) => void;
   clearQuickEntrySets: () => void;
+  addOrUpdateSet: (set: WorkoutSet) => void;
+  clearWorkoutSets: () => void;
   reset: () => void;
 } {
   const context = useContext(WorkoutContext);
@@ -115,6 +142,8 @@ export function useWorkoutStore(): {
     setTimeAvailable: (time: number): void => dispatch({ type: 'SET_TIME_AVAILABLE', payload: time }),
     setQuickEntrySets: (data: QuickEntryData): void => dispatch({ type: 'ADD_QUICK_ENTRY_SETS', payload: data }),
     clearQuickEntrySets: (): void => dispatch({ type: 'CLEAR_QUICK_ENTRY_SETS', payload: undefined }),
+    addOrUpdateSet: (set: WorkoutSet): void => dispatch({ type: 'ADD_OR_UPDATE_SET', payload: set }),
+    clearWorkoutSets: (): void => dispatch({ type: 'CLEAR_WORKOUT_SETS', payload: undefined }),
     reset: (): void => dispatch({ type: 'RESET' })
   };
 } 
