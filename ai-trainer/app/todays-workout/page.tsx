@@ -567,16 +567,6 @@ function TodaysWorkoutPageContent() {
           >
             {mainTimerRunning ? 'Pause' : 'Start'}
           </button>
-          <button
-            onClick={() => {
-              const dayNames = ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
-              const today = dayNames[new Date().getDay()];
-              handleChatMessage(`it's ${today}`);
-            }}
-            className="bg-[#22C55E] hover:bg-[#16a34a] text-white px-6 py-2 rounded-lg font-semibold transition-colors"
-          >
-            Generate Workout
-          </button>
         </div>
       </header>
 
