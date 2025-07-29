@@ -375,9 +375,56 @@ function TodaysWorkoutPageContent() {
     // 1. Append user message to chat history
     setChatMessages(prev => [...prev, { sender: 'user', text: message, timestamp: new Date().toLocaleTimeString() }]);
 
-    // ── TRACE STEP 4: Nike branch check ──
+    // ── 1️⃣ DAY-OF-WEEK FIRST ──
+    console.log('[TRACE] hit day-of-week branch');
+    const dayMatch = lower.match(/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i);
+    if (dayMatch && user?.id) {
+      console.log('[TRACE] matched day route:', dayMatch[1]);
+      const day = dayMatch[1][0].toUpperCase() + dayMatch[1].slice(1).toLowerCase();
+
+      // look for explicit minutes: "i have 25 minutes"
+      const minMatch = message.match(/(\d{2})\s*minutes?/i);
+      const minutes = minMatch ? parseInt(minMatch[1], 10) : timeAvailable;
+
+      try {
+        const plan = await buildWorkoutByDay(user.id, day, minutes);
+        
+        // Convert to WorkoutData format for the table
+        const workoutData: WorkoutData = {
+          planId: crypto.randomUUID(),
+          warmup: plan.warmupSel ? [`${plan.warmupSel.name}: 1x5`] : [],
+          workout: plan.coreLift ? [`${plan.coreLift.name}: 3x8`] : [],
+          cooldown: plan.cooldownSel ? [`${plan.cooldownSel.name}: 1x5`] : [],
+          accessories: plan.accessories.map(a => `${a.name}: 3x10`),
+          prompt: `${day} Workout (${minutes} min)`
+        };
+        
+        setPendingWorkout(workoutData);
+        
+        const workoutText = 
+          `**${day} Workout (${minutes} min)**\n\n` +
+          `*Warm-up*: ${plan.warmupSel?.name ?? "—"}\n` +
+          (plan.coreLift ? `*Core Lift*: ${plan.coreLift.name}\n` : "") +
+          `*Accessories*: ${plan.accessories.map(a => a.name).join(", ") || "—"}\n` +
+          `*Cooldown*: ${plan.cooldownSel?.name ?? "—"}`;
+
+        setChatMessages(prev => [
+          ...prev,
+          { sender: 'assistant', text: workoutText, timestamp: new Date().toLocaleTimeString() },
+        ]);
+        return;
+      } catch (error) {
+        console.error('Day workout generation error:', error);
+        setChatMessages(prev => [
+          ...prev,
+          { sender: 'assistant', text: `Sorry, I couldn't generate a ${day} workout. Please try again.`, timestamp: new Date().toLocaleTimeString() },
+        ]);
+        return;
+      }
+    }
+
+    // ── 2️⃣ NIKE SECOND ──
     console.log('[TRACE] hit Nike branch');
-    // 2. Handle Nike workout request
     if (lower.includes('nike')) {
       console.log('[TRACE] matched Nike branch');
       if (!user?.id) {
@@ -392,9 +439,8 @@ function TodaysWorkoutPageContent() {
       return;
     }
 
-    // ── TRACE STEP 5: Exercise guidance branch check ──
+    // ── 3️⃣ EXERCISE GUIDANCE THIRD ──
     console.log('[TRACE] hit exercise guidance branch');
-    // 3. Handle exercise guidance: "How should I perform Romanian Deadlift?"
     if (lower.startsWith('how should i perform') || lower.startsWith('how do i do')) {
       console.log('[TRACE] matched exercise guidance branch');
       const exerciseName = message.split('perform ')[1] || message.split('do ')[1];
@@ -432,44 +478,7 @@ function TodaysWorkoutPageContent() {
       return;
     }
 
-    // ── TRACE STEP 6: Day-of-week branch check ──
-    console.log('[TRACE] hit day-of-week branch');
-    // 4. Handle day-of-week workout requests
-    const dayMatch = lower.match(/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i);
-    if (dayMatch && user?.id) {
-      console.log('[TRACE] matched day-of-week branch:', dayMatch[1]);
-      const day = dayMatch[1][0].toUpperCase() + dayMatch[1].slice(1).toLowerCase();
-
-      // look for explicit minutes: "i have 25 minutes"
-      const minMatch = message.match(/(\d{2})\s*minutes?/i);
-      const minutes = minMatch ? parseInt(minMatch[1], 10) : timeAvailable;
-
-      try {
-        const plan = await buildWorkoutByDay(user.id, day, minutes);
-        
-        const workoutText = 
-          `**${day} Workout (${minutes} min)**\n\n` +
-          `*Warm-up*: ${plan.warmupSel?.name ?? "—"}\n` +
-          (plan.coreLift ? `*Core Lift*: ${plan.coreLift.name}\n` : "") +
-          `*Accessories*: ${plan.accessories.map(a => a.name).join(", ") || "—"}\n` +
-          `*Cooldown*: ${plan.cooldownSel?.name ?? "—"}`;
-
-        setChatMessages(prev => [
-          ...prev,
-          { sender: 'assistant', text: workoutText, timestamp: new Date().toLocaleTimeString() },
-        ]);
-        return;
-      } catch (error) {
-        console.error('Day workout generation error:', error);
-        setChatMessages(prev => [
-          ...prev,
-          { sender: 'assistant', text: `Sorry, I couldn't generate a ${day} workout. Please try again.`, timestamp: new Date().toLocaleTimeString() },
-        ]);
-        return;
-      }
-    }
-
-    // ── CATCH-ALL GPT ROUTE ──
+    // ── 4️⃣ CATCH-ALL GPT LAST ──
     try {
       console.log('[TRACE] catch-all GPT route fires');
       const coachReply = await fetch('/api/workoutChat', {
@@ -496,6 +505,7 @@ function TodaysWorkoutPageContent() {
         if (data.plan) {
           console.log('[TRACE] workout data received:', data.plan);
           setPendingWorkout({
+            planId: crypto.randomUUID(),
             warmup: data.plan.warmup || [],
             workout: data.plan.workout || [],
             cooldown: data.plan.cooldown || [],
@@ -558,7 +568,11 @@ function TodaysWorkoutPageContent() {
             {mainTimerRunning ? 'Pause' : 'Start'}
           </button>
           <button
-            onClick={() => handleChatMessage("generate workout")}
+            onClick={() => {
+              const dayNames = ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
+              const today = dayNames[new Date().getDay()];
+              handleChatMessage(`it's ${today}`);
+            }}
             className="bg-[#22C55E] hover:bg-[#16a34a] text-white px-6 py-2 rounded-lg font-semibold transition-colors"
           >
             Generate Workout
