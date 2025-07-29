@@ -63,7 +63,7 @@ interface WorkoutData {
   prompt?: string
 }
 
-export default function WorkoutBuilderPage() {
+export default function WorkoutBuilderPage(): React.JSX.Element {
   const { user } = useAuth()
   const router = useRouter()
   const [prompt, setPrompt] = useState('')
@@ -86,7 +86,7 @@ export default function WorkoutBuilderPage() {
   }, [user, router])
 
   // Handle speech recognition
-  const startListening = () => {
+  const startListening = (): void => {
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       setIsListening(true);
       const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -96,9 +96,9 @@ export default function WorkoutBuilderPage() {
       recognition.interimResults = false;
       recognition.lang = 'en-US';
 
-      recognition.onstart = () => setIsListening(true);
+      recognition.onstart = (): void => setIsListening(true);
 
-      recognition.onresult = (event: SpeechRecognitionEvent) => {
+      recognition.onresult = (event: SpeechRecognitionEvent): void => {
         const transcript = Array.from(event.results)
           .map((result: SpeechRecognitionResult) => result[0])
           .map((alt: SpeechRecognitionAlternative) => alt.transcript)
@@ -107,12 +107,12 @@ export default function WorkoutBuilderPage() {
         setPrompt(transcript); // Replace instead of append for better UX
       };
 
-      recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      recognition.onerror = (event: SpeechRecognitionErrorEvent): void => {
         console.error('Speech recognition error:', event.error);
         setIsListening(false);
       };
 
-      recognition.onend = () => setIsListening(false);
+      recognition.onend = (): void => setIsListening(false);
 
       recognition.start();
     } else {
@@ -121,7 +121,7 @@ export default function WorkoutBuilderPage() {
   };
 
   // Reset transcript
-  const resetTranscript = () => {
+  const resetTranscript = (): void => {
     setTranscript('')
     setPrompt('')
   }
@@ -155,14 +155,14 @@ export default function WorkoutBuilderPage() {
   }
 
   // Update table row
-  const updateTableRow = (id: string, field: keyof WorkoutRow, value: string) => {
+  const updateTableRow = (id: string, field: keyof WorkoutRow, value: string): void => {
     setTableRows(prev => prev.map(row => 
       row.id === id ? { ...row, [field]: value } : row
     ))
   }
 
   // Add new row
-  const addRow = () => {
+  const addRow = (): void => {
     const newRow: WorkoutRow = {
       id: Math.random().toString(36).substr(2, 9),
       exercise: '',
@@ -175,12 +175,12 @@ export default function WorkoutBuilderPage() {
   }
 
   // Remove row
-  const removeRow = (id: string) => {
+  const removeRow = (id: string): void => {
     setTableRows(prev => prev.filter(row => row.id !== id))
   }
 
   // Generate workout
-  const generateWorkout = async () => {
+  const generateWorkout = async (): Promise<void> => {
     if (!user?.id) return
     
     setIsLoading(true)

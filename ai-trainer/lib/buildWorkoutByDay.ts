@@ -1,5 +1,13 @@
 import { fetchEquipmentAndExercises } from "./fetchEquipmentAndExercises";
 
+interface ExerciseRow {
+  id: string;
+  name: string;
+  equipment_required?: string[];
+  exercise_phase?: string;
+  primary_muscle?: string;
+}
+
 const TEMPLATE = {
   Monday:   { core: "Back Squat",   muscles: ["Quadriceps","Glutes"] },
   Tuesday:  { core: "Bench Press",  muscles: ["Chest","Triceps","Shoulders"] },
@@ -11,10 +19,10 @@ const TEMPLATE = {
 };
 
 interface WorkoutByDayResult {
-  warmupSel: any;
-  coreLift: any;
-  accessories: any[];
-  cooldownSel: any;
+  warmupSel: ExerciseRow | undefined;
+  coreLift: ExerciseRow | null;
+  accessories: ExerciseRow[];
+  cooldownSel: ExerciseRow | undefined;
 }
 
 export async function buildWorkoutByDay(
@@ -29,8 +37,8 @@ export async function buildWorkoutByDay(
   if (!t) throw new Error("Unknown day");
 
   // 2️⃣ core lift (if any)
-  const coreLift = t.core
-    ? exercises.find(e => e.name.toLowerCase().includes(t.core!.toLowerCase()))
+  const coreLift: ExerciseRow | null = t.core
+    ? exercises.find(e => e.name.toLowerCase().includes(t.core!.toLowerCase())) || null
     : null;
 
   // 3️⃣ warm-up / cooldown matching muscles
