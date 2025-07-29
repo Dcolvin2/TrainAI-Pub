@@ -1,9 +1,6 @@
-const lastUsedKey = "lastAccessories";
+import { Exercise } from '@/types/Exercise';
 
-interface Exercise {
-  name: string;
-  [key: string]: unknown;
-}
+const lastUsedKey = "lastAccessories";
 
 export function pickAccessories(pool: Exercise[], count: number): Exercise[] {
   const last = JSON.parse(localStorage.getItem(lastUsedKey) || "[]");

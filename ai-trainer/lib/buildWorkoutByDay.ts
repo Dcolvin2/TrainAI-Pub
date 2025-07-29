@@ -1,13 +1,6 @@
 import { fetchEquipmentAndExercises } from "./fetchEquipmentAndExercises";
 import { pickAccessories } from "./rotateAccessories";
-
-interface ExerciseRow {
-  id: string;
-  name: string;
-  equipment_required?: string[];
-  exercise_phase?: string;
-  primary_muscle?: string;
-}
+import { Exercise } from "@/types/Exercise";
 
 const TEMPLATE = {
   Monday:   { core: "Back Squat",   muscles: ["Quadriceps","Glutes"] },
@@ -20,10 +13,10 @@ const TEMPLATE = {
 };
 
 interface WorkoutByDayResult {
-  warmupSel: ExerciseRow | undefined;
-  coreLift: ExerciseRow | null;
-  accessories: ExerciseRow[];
-  cooldownSel: ExerciseRow | undefined;
+  warmupSel: Exercise | undefined;
+  coreLift: Exercise | null;
+  accessories: Exercise[];
+  cooldownSel: Exercise | undefined;
 }
 
 export async function buildWorkoutByDay(
@@ -38,15 +31,15 @@ export async function buildWorkoutByDay(
   if (!t) throw new Error("Unknown day");
 
   // 2️⃣ core lift (if any)
-  const coreLift: ExerciseRow | null = t.core
+  const coreLift: Exercise | null = t.core
     ? exercises.find(e => e.name.toLowerCase().includes(t.core!.toLowerCase())) || null
     : null;
 
   // 3️⃣ warm-up / cooldown matching muscles
   const warmups   = exercises.filter(e => e.exercise_phase === "warmup"   &&
-      e.primary_muscle && t.muscles.some(m => e.primary_muscle!.includes(m)));
+      e.primary_muscle && t.muscles.some(m => e.primary_muscle.includes(m)));
   const cooldowns = exercises.filter(e => e.exercise_phase === "cooldown" &&
-      e.primary_muscle && t.muscles.some(m => e.primary_muscle!.includes(m)));
+      e.primary_muscle && t.muscles.some(m => e.primary_muscle.includes(m)));
 
   const warmupSel  = warmups[Math.floor(Math.random()*warmups.length)];
   const cooldownSel= cooldowns[Math.floor(Math.random()*cooldowns.length)];
@@ -55,7 +48,7 @@ export async function buildWorkoutByDay(
   const accessoriesPool = exercises.filter(e =>
       e.exercise_phase === "main" &&
       (!coreLift || e.id !== coreLift.id) &&
-      e.primary_muscle && t.muscles.some(m => e.primary_muscle!.includes(m)));
+      e.primary_muscle && t.muscles.some(m => e.primary_muscle.includes(m)));
 
   // estimate 20 min for warm-up/core/cooldown; 5 min per accessory
   const accCount = Math.max(0, Math.floor((minutes - 20)/5));

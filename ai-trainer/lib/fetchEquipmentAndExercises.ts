@@ -1,24 +1,17 @@
 import { createClient } from "@supabase/supabase-js";
+import { ExerciseRow, Exercise, toExercise } from "@/types/Exercise";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-interface ExerciseRow {
-  id: string;
-  name: string;
-  equipment_required?: string[];
-  exercise_phase?: string;
-  primary_muscle?: string;
-}
-
 interface EquipmentAndExercises {
   equipment: Set<string>;
-  exercises: ExerciseRow[];
+  exercises: Exercise[];
 }
 
-/** Returns { equipment:Set<string>, exercises: ExerciseRow[] } */
+/** Returns { equipment:Set<string>, exercises: Exercise[] } */
 export async function fetchEquipmentAndExercises(userId: string): Promise<EquipmentAndExercises> {
   const { data: eq } = await supabase
     .from("user_equipment")
@@ -32,7 +25,7 @@ export async function fetchEquipmentAndExercises(userId: string): Promise<Equipm
   const exercises = ex?.filter(e => {
     if (!e.equipment_required?.length) return true;          // body-weight
     return e.equipment_required.every((req: string) => userEq.has(req));
-  }) || [];
+  }).map(toExercise) || [];
 
   return { equipment: userEq, exercises };
 } 
