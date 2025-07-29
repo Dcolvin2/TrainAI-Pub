@@ -568,16 +568,27 @@ function TodaysWorkoutPageContent() {
         // ── UPDATE CHAT MEMORY ──
         setMessages(prev => [...prev, { role: 'assistant', content: data.assistantMessage }]);
         
-        // Handle workout data from function calls
+        // ── ALWAYS EXPECT FUNCTION CALL (forced updateWorkout) ──
         if (data.plan) {
           console.log('[TRACE] workout data received:', data.plan);
-          setPendingWorkout({
-            planId: crypto.randomUUID(),
+          const updatedWorkout: WorkoutData = {
+            planId: crypto.randomUUID(),  // ← fresh planId forces re-render
             warmup: data.plan.warmup || [],
             workout: data.plan.workout || [],
             cooldown: data.plan.cooldown || [],
-            accessories: (data.plan as any).accessories || []
-          } as WorkoutData);
+            accessories: (data.plan as any).accessories || [],
+            prompt: data.plan.prompt || 'Updated workout'
+          };
+          setPendingWorkout(updatedWorkout);
+          
+          // ── UPDATE CURRENT PLAN STATE ──
+          const planRows = [
+            ...(data.plan.warmup || []).map((ex: string) => ({ name: ex, exercise_phase: 'warmup' })),
+            ...(data.plan.workout || []).map((ex: string) => ({ name: ex, exercise_phase: 'main', is_main_lift: true })),
+            ...(data.plan.accessories || []).map((ex: string) => ({ name: ex, exercise_phase: 'main' })),
+            ...(data.plan.cooldown || []).map((ex: string) => ({ name: ex, exercise_phase: 'cooldown' }))
+          ];
+          setCurrentPlan(planRows);
         }
         
         return;                                  // stop; no fallback

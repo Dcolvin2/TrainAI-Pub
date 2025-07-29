@@ -137,7 +137,11 @@ export async function POST(req: NextRequest) {
     const systemMsg = {
       role: 'system' as const,
       content: `
-You must ALWAYS answer workout creation or revision requests by calling the \`updateWorkout\` function. Never output plain text for a workout plan.
+You must ALWAYS call the updateWorkout function for ANY workout-related request. This includes:
+• Time changes: "I only have 20 minutes"
+• Exercise swaps: "swap bench for dips"
+• Modifications: "make it harder", "add more accessories"
+• New workouts: "generate workout", "it's Tuesday"
 
 • Always answer as concisely as possible—one or two sentences unless more detail is explicitly requested.
 • Recognize simple day-of-week cues (e.g. "It's Tuesday") and map them to my weekly split: Monday=legs, Tuesday=chest, Wed=cardio, Thu=HIIT, Fri=cardio, Sat=back, Sun=active recovery.
@@ -151,13 +155,14 @@ You know:
 · Equipment: ${equipmentList || 'None'}.
 · Personal bests: ${maxesList || 'None'}.
 
-When asked to create or revise a workout, call the updateWorkout function. Include only the warmup, core_lift, accessories, cooldown arrays and total minutes.
+ALWAYS call updateWorkout function with warmup, core_lift, accessories, cooldown arrays and total minutes.
 
 Select 3–4 cooldown exercises (≈ 5–10 min) that match the core-lift muscles. Return them in the cooldown array of the updateWorkout function call.
 
-— Only invoke the function "updateWorkout" when the user explicitly requests a workout plan, using phrases like "generate a workout", "plan my routine", "I need a workout routine", "nike workout", or day-of-week cues like "It's Tuesday".
-— Otherwise, respond in plain language: give advice, ask follow-up questions, and never return the JSON plan.
-— When generating workouts, always respect these personal bests and equipment constraints.
+— ALWAYS invoke the function "updateWorkout" for ANY workout request or modification
+— For time changes, adjust the minutes parameter and scale exercises accordingly
+— For exercise swaps, modify the appropriate array (warmup, core_lift, accessories, cooldown)
+— When generating workouts, always respect these personal bests and equipment constraints
 
 When you do call the function, you must return a JSON object matching its schema.
       `.trim()
@@ -210,30 +215,12 @@ When you do call the function, you must return a JSON object matching its schema
       });
     }
 
-    // ─── General chat pass-through ──────────────────────────
-    try {
-      const coachReply = await chatWithFunctions([
-        { role: "system", content: "You are a concise fitness coach." },
-        { role: "user", content: userInput }
-      ]);
-
-      return NextResponse.json({
-        assistantMessage: coachReply.content,
-        plan: null
-      });
-    } catch (err) {
-      console.error("OpenAI error", err);
-      // If it errors, we fall through to the existing fallback.
-    }
-    // ─────────────────────────────────────────────────────────
-
-    // E) Parse response and return both message and plan
-    const assistantMessage = resp.content || 'I understand your request. How can I help you with your workout?'
-    const plan = null // For now, no function calls implemented
-
+    // ── ALWAYS EXPECT FUNCTION CALL ──
+    // If we reach here, something went wrong with function calling
+    console.error("Expected function call but got:", resp);
     return NextResponse.json({ 
-      assistantMessage, 
-      plan 
+      assistantMessage: "I'll update your workout plan.", 
+      plan: null 
     })
   } catch (error) {
     console.error('Workout chat error:', error)

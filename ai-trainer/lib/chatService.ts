@@ -13,7 +13,7 @@ interface ChatCompletionPayload {
   model: string;
   messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
   functions?: FunctionSchema[];
-  function_call?: "auto" | "none";
+  function_call?: "auto" | "none" | { name: string };
 }
 
 interface FunctionCallResult {
@@ -35,7 +35,7 @@ export async function chatWithFunctions(
       model: "gpt-4o-mini",   // ← hard-coded upgrade
       messages: history,
       functions,
-      function_call: "auto",   // Always enable function calling
+      function_call: { name: "updateWorkout" },   // ← FORCE updateWorkout every time
     };
 
     const resp = await client.chat.completions.create(payload);
