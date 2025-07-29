@@ -49,24 +49,33 @@ export async function buildWorkoutByDay(
   console.log("[TRACE] core muscles", coreMuscles);
 
   // 4️⃣ Rewrite pickPhase for strict match (+ fallback)
+  function logPool(label: string, pool: any[]) {
+    console.log(
+      `[TRACE] ${label} (${pool.length}) →`,
+      pool.map(e => `${e.name} [${e.primary_muscle}]`)
+    );
+  }
+
   function pickPhase(phase: "warmup" | "cooldown", target: number): Exercise[] {
-    /** 1️⃣ strict pool – same primary muscle */
-    let pool = exercises.filter(
+    const strict = exercises.filter(
       e => e.exercise_phase === phase &&
            parseMuscles(e.primary_muscle).some(m => coreMuscles.includes(m))
     );
+    logPool(`${phase}-STRICT`, strict);
 
-    if (pool.length >= target) {
-      return pool.sort(() => 0.5 - Math.random()).slice(0, target);
-    }
-
-    /** 2️⃣ fallback – full-body or body-weight moves in that phase */
-    const fallbackPool = exercises.filter(
+    const bodyWeight = exercises.filter(
       e => e.exercise_phase === phase && (!e.equipment_required?.length)
     );
+    logPool(`${phase}-BW`, bodyWeight);
 
-    const combined = [...pool, ...fallbackPool];
-    return combined.sort(() => 0.5 - Math.random()).slice(0, target);
+    const any = exercises.filter(e => e.exercise_phase === phase);
+    logPool(`${phase}-ANY`, any);
+
+    const pool =
+      strict.length >= target ? strict :
+      strict.concat(bodyWeight).slice(0, target);
+
+    return pool.sort(() => 0.5 - Math.random()).slice(0, target);
   }
 
   const warmupArr = pickPhase("warmup", minutes <= 30 ? 2 : 3);
