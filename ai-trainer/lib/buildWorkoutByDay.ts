@@ -13,10 +13,10 @@ const TEMPLATE = {
 };
 
 interface WorkoutByDayResult {
-  warmupSel: Exercise | undefined;
+  warmupSel: Exercise | null;
   coreLift: Exercise | null;
   accessories: Exercise[];
-  cooldownSel: Exercise | undefined;
+  cooldownSel: Exercise | null;
 }
 
 export async function buildWorkoutByDay(
@@ -35,14 +35,34 @@ export async function buildWorkoutByDay(
     ? exercises.find(e => e.name.toLowerCase().includes(t.core!.toLowerCase())) || null
     : null;
 
-  // 3️⃣ warm-up / cooldown matching muscles
-  const warmups   = exercises.filter(e => e.exercise_phase === "warmup"   &&
-      e.primary_muscle && t.muscles.some(m => e.primary_muscle.includes(m)));
-  const cooldowns = exercises.filter(e => e.exercise_phase === "cooldown" &&
-      e.primary_muscle && t.muscles.some(m => e.primary_muscle.includes(m)));
+  // 3️⃣ Warm-up and Cooldown — always return something
+  function pickPhase(phase: "warmup" | "cooldown") {
+    // First try: match requested muscles
+    let pool = exercises.filter(
+      e => e.exercise_phase === phase &&
+           t.muscles.some(m => e.primary_muscle?.includes(m))
+    );
 
-  const warmupSel  = warmups[Math.floor(Math.random()*warmups.length)];
-  const cooldownSel= cooldowns[Math.floor(Math.random()*cooldowns.length)];
+    console.log(`[TRACE] ${phase} pool size`, pool.length);
+
+    // Fallback #1: any phase-match that needs *no equipment*
+    if (pool.length === 0) {
+      pool = exercises.filter(
+        e => e.exercise_phase === phase && (!e.equipment_required?.length)
+      );
+    }
+
+    // Fallback #2: any exercise tagged for that phase at all
+    if (pool.length === 0) {
+      pool = exercises.filter(e => e.exercise_phase === phase);
+    }
+
+    // If still empty, return null so UI can handle gracefully
+    return pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+  }
+
+  const warmupSel   = pickPhase("warmup");
+  const cooldownSel = pickPhase("cooldown");
 
   // 4️⃣ accessories: main-phase, matching muscles, exclude core lift itself
   const accessoriesPool = exercises.filter(e =>
