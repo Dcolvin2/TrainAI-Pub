@@ -131,6 +131,12 @@ function TodaysWorkoutPageContent() {
   }>>([]);
 
   // ── QUICK-ENTRY PARSING ──
+  const isQuickEntry = (msg: string): boolean => {
+    // Matches:  "1,5,200"  OR  "1,5,200; 2,5,205"
+    const re = /^\s*\d+\s*,\s*\d+\s*,\s*\d+(?:\s*(?:;|\n)\s*\d+\s*,\s*\d+\s*,\s*\d+)*\s*$/;
+    return re.test(msg.trim());
+  };
+
   function parseQuickEntrySets(input: string): Array<{setNumber: number, reps: number, weight: number}> {
     const chunks = input.split(/[;\n]/).map(chunk => chunk.trim()).filter(chunk => chunk.length > 0);
     const parsedSets: Array<{setNumber: number, reps: number, weight: number}> = [];
@@ -483,54 +489,26 @@ function TodaysWorkoutPageContent() {
 
   // Handle chat messages
   const handleChatMessage = async (message: string) => {
-    // ── TRACE STEP 1: Input logging ──
-    console.log('[TRACE] input raw:', message);
+    const input = message.trim();
+    const lower = input.toLowerCase();
     
-    // ── TRACE STEP 2: Normalized input ──
-    const input = (message ?? '').trim().toLowerCase();
-    console.log('[TRACE] input:', input);
-    
-    // ── TRACE STEP 3: Early debug exit ──
-    if (input === '/debug') {
-      console.log('[TRACE] matched /debug early-exit');
-      setChatMessages(prev => [
-        ...prev,
-        { sender: 'assistant', text: 'Model: gpt-4o-mini', timestamp: new Date().toLocaleTimeString() },
-      ]);
+    console.log('router hit', { message, quick: isQuickEntry(message) });
+
+    // Add user message to chat
+    setChatMessages(prev => [
+      ...prev,
+      { sender: 'user', text: message, timestamp: new Date().toLocaleTimeString() },
+    ]);
+    setMessages(prev => [...prev, { role: 'user', content: message }]);
+
+    // ── 1️⃣ QUICK-ENTRY SETS FIRST ──
+    if (isQuickEntry(message)) {
+      console.log('[TRACE] matched quick-entry:', message);
+      handleQuickEntrySets(message);
       return;
     }
 
-    // ── CLEAR STALE PLAN WHEN USER EXPLICITLY ASKS FOR NEW WORKOUT ──
-    if (/generate workout/i.test(input) ||
-        /(it's|its)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i.test(input) ||
-        /nike\s*\d*/i.test(input)) {
-      setPendingWorkout(null);  // clear table immediately
-    }
-
-    const lower = message.toLowerCase();
-
-    // 1. Append user message to chat history
-    setChatMessages(prev => [...prev, { sender: 'user', text: message, timestamp: new Date().toLocaleTimeString() }]);
-    
-    // ── UPDATE CHAT MEMORY ──
-    setMessages(prev => [...prev, { role: 'user', content: message }]);
-
-    // ── 3️⃣ HANDLE "I ONLY HAVE X MINUTES" LOCALLY ──
-    if (/(\d+)\s*minutes?/i.test(message) && currentPlan.length) {
-      const mins = parseInt(RegExp.$1, 10);
-      const newPlan = shortenPlan(currentPlan, mins);
-      setCurrentPlan(newPlan);
-      
-      const formattedResponse = formatPlanChat(newPlan, mins);
-      setChatMessages(prev => [
-        ...prev,
-        { sender: 'assistant', text: formattedResponse, timestamp: new Date().toLocaleTimeString() },
-      ]);
-      setMessages(prev => [...prev, { role: 'assistant', content: formattedResponse }]);
-      return; // skip OpenAI
-    }
-
-    // ── 1️⃣ DAY-OF-WEEK FIRST ──
+    // ── 2️⃣ DAY-OF-WEEK SECOND ──
     console.log('[TRACE] hit day-of-week branch');
     const dayMatch = input.match(/it'?s?\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i);
     if (dayMatch) {
@@ -579,16 +557,7 @@ function TodaysWorkoutPageContent() {
       }
     }
 
-    // ── 2️⃣ QUICK-ENTRY SETS SECOND ──
-    console.log('[TRACE] hit quick-entry branch');
-    const quickEntryMatch = input.match(/^(\d+,\d+,\d+(?:;\s*\d+,\d+,\d+)*)$/);
-    if (quickEntryMatch) {
-      console.log('[TRACE] matched quick-entry:', quickEntryMatch[1]);
-      handleQuickEntrySets(quickEntryMatch[1]);
-      return;
-    }
-
-    // ── 2️⃣ NIKE SECOND ──
+    // ── 3️⃣ NIKE THIRD ──
     console.log('[TRACE] hit Nike branch');
     if (lower.includes('nike')) {
       console.log('[TRACE] matched Nike branch');
@@ -604,7 +573,7 @@ function TodaysWorkoutPageContent() {
       return;
     }
 
-    // ── 3️⃣ INSTRUCTION LOOK-UP THIRD ──
+    // ── 4️⃣ INSTRUCTION LOOK-UP FOURTH ──
     console.log('[TRACE] hit instruction look-up branch');
     const howMatch = input.match(/how (?:do|to) (?:i|you)? ?(?:do)? ?(.+?)\?*$/i);
     if (howMatch) {
@@ -624,7 +593,7 @@ function TodaysWorkoutPageContent() {
       return;                      // stop further routing
     }
 
-    // ── 4️⃣ EXERCISE GUIDANCE FOURTH ──
+    // ── 5️⃣ EXERCISE GUIDANCE FIFTH ──
     console.log('[TRACE] hit exercise guidance branch');
     if (lower.startsWith('how should i perform') || lower.startsWith('how do i do')) {
       console.log('[TRACE] matched exercise guidance branch');
@@ -663,7 +632,7 @@ function TodaysWorkoutPageContent() {
       return;
     }
 
-    // ── 5️⃣ REGENERATE WORKOUT FIFTH ──
+    // ── 6️⃣ REGENERATE WORKOUT SIXTH ──
     if (/regenerate workout/i.test(input)) {
       console.log('[TRACE] matched regenerate workout');
       // clear current state first
@@ -679,7 +648,7 @@ function TodaysWorkoutPageContent() {
       return;
     }
 
-    // ── 6️⃣ CATCH-ALL GPT LAST ──
+    // ── 7️⃣ CATCH-ALL GPT LAST ──
     try {
       console.log('[TRACE] catch-all GPT route fires');
       const coachReply = await fetch('/api/workoutChat', {
