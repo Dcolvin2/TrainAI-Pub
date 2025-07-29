@@ -35,40 +35,48 @@ export async function buildWorkoutByDay(
     ? exercises.find(e => e.name.toLowerCase().includes(t.core!.toLowerCase())) || null
     : null;
 
-  // 3️⃣ NEW pickWarmups() – returns 3-4 warm-up moves
-  function pickWarmups(): Exercise[] {
+  // 3️⃣ Capture core lift's primary muscles for strict matching
+  const coreMuscles = coreLift
+    ? [coreLift.primary_muscle].flat()   // ensure array
+    : t.muscles;                         // cardio/HIIT days fallback
+
+  console.log("[TRACE] core muscles", coreMuscles);
+
+  // 4️⃣ Unified pickPhase helper for strict muscle matching
+  function pickPhase(phase: "warmup" | "cooldown", targetCount: number): Exercise[] {
+    // 1️⃣ strict match on coreMuscles
     let pool = exercises.filter(
-      e => e.exercise_phase === "warmup" &&
-           t.muscles.some(m => e.primary_muscle?.includes(m))
+      e => e.exercise_phase === phase &&
+           coreMuscles.some(m => e.primary_muscle?.includes(m))
     );
-    
-    if (pool.length < 3) {
-      pool = exercises.filter(e => e.exercise_phase === "warmup");
+
+    // 2️⃣ if not enough, allow any body-weight in that phase
+    if (pool.length < targetCount) {
+      pool = pool.concat(
+        exercises.filter(
+          e => e.exercise_phase === phase && (!e.equipment_required?.length)
+        )
+      );
     }
-    
-    pool = pool.sort(() => 0.5 - Math.random());
-    const target = minutes <= 30 ? 2 : minutes <= 45 ? 3 : 4;
-    return pool.slice(0, target);
+
+    // 3️⃣ if still short, allow any exercise tagged for that phase
+    if (pool.length < targetCount) {
+      pool = pool.concat(
+        exercises.filter(e => e.exercise_phase === phase)
+      );
+    }
+
+    // shuffle and slice
+    return pool
+      .sort(() => 0.5 - Math.random())
+      .slice(0, targetCount);
   }
 
-  // 4️⃣ NEW pickCooldowns() – returns 3-4 cooldown moves
-  function pickCooldowns(): Exercise[] {
-    let pool = exercises.filter(
-      e => e.exercise_phase === "cooldown" &&
-           t.muscles.some(m => e.primary_muscle?.includes(m))
-    );
-    
-    if (pool.length < 3) {
-      pool = exercises.filter(e => e.exercise_phase === "cooldown");
-    }
-    
-    pool = pool.sort(() => 0.5 - Math.random());
-    const target = minutes <= 30 ? 2 : minutes <= 45 ? 3 : 4;
-    return pool.slice(0, target);
-  }
+  const warmupArr = pickPhase("warmup", minutes <= 30 ? 2 : 3);
+  const cooldownArr = pickPhase("cooldown", minutes <= 30 ? 2 : 3);
 
-  const warmupArr = pickWarmups();
-  const cooldownArr = pickCooldowns();
+  console.log("[TRACE] warm-up picked", warmupArr.map(e => e.name));
+  console.log("[TRACE] cooldown picked", cooldownArr.map(e => e.name));
 
   // 5️⃣ accessories: main-phase, matching muscles, exclude core lift itself
   const accessoriesPool = exercises.filter(e =>
