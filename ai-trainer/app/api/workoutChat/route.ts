@@ -17,6 +17,16 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+/* helper */
+async function getInstruction(name: string) {
+  const { data } = await supabase
+    .from("exercises")
+    .select("instruction")
+    .ilike("name", `%${name}%`)
+    .maybeSingle();
+  return data?.instruction ?? null;
+}
+
 // Nike Workout Shortcut Handler
 async function handleNikeShortcut(rawInput: string, userId: string) {
   // 1️⃣ VERIFY WE'RE HITTING THE INTENDED PROJECT
@@ -112,6 +122,26 @@ export async function POST(req: NextRequest) {
       
       if (nikeResult) {
         return NextResponse.json(nikeResult);
+      }
+    }
+
+    // Check for instruction look-up in the latest message
+    if (messages[messages.length - 1] && messages[messages.length - 1].role === 'user') {
+      const userInput = messages[messages.length - 1].content;
+      const tipsMatch = userInput.match(
+        /(how (?:do|to) (?:i|you) (?:do )?|tips? (?:for )?)(.+?)\??$/i
+      );
+
+      if (tipsMatch) {
+        const exerciseName = tipsMatch[2].trim();
+        const text = await getInstruction(exerciseName);
+
+        return NextResponse.json({
+          assistantMessage: text
+            ? `**${exerciseName}**\n${text}`
+            : `I couldn't find a cue for "${exerciseName}". Check the name or add it to the DB!`,
+          plan: null
+        });
       }
     }
 
