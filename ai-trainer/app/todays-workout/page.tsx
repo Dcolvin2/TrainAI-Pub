@@ -15,8 +15,18 @@ import { quickEntryHandler } from '@/lib/quickEntryHandler';
 import { getInstructionRequest } from '@/utils/detectInstructionRequest';
 import { getExerciseInstruction } from '@/lib/getExerciseInstruction';
 
-
-
+// DEV ONLY: Smoke test helper
+if (typeof window !== 'undefined') {
+  (window as any).__showPlan = async (day = 'Monday') => {
+    const plan = await buildWorkoutByDay('test-user', day, 45);
+    console.table([
+      ['Target (min)', day, plan.estimatedMinutes?.toFixed(1) || 'N/A'],
+      ...plan.accessories.map(a => ['accessory', a.name])
+    ]);
+    return plan;
+  };
+  console.info('👋  call  __showPlan("Monday")  in DevTools');
+}
 
 
 interface WorkoutData {

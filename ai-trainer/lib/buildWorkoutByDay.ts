@@ -1,6 +1,8 @@
 import { fetchEquipmentAndExercises } from "./fetchEquipmentAndExercises";
 import { pickAccessories } from "./rotateAccessories";
 import { Exercise } from "@/types/Exercise";
+import { getExercisePool } from "@/lib/getExercisePool";
+import { calcExerciseMinutes } from "@/utils/calcExerciseMinutes";
 
 const TEMPLATE = {
   Monday:   { core: "Back Squat",   muscles: ["Quadriceps","Glutes","Hamstrings"] },
@@ -17,6 +19,7 @@ interface WorkoutByDayResult {
   coreLift: Exercise | null;
   accessories: Exercise[];
   cooldownArr: Exercise[];
+  estimatedMinutes?: number;
 }
 
 export async function buildWorkoutByDay(
@@ -84,52 +87,64 @@ export async function buildWorkoutByDay(
   console.log("[TRACE] warmup picked", warmupArr.map(e => e.name));
   console.log("[TRACE] cooldown picked", cooldownArr.map(e => e.name));
 
-  // 5️⃣ Balanced accessories with muscle group targeting
-  function pickBalancedAccessories(): Exercise[] {
-    // Determine target muscle groups based on day
-    const isLegDay = day === "Monday" || day === "Saturday"; // squat/deadlift days
-    const isUpperBodyDay = day === "Tuesday"; // bench/press days
-    
-    let targetMuscles: string[] = [];
-    if (isLegDay) {
-      targetMuscles = ["Quadriceps", "Hamstrings", "Glutes"];
-    } else if (isUpperBodyDay) {
-      targetMuscles = ["Chest", "Shoulders", "Triceps"];
-    } else {
-      targetMuscles = t.muscles; // cardio/HIIT days
-    }
+  // 5️⃣ Time-aware accessory filling
+  const warmupNames = warmupArr.map(e => e.name);
+  const cooldownNames = cooldownArr.map(e => e.name);
+  const excludeNames = [...warmupNames, ...cooldownNames, coreLift?.name].filter((name): name is string => Boolean(name));
 
-    // Filter exercises by target muscles and phase
-    let pool = exercises.filter(e =>
-      e.exercise_phase === "main" &&
-      (!coreLift || e.id !== coreLift.id) &&
-      e.primary_muscle && 
-      targetMuscles.some(m => parseMuscles(e.primary_muscle).includes(m))
+  // 1️⃣ Figure baseline minutes
+  const warmupMin = warmupNames.length * calcExerciseMinutes(30, 30, 1);
+  const coreMin = coreLift ? 5 * calcExerciseMinutes(30, 180, 1) : 0; // 5x5 for core lifts
+  const cooldownMin = cooldownNames.length * calcExerciseMinutes(30, 30, 1);
+  let runningMin = warmupMin + coreMin + cooldownMin;
+
+  // 2️⃣ Pull accessory pool (already filtered for warm-up/etc.)
+  const pool = await getExercisePool(excludeNames);
+
+  const accessories: Exercise[] = [];
+  const accessorySets = 3;                      // default per accessory
+  const overshootGrace = 3;                     // allow +3 min max
+
+  while (pool.length && runningMin < minutes) {
+    const idx = Math.floor(Math.random() * pool.length);
+    const pick = pool.splice(idx, 1)[0];
+
+    const addMin = calcExerciseMinutes(
+      pick.set_duration_seconds ?? 30,
+      pick.rest_seconds_default ?? 60,
+      accessorySets
     );
 
-    // Limit posterior-chain hinges to 2 max
-    if (isLegDay) {
-      const hinges = pool.filter(e => 
-        e.name.toLowerCase().includes('deadlift') ||
-        e.name.toLowerCase().includes('clean') ||
-        e.name.toLowerCase().includes('snatch') ||
-        e.name.toLowerCase().includes('kettlebell swing')
-      );
-      if (hinges.length > 2) {
-        const nonHinges = pool.filter(e => !hinges.includes(e));
-        pool = [...nonHinges, ...hinges.slice(0, 2)];
-      }
+    // If adding would blow past budget+grace, skip it and break
+    if (runningMin + addMin > minutes + overshootGrace) {
+      break;
     }
 
-    // Calculate target count based on minutes (≈5 min each)
-    const targetCount = Math.max(0, Math.floor((minutes - 20) / 5));
-    
-    return pool
-      .sort(() => 0.5 - Math.random())
-      .slice(0, targetCount);
+    // Convert pool item to Exercise format
+    const accessoryExercise: Exercise = {
+      id: pick.name, // Use name as ID for now
+      name: pick.name,
+      category: 'accessory',
+      primary_muscle: '', // Will be filled by the pool data
+      equipment_required: pick.required_equipment || [],
+      is_main_lift: false,
+      exercise_phase: 'main',
+      instruction: ''
+    };
+
+    accessories.push(accessoryExercise);
+    runningMin += addMin;
   }
 
-  const accessories = pickBalancedAccessories();
+  console.log('[filler] accessories:', accessories.map(a => a.name),
+              'base', warmupMin + coreMin + cooldownMin,
+              '→ total', runningMin.toFixed(1), 'min');
 
-  return { warmupArr, coreLift, accessories, cooldownArr };
+  return { 
+    warmupArr, 
+    coreLift, 
+    accessories, 
+    cooldownArr,
+    estimatedMinutes: runningMin
+  };
 } 
