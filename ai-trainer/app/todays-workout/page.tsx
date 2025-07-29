@@ -14,6 +14,7 @@ import { buildWorkoutByDay } from "@/lib/buildWorkoutByDay";
 
 
 interface WorkoutData {
+  planId: string;
   warmup: string[];
   workout: string[];
   cooldown: string[];
@@ -167,6 +168,7 @@ function TodaysWorkoutPageContent() {
           
           // Convert NikeWorkout to WorkoutData format for the store
           const workoutData: WorkoutData = {
+            planId: crypto.randomUUID(),
             warmup: warmups.map(ex => `${ex.exercise}: ${ex.sets}x${ex.reps}`),
             workout: mains.map(ex => `${ex.exercise}: ${ex.sets}x${ex.reps}`),
             cooldown: cooldowns.map(ex => `${ex.exercise}: ${ex.sets}x${ex.reps}`),
@@ -333,6 +335,7 @@ function TodaysWorkoutPageContent() {
     
     // Convert NikeWorkout to WorkoutData format for the store
     const workoutData: WorkoutData = {
+      planId: crypto.randomUUID(),
       warmup: warmups.map(ex => `${ex.exercise}: ${ex.sets}x${ex.reps}`),
       workout: mains.map(ex => `${ex.exercise}: ${ex.sets}x${ex.reps}`),
       cooldown: cooldowns.map(ex => `${ex.exercise}: ${ex.sets}x${ex.reps}`),
@@ -358,6 +361,13 @@ function TodaysWorkoutPageContent() {
         { sender: 'assistant', text: 'Model: gpt-4o-mini', timestamp: new Date().toLocaleTimeString() },
       ]);
       return;
+    }
+
+    // ── CLEAR STALE PLAN WHEN USER EXPLICITLY ASKS FOR NEW WORKOUT ──
+    if (/generate workout/i.test(input) ||
+        /(it's|its)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i.test(input) ||
+        /nike\s*\d*/i.test(input)) {
+      setPendingWorkout(null);  // clear table immediately
     }
 
     const lower = message.toLowerCase();
@@ -657,7 +667,7 @@ function TodaysWorkoutPageContent() {
         ) : (
           <>
             <WorkoutTable 
-              key={JSON.stringify(activeWorkout)}  // ← forces fresh render
+              key={(activeWorkout as any)?.planId || 'no-plan'}  // ← use planId for guaranteed refresh
               workout={activeWorkout!} 
               onFinishWorkout={() => {
                 setActiveWorkout(null);

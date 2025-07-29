@@ -1,6 +1,7 @@
 import { createContext, useContext, useReducer, ReactNode, JSX } from 'react';
 
 interface WorkoutData {
+  planId: string;
   warmup: string[];
   workout: string[];
   cooldown: string[];

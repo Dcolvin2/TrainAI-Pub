@@ -137,7 +137,7 @@ export async function POST(req: NextRequest) {
     const systemMsg = {
       role: 'system' as const,
       content: `
-You are TrainAI, an expert fitness coach.
+You must ALWAYS answer workout creation or revision requests by calling the \`updateWorkout\` function. Never output plain text for a workout plan.
 
 • Always answer as concisely as possible—one or two sentences unless more detail is explicitly requested.
 • Recognize simple day-of-week cues (e.g. "It's Tuesday") and map them to my weekly split: Monday=legs, Tuesday=chest, Wed=cardio, Thu=HIIT, Fri=cardio, Sat=back, Sun=active recovery.
@@ -197,6 +197,7 @@ When you do call the function, you must return a JSON object matching its schema
       return NextResponse.json({
         assistantMessage: "✅ Workout updated!",
         plan: {
+          planId: crypto.randomUUID(),  // ← inject new planId to trigger React refresh
           workoutType: "Custom",
           warmup: workoutData.warmup || [],
           workout: workoutData.core_lift ? [workoutData.core_lift] : [],
