@@ -115,6 +115,40 @@ function TodaysWorkoutPageContent() {
   const [inputText, setInputText] = useState('');
   const chatHistoryRef = useRef<HTMLDivElement>(null);
 
+  // ── CHAT MEMORY & PLAN STATE ──
+  const [messages, setMessages] = useState<{role:'user'|'assistant',content:string}[]>([]);
+  const [currentPlan, setCurrentPlan] = useState<any[]>([]);
+
+  // ── HELPER FUNCTIONS ──
+  function shortenPlan(plan: any[], minutes: number): any[] {
+    const coreLift = plan.find((p: any) => p.is_main_lift);
+    const warmups = plan.filter((p: any) => p.exercise_phase === 'warmup');
+    const cooldown = plan.filter((p: any) => p.exercise_phase === 'cooldown');
+    const accessories = plan.filter(
+      (p: any) => !p.is_main_lift && p.exercise_phase === 'main'
+    );
+
+    const slots = Math.max(0, Math.floor((minutes - 10) / 5));
+    return [
+      ...warmups.slice(0, 2),
+      coreLift,
+      ...accessories.slice(0, slots),
+      ...cooldown.slice(0, 1),
+    ].filter(Boolean) as any[];
+  }
+
+  function formatPlanChat(plan: any[], minutes: number): string {
+    const warmups = plan.filter((p: any) => p.exercise_phase === 'warmup');
+    const coreLift = plan.find((p: any) => p.is_main_lift);
+    const accessories = plan.filter((p: any) => !p.is_main_lift && p.exercise_phase === 'main');
+    const cooldown = plan.filter((p: any) => p.exercise_phase === 'cooldown');
+
+    return `**${minutes}-Minute Workout**\n\n` +
+           `*Warm-up*: ${warmups.map((w: any) => w.name || w.exercise).join(", ") || "—"}\n` +
+           (coreLift ? `*Core Lift*: ${coreLift.name || coreLift.exercise}\n` : "") +
+           `*Accessories*: ${accessories.map((a: any) => a.name || a.exercise).join(", ") || "—"}\n` +
+           `*Cooldown*: ${cooldown.map((c: any) => c.name || c.exercise).join(", ") || "—"}`;
+  }
 
 
   // Timer effect - counts up when running
@@ -374,6 +408,24 @@ function TodaysWorkoutPageContent() {
 
     // 1. Append user message to chat history
     setChatMessages(prev => [...prev, { sender: 'user', text: message, timestamp: new Date().toLocaleTimeString() }]);
+    
+    // ── UPDATE CHAT MEMORY ──
+    setMessages(prev => [...prev, { role: 'user', content: message }]);
+
+    // ── 3️⃣ HANDLE "I ONLY HAVE X MINUTES" LOCALLY ──
+    if (/(\d+)\s*minutes?/i.test(message) && currentPlan.length) {
+      const mins = parseInt(RegExp.$1, 10);
+      const newPlan = shortenPlan(currentPlan, mins);
+      setCurrentPlan(newPlan);
+      
+      const formattedResponse = formatPlanChat(newPlan, mins);
+      setChatMessages(prev => [
+        ...prev,
+        { sender: 'assistant', text: formattedResponse, timestamp: new Date().toLocaleTimeString() },
+      ]);
+      setMessages(prev => [...prev, { role: 'assistant', content: formattedResponse }]);
+      return; // skip OpenAI
+    }
 
     // ── 1️⃣ DAY-OF-WEEK FIRST ──
     console.log('[TRACE] hit day-of-week branch');
@@ -412,6 +464,17 @@ function TodaysWorkoutPageContent() {
           ...prev,
           { sender: 'assistant', text: workoutText, timestamp: new Date().toLocaleTimeString() },
         ]);
+        
+        // ── STORE CURRENT PLAN ──
+        const planRows = [
+          ...plan.warmupArr.map(ex => ({ ...ex, exercise_phase: 'warmup' })),
+          ...(plan.coreLift ? [{ ...plan.coreLift, exercise_phase: 'main', is_main_lift: true }] : []),
+          ...plan.accessories.map(ex => ({ ...ex, exercise_phase: 'main' })),
+          ...plan.cooldownArr.map(ex => ({ ...ex, exercise_phase: 'cooldown' }))
+        ];
+        setCurrentPlan(planRows);
+        setMessages(prev => [...prev, { role: 'assistant', content: workoutText }]);
+        
         return;
       } catch (error) {
         console.error('Day workout generation error:', error);
@@ -488,6 +551,7 @@ function TodaysWorkoutPageContent() {
           userId: user?.id || 'anonymous',
           messages: [
             { role: 'system', content: 'You are a concise fitness coach. Reply in ≤120 words.' },
+            ...messages.slice(-10),  // ── KEEP CHAT MEMORY ──
             { role: 'user', content: message }
           ]
         })
@@ -500,6 +564,9 @@ function TodaysWorkoutPageContent() {
           ...prev,
           { sender: 'assistant', text: data.assistantMessage, timestamp: new Date().toLocaleTimeString() },
         ]);
+        
+        // ── UPDATE CHAT MEMORY ──
+        setMessages(prev => [...prev, { role: 'assistant', content: data.assistantMessage }]);
         
         // Handle workout data from function calls
         if (data.plan) {
