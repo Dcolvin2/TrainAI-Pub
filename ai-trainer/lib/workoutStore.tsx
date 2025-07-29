@@ -9,24 +9,40 @@ interface WorkoutData {
   prompt?: string;
 }
 
+interface QuickEntrySet {
+  setNumber: number;
+  reps: number;
+  actualWeight: number;
+  completed: boolean;
+}
+
+interface QuickEntryData {
+  exerciseName: string;
+  entries: QuickEntrySet[];
+}
+
 interface WorkoutState {
   active: WorkoutData | null;
   pending: WorkoutData | null;
   timeAvailable: number;
   lastInit: string | null;
+  quickEntrySets: QuickEntryData[];
 }
 
 type WorkoutAction = 
   | { type: 'SET_ACTIVE'; payload: WorkoutData | null }
   | { type: 'SET_PENDING'; payload: WorkoutData | null }
   | { type: 'SET_TIME_AVAILABLE'; payload: number }
+  | { type: 'ADD_QUICK_ENTRY_SETS'; payload: QuickEntryData }
+  | { type: 'CLEAR_QUICK_ENTRY_SETS'; payload: void }
   | { type: 'RESET' };
 
 const initialState: WorkoutState = {
   active: null,
   pending: null,
   timeAvailable: 45,
-  lastInit: null
+  lastInit: null,
+  quickEntrySets: []
 };
 
 function workoutReducer(state: WorkoutState, action: WorkoutAction): WorkoutState {
@@ -37,12 +53,20 @@ function workoutReducer(state: WorkoutState, action: WorkoutAction): WorkoutStat
       return { ...state, pending: action.payload };
     case 'SET_TIME_AVAILABLE':
       return { ...state, timeAvailable: action.payload };
+    case 'ADD_QUICK_ENTRY_SETS':
+      return { 
+        ...state, 
+        quickEntrySets: [...state.quickEntrySets, action.payload]
+      };
+    case 'CLEAR_QUICK_ENTRY_SETS':
+      return { ...state, quickEntrySets: [] };
     case 'RESET':
       return {
         ...state,
         active: null,
         pending: null,
-        lastInit: new Date().toISOString().split('T')[0]
+        lastInit: new Date().toISOString().split('T')[0],
+        quickEntrySets: []
       };
     default:
       return state;
@@ -69,9 +93,12 @@ export function useWorkoutStore(): {
   pending: WorkoutData | null;
   timeAvailable: number;
   lastInit: string | null;
+  quickEntrySets: QuickEntryData[];
   setActive: (active: WorkoutData | null) => void;
   setPending: (pending: WorkoutData | null) => void;
   setTimeAvailable: (time: number) => void;
+  setQuickEntrySets: (data: QuickEntryData) => void;
+  clearQuickEntrySets: () => void;
   reset: () => void;
 } {
   const context = useContext(WorkoutContext);
@@ -86,6 +113,8 @@ export function useWorkoutStore(): {
     setActive: (active: WorkoutData | null): void => dispatch({ type: 'SET_ACTIVE', payload: active }),
     setPending: (pending: WorkoutData | null): void => dispatch({ type: 'SET_PENDING', payload: pending }),
     setTimeAvailable: (time: number): void => dispatch({ type: 'SET_TIME_AVAILABLE', payload: time }),
+    setQuickEntrySets: (data: QuickEntryData): void => dispatch({ type: 'ADD_QUICK_ENTRY_SETS', payload: data }),
+    clearQuickEntrySets: (): void => dispatch({ type: 'CLEAR_QUICK_ENTRY_SETS', payload: undefined }),
     reset: (): void => dispatch({ type: 'RESET' })
   };
 } 

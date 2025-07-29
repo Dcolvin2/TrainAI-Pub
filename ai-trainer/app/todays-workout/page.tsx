@@ -109,7 +109,10 @@ function TodaysWorkoutPageContent() {
     setActive: setActiveWorkout,
     setPending: setPendingWorkout,
     setTimeAvailable,
-    reset: resetWorkout
+    reset: resetWorkout,
+    setQuickEntrySets,
+    quickEntrySets,
+    clearQuickEntrySets
   } = useWorkoutStore();
 
   const [chatMessages, setChatMessages] = useState<Array<{sender: 'user' | 'assistant', text: string, timestamp?: string}>>([]);
@@ -120,123 +123,6 @@ function TodaysWorkoutPageContent() {
   // ── CHAT MEMORY & PLAN STATE ──
   const [messages, setMessages] = useState<{role:'user'|'assistant',content:string}[]>([]);
   const [currentPlan, setCurrentPlan] = useState<any[]>([]);
-
-  // ── QUICK-ENTRY SETS STATE ──
-  const [unsavedSets, setUnsavedSets] = useState<Array<{
-    exerciseName: string;
-    setNumber: number;
-    reps: number;
-    actualWeight: number;
-    completed: boolean;
-  }>>([]);
-
-  // ── QUICK-ENTRY PARSING ──
-  const isQuickEntry = (msg: string): boolean => {
-    // Matches:  "1,5,200"  OR  "1,5,200; 2,5,205"
-    const re = /^\s*\d+\s*,\s*\d+\s*,\s*\d+(?:\s*(?:;|\n)\s*\d+\s*,\s*\d+\s*,\s*\d+)*\s*$/;
-    return re.test(msg.trim());
-  };
-
-  // ── DAY-OF-WEEK DETECTION ──
-  type Weekday = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
-  
-  const getDayOfWeek = (txt: string): null | Weekday => {
-    const match = txt.toLowerCase().match(
-      /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i
-    );
-    return match ? (match[1] as Weekday) : null;
-  };
-
-  function parseQuickEntrySets(input: string): Array<{setNumber: number, reps: number, weight: number}> {
-    const chunks = input.split(/[;\n]/).map(chunk => chunk.trim()).filter(chunk => chunk.length > 0);
-    const parsedSets: Array<{setNumber: number, reps: number, weight: number}> = [];
-    
-    for (const chunk of chunks) {
-      const numbers = chunk.split(',').map(n => n.trim()).filter(n => n.length > 0);
-      if (numbers.length === 3) {
-        const setNumber = parseInt(numbers[0], 10);
-        const reps = parseInt(numbers[1], 10);
-        const weight = parseInt(numbers[2], 10);
-        
-        if (!isNaN(setNumber) && !isNaN(reps) && !isNaN(weight)) {
-          parsedSets.push({ setNumber, reps, weight });
-        }
-      }
-    }
-    
-    return parsedSets;
-  }
-
-  // ── QUICK-ENTRY HANDLER ──
-  function handleQuickEntrySets(input: string): void {
-    const parsedSets = parseQuickEntrySets(input);
-    if (parsedSets.length === 0) return;
-
-    // Find the first post-warm-up exercise
-    const workoutExercises = currentPlan.filter((exercise: any) => 
-      exercise.exercise_phase === 'main' && !exercise.is_main_lift
-    );
-    
-    if (workoutExercises.length === 0) {
-      // Fallback to first main exercise if no accessories
-      const mainExercises = currentPlan.filter((exercise: any) => exercise.exercise_phase === 'main');
-      if (mainExercises.length === 0) return;
-      
-      const targetExercise = mainExercises[0].name || mainExercises[0].exercise;
-      
-      // Update unsaved sets
-      const newSets = parsedSets.map(set => ({
-        exerciseName: targetExercise,
-        setNumber: set.setNumber,
-        reps: set.reps,
-        actualWeight: set.weight,
-        completed: true
-      }));
-      
-      setUnsavedSets(prev => {
-        // Remove existing sets for this exercise and add new ones
-        const filtered = prev.filter(s => s.exerciseName !== targetExercise);
-        return [...filtered, ...newSets];
-      });
-      
-      // Show toast notification
-      setChatMessages(prev => [
-        ...prev,
-        { 
-          sender: 'assistant', 
-          text: `✅ Sets added to ${targetExercise} — will save when you finish 🏁`, 
-          timestamp: new Date().toLocaleTimeString() 
-        }
-      ]);
-    } else {
-      const targetExercise = workoutExercises[0].name || workoutExercises[0].exercise;
-      
-      // Update unsaved sets
-      const newSets = parsedSets.map(set => ({
-        exerciseName: targetExercise,
-        setNumber: set.setNumber,
-        reps: set.reps,
-        actualWeight: set.weight,
-        completed: true
-      }));
-      
-      setUnsavedSets(prev => {
-        // Remove existing sets for this exercise and add new ones
-        const filtered = prev.filter(s => s.exerciseName !== targetExercise);
-        return [...filtered, ...newSets];
-      });
-      
-      // Show toast notification
-      setChatMessages(prev => [
-        ...prev,
-        { 
-          sender: 'assistant', 
-          text: `✅ Sets added to ${targetExercise} — will save when you finish 🏁`, 
-          timestamp: new Date().toLocaleTimeString() 
-        }
-      ]);
-    }
-  }
 
   // ── HELPER FUNCTIONS ──
   function shortenPlan(plan: any[], minutes: number): any[] {
@@ -499,61 +385,101 @@ function TodaysWorkoutPageContent() {
 
   // Handle chat messages
   const handleChatMessage = async (message: string) => {
-    const input = message.trim();
-    const lower = input.toLowerCase();
+    // ── TRACE STEP 1: Input logging ──
+    console.log('[TRACE] input raw:', message);
     
-    console.log('router-debug', { msg: message });
-
-    // Add user message to chat
-    setChatMessages(prev => [
-      ...prev,
-      { sender: 'user', text: message, timestamp: new Date().toLocaleTimeString() },
-    ]);
-    setMessages(prev => [...prev, { role: 'user', content: message }]);
-
-    // ── 1️⃣ QUICK-ENTRY SETS FIRST ──
-    if (isQuickEntry(message)) {
-      console.log('router-debug → quick-entry');
-      handleQuickEntrySets(message);
+    // ── TRACE STEP 2: Normalized input ──
+    const input = (message ?? '').trim().toLowerCase();
+    console.log('[TRACE] input:', input);
+    
+    // ── TRACE STEP 3: Early debug exit ──
+    if (input === '/debug') {
+      console.log('[TRACE] matched /debug early-exit');
+      setChatMessages(prev => [
+        ...prev,
+        { sender: 'assistant', text: 'Model: gpt-4o-mini', timestamp: new Date().toLocaleTimeString() },
+      ]);
       return;
     }
 
-    // ── 2️⃣ DAY-OF-WEEK SECOND ──
-    const day = getDayOfWeek(message);
-    if (day) {
-      console.log('router-debug → day-of-week', day);
+    // ── CLEAR STALE PLAN WHEN USER EXPLICITLY ASKS FOR NEW WORKOUT ──
+    if (/generate workout/i.test(input) ||
+        /(it's|its)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i.test(input) ||
+        /nike\s*\d*/i.test(input)) {
+      setPendingWorkout(null);  // clear table immediately
+    }
+
+    const lower = message.toLowerCase();
+
+    // 1. Append user message to chat history
+    setChatMessages(prev => [...prev, { sender: 'user', text: message, timestamp: new Date().toLocaleTimeString() }]);
+    
+    // ── UPDATE CHAT MEMORY ──
+    setMessages(prev => [...prev, { role: 'user', content: message }]);
+
+    // ── 3️⃣ HANDLE "I ONLY HAVE X MINUTES" LOCALLY ──
+    if (/(\d+)\s*minutes?/i.test(message) && currentPlan.length) {
+      const mins = parseInt(RegExp.$1, 10);
+      const newPlan = shortenPlan(currentPlan, mins);
+      setCurrentPlan(newPlan);
       
+      const formattedResponse = formatPlanChat(newPlan, mins);
+      setChatMessages(prev => [
+        ...prev,
+        { sender: 'assistant', text: formattedResponse, timestamp: new Date().toLocaleTimeString() },
+      ]);
+      setMessages(prev => [...prev, { role: 'assistant', content: formattedResponse }]);
+      return; // skip OpenAI
+    }
+
+    // ── 1️⃣ DAY-OF-WEEK FIRST ──
+    console.log('[TRACE] hit day-of-week branch');
+    const dayMatch = lower.match(/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i);
+    if (dayMatch && user?.id) {
+      console.log('[TRACE] matched day route:', dayMatch[1]);
+      const day = dayMatch[1][0].toUpperCase() + dayMatch[1].slice(1).toLowerCase();
+
+      // look for explicit minutes: "i have 25 minutes"
+      const minMatch = message.match(/(\d{2})\s*minutes?/i);
+      const minutes = minMatch ? parseInt(minMatch[1], 10) : timeAvailable;
+
       try {
-        const result = await buildWorkoutByDay(user?.id || 'anonymous', day, timeAvailable || 45);
+        const plan = await buildWorkoutByDay(user.id, day, minutes);
         
-        // Convert to WorkoutData format
+        // Convert to WorkoutData format for the table
         const workoutData: WorkoutData = {
           planId: crypto.randomUUID(),
-          warmup: result.warmupArr.map(e => e.name),
-          workout: result.coreLift ? [result.coreLift.name] : [],
-          cooldown: result.cooldownArr.map(e => e.name),
-          accessories: result.accessories.map(e => e.name),
-          prompt: `${day} workout`
+          warmup: plan.warmupArr.map(ex => `${ex.name}: 1x5`),
+          workout: plan.coreLift ? [`${plan.coreLift.name}: 3x8`] : [],
+          cooldown: plan.cooldownArr.map(ex => `${ex.name}: 1x5`),
+          accessories: plan.accessories.map(a => `${a.name}: 3x10`),
+          prompt: `${day} Workout (${minutes} min)`
         };
         
         setPendingWorkout(workoutData);
         
-        // Update current plan for quick-entry targeting
-        const planRows = [
-          ...result.warmupArr.map(e => ({ name: e.name, exercise_phase: 'warmup' })),
-          ...(result.coreLift ? [{ name: result.coreLift.name, exercise_phase: 'main', is_main_lift: true }] : []),
-          ...result.accessories.map(e => ({ name: e.name, exercise_phase: 'main' })),
-          ...result.cooldownArr.map(e => ({ name: e.name, exercise_phase: 'cooldown' }))
-        ];
-        setCurrentPlan(planRows);
-        
-        const response = `Generated ${day} workout with ${result.warmupArr.length} warm-up, ${result.coreLift ? 1 : 0} core lift, ${result.accessories.length} accessories, and ${result.cooldownArr.length} cool-down exercises.`;
-        
+        const workoutText = 
+          `**${day} Workout (${minutes} min)**\n\n` +
+          `*Warm-up*: ${plan.warmupArr.map(ex => ex.name).join(", ") || "—"}\n` +
+          (plan.coreLift ? `*Core Lift*: ${plan.coreLift.name}\n` : "") +
+          `*Accessories*: ${plan.accessories.map(a => a.name).join(", ") || "—"}\n` +
+          `*Cooldown*: ${plan.cooldownArr.map(ex => ex.name).join(", ") || "—"}`;
+
         setChatMessages(prev => [
           ...prev,
-          { sender: 'assistant', text: response, timestamp: new Date().toLocaleTimeString() },
+          { sender: 'assistant', text: workoutText, timestamp: new Date().toLocaleTimeString() },
         ]);
-        setMessages(prev => [...prev, { role: 'assistant', content: response }]);
+        
+        // ── STORE CURRENT PLAN ──
+        const planRows = [
+          ...plan.warmupArr.map(ex => ({ ...ex, exercise_phase: 'warmup' })),
+          ...(plan.coreLift ? [{ ...plan.coreLift, exercise_phase: 'main', is_main_lift: true }] : []),
+          ...plan.accessories.map(ex => ({ ...ex, exercise_phase: 'main' })),
+          ...plan.cooldownArr.map(ex => ({ ...ex, exercise_phase: 'cooldown' }))
+        ];
+        setCurrentPlan(planRows);
+        setMessages(prev => [...prev, { role: 'assistant', content: workoutText }]);
+        
         return;
       } catch (error) {
         console.error('Day workout generation error:', error);
@@ -565,9 +491,10 @@ function TodaysWorkoutPageContent() {
       }
     }
 
-    // ── 3️⃣ NIKE THIRD ──
+    // ── 2️⃣ NIKE SECOND ──
+    console.log('[TRACE] hit Nike branch');
     if (lower.includes('nike')) {
-      console.log('router-debug → nike');
+      console.log('[TRACE] matched Nike branch');
       if (!user?.id) {
         setChatMessages(prev => [
           ...prev,
@@ -580,10 +507,57 @@ function TodaysWorkoutPageContent() {
       return;
     }
 
+    // ── 3️⃣ QUICK-ENTRY SETS THIRD ──
+    console.log('[TRACE] hit quick-entry sets branch');
+    const quickEntryMatch = input.match(/^(\d+,\d+,\d+(?:\s*;\s*\d+,\d+,\d+)*)$/);
+    if (quickEntryMatch) {
+      console.log('[TRACE] matched quick-entry sets:', quickEntryMatch[1]);
+      
+      // Parse the input into individual set entries
+      const setEntries = quickEntryMatch[1].split(/;\s*/).map(chunk => {
+        const parts = chunk.split(',').map(Number);
+        if (parts.length === 3 && parts.every(p => !isNaN(p))) {
+          return {
+            setNumber: parts[0],
+            reps: parts[1],
+            weight: parts[2]
+          };
+        }
+        return null;
+      }).filter(Boolean);
+
+      if (setEntries.length > 0) {
+        // Find the first post-warm-up exercise
+        const firstMainExercise = currentPlan.find(ex => ex.exercise_phase === 'main');
+        
+        if (firstMainExercise) {
+          // Update the workout table with the quick-entry sets
+          setQuickEntrySets({
+            exerciseName: firstMainExercise.name,
+            entries: setEntries.map(entry => ({
+              setNumber: entry!.setNumber,
+              reps: entry!.reps,
+              actualWeight: entry!.weight,
+              completed: true
+            }))
+          });
+
+          const response = `✅ Added ${setEntries.length} sets to ${firstMainExercise.name} — will save when you finish workout 🏁`;
+          setChatMessages(prev => [
+            ...prev,
+            { sender: 'assistant', text: response, timestamp: new Date().toLocaleTimeString() },
+          ]);
+          setMessages(prev => [...prev, { role: 'assistant', content: response }]);
+          return;
+        }
+      }
+    }
+
     // ── 4️⃣ INSTRUCTION LOOK-UP FOURTH ──
+    console.log('[TRACE] hit instruction look-up branch');
     const howMatch = input.match(/how (?:do|to) (?:i|you)? ?(?:do)? ?(.+?)\?*$/i);
     if (howMatch) {
-      console.log('router-debug → instruction look-up:', howMatch[1]);
+      console.log('[TRACE] matched instruction look-up:', howMatch[1]);
       const exName = howMatch[1].trim();
       const instr = await fetchInstructions(exName);
 
@@ -600,8 +574,9 @@ function TodaysWorkoutPageContent() {
     }
 
     // ── 5️⃣ EXERCISE GUIDANCE FIFTH ──
+    console.log('[TRACE] hit exercise guidance branch');
     if (lower.startsWith('how should i perform') || lower.startsWith('how do i do')) {
-      console.log('router-debug → exercise guidance');
+      console.log('[TRACE] matched exercise guidance branch');
       const exerciseName = message.split('perform ')[1] || message.split('do ')[1];
 
       if (!exerciseName) {
@@ -639,7 +614,7 @@ function TodaysWorkoutPageContent() {
 
     // ── 6️⃣ REGENERATE WORKOUT SIXTH ──
     if (/regenerate workout/i.test(input)) {
-      console.log('router-debug → regenerate workout');
+      console.log('[TRACE] matched regenerate workout');
       // clear current state first
       setPendingWorkout(null);
       setActiveWorkout(null);
@@ -654,8 +629,8 @@ function TodaysWorkoutPageContent() {
     }
 
     // ── 7️⃣ CATCH-ALL GPT LAST ──
-    console.log('router-debug → fallback (GPT)');
     try {
+      console.log('[TRACE] catch-all GPT route fires');
       const coachReply = await fetch('/api/workoutChat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -892,14 +867,14 @@ function TodaysWorkoutPageContent() {
               onFinishWorkout={() => {
                 setActiveWorkout(null);
                 setShowPrevious(false);
-                setUnsavedSets([]); // Clear unsaved sets after finishing
+                clearQuickEntrySets(); // Clear quick entry sets after workout is finished
               }}
               onStopTimer={() => {
                 setMainTimerRunning(false);
               }}
               elapsedTime={elapsedTime}
               showPrevious={showPrevious}
-              unsavedSets={unsavedSets}
+              quickEntrySets={quickEntrySets}
             />
             <button
               onClick={resetWorkout}

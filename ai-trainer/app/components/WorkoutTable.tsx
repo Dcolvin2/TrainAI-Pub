@@ -72,13 +72,7 @@ interface WorkoutTableProps {
   onStopTimer?: () => void;
   elapsedTime?: number;
   showPrevious?: boolean;
-  unsavedSets?: Array<{
-    exerciseName: string;
-    setNumber: number;
-    reps: number;
-    actualWeight: number;
-    completed: boolean;
-  }>;
+  quickEntrySets?: any[];
 }
 
 // Format previous weight and reps for display
@@ -324,7 +318,7 @@ const convertWorkoutToSets = (workout: EnrichedGeneratedWorkout | NikeWorkout): 
   return sets;
 };
 
-export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer, elapsedTime = 0, showPrevious = false, unsavedSets = [] }: WorkoutTableProps) {
+export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer, elapsedTime = 0, showPrevious = false, quickEntrySets = [] }: WorkoutTableProps) {
   const { user } = useAuth();
   const router = useRouter();
   
@@ -333,51 +327,62 @@ export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer, el
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Initialize sets from workout data and merge with unsaved sets
+  // Initialize sets from workout data
   useEffect(() => {
     if (workout) {
       const workoutSets = convertWorkoutToSets(workout);
+      setSets(workoutSets);
+      setSessionId(`session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+    }
+  }, [workout]);
+
+  // Apply quick entry sets when they change
+  useEffect(() => {
+    quickEntrySets.forEach(quickEntry => {
+      applyQuickEntrySets(quickEntry.exerciseName, quickEntry.entries);
+    });
+  }, [quickEntrySets]);
+
+  // Apply quick entry sets to the table
+  const applyQuickEntrySets = (exerciseName: string, entries: any[]) => {
+    setSets(prev => {
+      const updated = [...prev];
       
-      // Merge unsaved sets with workout sets
-      const mergedSets = [...workoutSets];
-      
-      unsavedSets.forEach(unsavedSet => {
-        // Find existing set for this exercise and set number
-        const existingIndex = mergedSets.findIndex(s => 
-          s.exerciseName === unsavedSet.exerciseName && 
-          s.setNumber === unsavedSet.setNumber
+      entries.forEach(entry => {
+        // Find existing set or create new one
+        let setIndex = updated.findIndex(s => 
+          s.exerciseName === exerciseName && s.setNumber === entry.setNumber
         );
         
-        if (existingIndex >= 0) {
+        if (setIndex >= 0) {
           // Update existing set
-          mergedSets[existingIndex] = {
-            ...mergedSets[existingIndex],
-            actualWeight: unsavedSet.actualWeight,
-            actualReps: unsavedSet.reps,
-            completed: unsavedSet.completed
+          updated[setIndex] = {
+            ...updated[setIndex],
+            actualReps: entry.reps,
+            actualWeight: entry.actualWeight,
+            completed: entry.completed
           };
         } else {
-          // Add new set
+          // Create new set
           const newSet: WorkoutSet = {
-            id: `${unsavedSet.exerciseName}-unsaved-${Date.now()}-${Math.random()}`,
-            exerciseName: unsavedSet.exerciseName,
-            setNumber: unsavedSet.setNumber,
+            id: `${exerciseName}-workout-${Date.now()}-${Math.random()}-${entry.setNumber}`,
+            exerciseName,
+            setNumber: entry.setNumber,
             prescribedWeight: 0,
-            prescribedReps: unsavedSet.reps,
-            actualWeight: unsavedSet.actualWeight,
-            actualReps: unsavedSet.reps,
-            completed: unsavedSet.completed,
+            prescribedReps: entry.reps,
+            actualReps: entry.reps,
+            actualWeight: entry.actualWeight,
+            completed: entry.completed,
             restSeconds: 60,
-            section: 'workout' // Default to workout section for unsaved sets
+            section: 'workout'
           };
-          mergedSets.push(newSet);
+          updated.push(newSet);
         }
       });
       
-      setSets(mergedSets);
-      setSessionId(`session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
-    }
-  }, [workout, unsavedSets]);
+      return updated;
+    });
+  };
 
   // Update set completion
   const updateSet = (setId: string, updates: Partial<WorkoutSet>) => {
@@ -439,7 +444,7 @@ export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer, el
         throw new Error(`Failed to save workout session: ${errorData.details || errorData.error || 'Unknown error'}`);
       }
 
-      // Save individual sets (including unsaved sets)
+      // Save individual sets (including quick entry sets)
       const completedSets = sets.filter(s => s.completed);
       if (completedSets.length > 0) {
         const setsResponse = await fetch('/api/saveWorkoutSets', {

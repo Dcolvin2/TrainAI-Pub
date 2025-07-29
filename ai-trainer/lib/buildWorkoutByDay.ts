@@ -21,27 +21,21 @@ interface WorkoutByDayResult {
 
 export async function buildWorkoutByDay(
   userId: string,
-  rawDay: string,               // e.g. "Saturday"
+  day: string,               // e.g. "Saturday"
   minutes = 45
 ): Promise<WorkoutByDayResult> {
-  // 1️⃣ Normalise → Title-case, so "monday" / "MONDAY" / "Monday" all become "Monday"
-  const day = rawDay.trim().toLowerCase().replace(/^\w/, c => c.toUpperCase());
-
-  // 2️⃣ DEBUG — remove after confirming:
-  console.log('generateWorkoutByDay ► normalised day =', day);
-
   const { exercises } = await fetchEquipmentAndExercises(userId);
 
-  // 3️⃣ choose template
+  // 1️⃣ choose template
   const t = TEMPLATE[day as keyof typeof TEMPLATE];
   if (!t) throw new Error("Unknown day");
 
-  // 4️⃣ core lift (if any)
+  // 2️⃣ core lift (if any)
   const coreLift: Exercise | null = t.core
     ? exercises.find(e => e.name.toLowerCase().includes(t.core!.toLowerCase())) || null
     : null;
 
-  // 5️⃣ Robust coreMuscles extraction
+  // 3️⃣ Robust coreMuscles extraction
   function parseMuscles(str: string | string[] | null): string[] {
     if (!str) return [];
     if (Array.isArray(str)) return str;
@@ -54,7 +48,7 @@ export async function buildWorkoutByDay(
 
   console.log("[TRACE] core muscles", coreMuscles);
 
-  // 6️⃣ Rewrite pickPhase for strict match (+ fallback)
+  // 4️⃣ Rewrite pickPhase for strict match (+ fallback)
   function logPool(label: string, pool: any[]) {
     console.log(
       `[TRACE] ${label} (${pool.length}) →`,
@@ -90,7 +84,7 @@ export async function buildWorkoutByDay(
   console.log("[TRACE] warmup picked", warmupArr.map(e => e.name));
   console.log("[TRACE] cooldown picked", cooldownArr.map(e => e.name));
 
-  // 7️⃣ Balanced accessories with muscle group targeting
+  // 5️⃣ Balanced accessories with muscle group targeting
   function pickBalancedAccessories(): Exercise[] {
     // Determine target muscle groups based on day
     const isLegDay = day === "Monday" || day === "Saturday"; // squat/deadlift days
