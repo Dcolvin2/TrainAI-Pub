@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { useWorkoutStore, WorkoutProvider } from '@/lib/workoutStore';
 import { fetchNikeWorkout } from '@/lib/nikeWorkoutHelper';
 import { buildWorkoutByDay } from "@/lib/buildWorkoutByDay";
+import { getExerciseInstructions } from '@/lib/getExerciseInstructions';
 
 
 
@@ -502,7 +503,27 @@ function TodaysWorkoutPageContent() {
       return;
     }
 
-    // ── 3️⃣ EXERCISE GUIDANCE THIRD ──
+    // ── 3️⃣ INSTRUCTION LOOK-UP THIRD ──
+    console.log('[TRACE] hit instruction look-up branch');
+    const howMatch = input.match(/how (?:do|to) (?:i|you)? ?(?:do)? ?(.+?)\?*$/i);
+    if (howMatch) {
+      console.log('[TRACE] matched instruction look-up:', howMatch[1]);
+      const exName = howMatch[1].trim();
+      const instr = await getExerciseInstructions(exName);
+
+      const response = instr
+        ? `**${exName}**:\n${instr}`
+        : `Sorry, I couldn't find "${exName}" in the database.`;
+
+      setChatMessages(prev => [
+        ...prev,
+        { sender: 'assistant', text: response, timestamp: new Date().toLocaleTimeString() },
+      ]);
+      setMessages(prev => [...prev, { role: 'assistant', content: response }]);
+      return;                      // stop further routing
+    }
+
+    // ── 4️⃣ EXERCISE GUIDANCE FOURTH ──
     console.log('[TRACE] hit exercise guidance branch');
     if (lower.startsWith('how should i perform') || lower.startsWith('how do i do')) {
       console.log('[TRACE] matched exercise guidance branch');
@@ -541,7 +562,23 @@ function TodaysWorkoutPageContent() {
       return;
     }
 
-    // ── 4️⃣ CATCH-ALL GPT LAST ──
+    // ── 5️⃣ REGENERATE WORKOUT FIFTH ──
+    if (/regenerate workout/i.test(input)) {
+      console.log('[TRACE] matched regenerate workout');
+      // clear current state first
+      setPendingWorkout(null);
+      setActiveWorkout(null);
+      setCurrentPlan([]);
+      
+      // reuse today's weekday
+      const dayNames = ["sunday","monday","tuesday","wednesday",
+                        "thursday","friday","saturday"];
+      const today = dayNames[new Date().getDay()];
+      handleChatMessage(`it's ${today}`);       // triggers day-of-week builder
+      return;
+    }
+
+    // ── 6️⃣ CATCH-ALL GPT LAST ──
     try {
       console.log('[TRACE] catch-all GPT route fires');
       const coachReply = await fetch('/api/workoutChat', {
@@ -725,6 +762,27 @@ function TodaysWorkoutPageContent() {
         </div>
 
 
+      </section>
+
+      {/* Regenerate Workout Button */}
+      <section className="mb-4">
+        <button
+          onClick={() => {
+            // clear current state first
+            setPendingWorkout(null);
+            setActiveWorkout(null);
+            setCurrentPlan([]);
+            
+            // reuse today's weekday
+            const dayNames = ["sunday","monday","tuesday","wednesday",
+                              "thursday","friday","saturday"];
+            const today = dayNames[new Date().getDay()];
+            handleChatMessage(`it's ${today}`);       // triggers day-of-week builder
+          }}
+          className="w-full bg-[#22C55E] hover:bg-[#16a34a] text-white px-6 py-3 rounded-xl font-semibold transition-colors"
+        >
+          Regenerate Workout
+        </button>
       </section>
 
       {/* Workout Table Section */}
