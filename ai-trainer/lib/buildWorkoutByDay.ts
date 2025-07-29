@@ -1,7 +1,7 @@
 import { fetchEquipmentAndExercises } from "./fetchEquipmentAndExercises";
 import { pickAccessories } from "./rotateAccessories";
 import { Exercise } from "@/types/Exercise";
-import { getExercisePool } from "@/lib/getExercisePool";
+import { getAccessoryPool } from "@/lib/getExercisePool";
 import { calcExerciseMinutes } from "@/utils/calcExerciseMinutes";
 
 const TEMPLATE = {
@@ -99,7 +99,7 @@ export async function buildWorkoutByDay(
   let runningMin = warmupMin + coreMin + cooldownMin;
 
   // 2️⃣ Pull accessory pool (already filtered for warm-up/etc.)
-  const pool = await getExercisePool(excludeNames);
+  const pool = await getAccessoryPool(excludeNames);
 
   const accessories: Exercise[] = [];
   const accessorySets = 3;                      // default per accessory
