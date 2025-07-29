@@ -200,7 +200,7 @@ When you do call the function, you must return a JSON object matching its schema
     const userInput = messages[messages.length - 1]?.content;
     if (userInput?.trim?.().toLowerCase() === "/debug") {
       return NextResponse.json({
-        assistantMessage: "Model: gpt-4o-mini",   // <-- hard-coded model
+        assistantMessage: `Model: ${resp.modelUsed}`,   // ← dynamic model
         plan: null
       });
     }
@@ -209,8 +209,15 @@ When you do call the function, you must return a JSON object matching its schema
     // Handle function call response
     if (resp.functionCall && resp.functionCall.name === 'updateWorkout') {
       const workoutData = resp.functionCall.arguments;
+      
+      // Add model tag for GPT-4o responses
+      let assistantMessage = "✅ Workout updated!";
+      if (resp.modelUsed === "gpt-4o") {
+        assistantMessage += "\n\n*(powered by GPT-4o)*";
+      }
+      
       return NextResponse.json({
-        assistantMessage: "✅ Workout updated!",
+        assistantMessage,
         plan: {
           planId: crypto.randomUUID(),  // ← inject new planId to trigger React refresh
           workoutType: "Custom",
@@ -226,8 +233,15 @@ When you do call the function, you must return a JSON object matching its schema
     // ── ALWAYS EXPECT FUNCTION CALL ──
     // If we reach here, something went wrong with function calling
     console.error("Expected function call but got:", resp);
+    
+    // Add model tag for non-function responses
+    let assistantMessage = "I'll update your workout plan.";
+    if (resp.modelUsed === "gpt-4o") {
+      assistantMessage += "\n\n*(powered by GPT-4o)*";
+    }
+    
     return NextResponse.json({ 
-      assistantMessage: "I'll update your workout plan.", 
+      assistantMessage, 
       plan: null 
     })
   } catch (error) {
