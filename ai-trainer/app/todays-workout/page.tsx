@@ -388,22 +388,6 @@ function TodaysWorkoutPageContent() {
     setPendingWorkout(workoutData);
   };
 
-  // Quick entry handler function
-  const quickEntryHandler = (entries: any[], exerciseName: string) => {
-    entries.forEach(({ setNumber, reps, weight }) => {
-      const setId = `${exerciseName}-workout-${Date.now()}-${Math.random()}-${setNumber}`;
-      addOrUpdateSet({
-        id: setId,
-        exerciseName,
-        setNumber,
-        actualReps: reps,
-        actualWeight: weight,
-        completed: true,
-        section: 'workout'
-      });
-    });
-  };
-
   const handleChatMessage = async (message: string) => {
     // ── TRACE STEP 1: Input logging ──
     console.log('[TRACE] input raw:', message);
