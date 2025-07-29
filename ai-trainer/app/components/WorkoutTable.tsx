@@ -9,6 +9,7 @@ interface GeneratedWorkout {
   warmup: string[];
   workout: string[];
   cooldown: string[];
+  accessories?: string[];
   prompt?: string;
 }
 
@@ -60,7 +61,7 @@ interface WorkoutSet {
   actualReps?: number;
   completed: boolean;
   restSeconds: number;
-  section: 'warmup' | 'workout' | 'cooldown';
+  section: 'warmup' | 'workout' | 'cooldown' | 'accessories';
 }
 
 
@@ -78,7 +79,7 @@ const formatPrev = (w?: number | null, r?: number | null) =>
   w && r ? `${w} lb × ${r}` : '—';
 
 // Parse workout string into structured data
-const parseWorkoutString = (workoutString: string, section: 'warmup' | 'workout' | 'cooldown'): WorkoutSet => {
+const parseWorkoutString = (workoutString: string, section: 'warmup' | 'workout' | 'cooldown' | 'accessories'): WorkoutSet => {
   // Handle different formats
   const patterns = [
     // "Back Squat: 3x8 @ 100lb rest 90s"
@@ -167,10 +168,11 @@ const parseWorkoutString = (workoutString: string, section: 'warmup' | 'workout'
 };
 
 // Get default set count based on exercise type
-const getDefaultSetCount = (section: 'warmup' | 'workout' | 'cooldown', exerciseName: string): number => {
+const getDefaultSetCount = (section: 'warmup' | 'workout' | 'cooldown' | 'accessories', exerciseName: string): number => {
   // Determine exercise type based on section and exercise name
   if (section === 'warmup') return 1;
   if (section === 'cooldown') return 1;
+  if (section === 'accessories') return 3;
   
   // For main workout, determine by exercise characteristics
   const exerciseLower = exerciseName.toLowerCase();
@@ -341,7 +343,7 @@ export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer, el
   };
 
   // Add a set to an exercise
-  const addSet = (exerciseName: string, section: 'warmup' | 'workout' | 'cooldown') => {
+  const addSet = (exerciseName: string, section: 'warmup' | 'workout' | 'cooldown' | 'accessories') => {
     const existingSets = sets.filter(s => s.exerciseName === exerciseName && s.section === section);
     const lastSet = existingSets[existingSets.length - 1];
     
