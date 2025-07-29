@@ -137,6 +137,16 @@ function TodaysWorkoutPageContent() {
     return re.test(msg.trim());
   };
 
+  // ── DAY-OF-WEEK DETECTION ──
+  type Weekday = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
+  
+  const getDayOfWeek = (txt: string): null | Weekday => {
+    const match = txt.toLowerCase().match(
+      /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i
+    );
+    return match ? (match[1] as Weekday) : null;
+  };
+
   function parseQuickEntrySets(input: string): Array<{setNumber: number, reps: number, weight: number}> {
     const chunks = input.split(/[;\n]/).map(chunk => chunk.trim()).filter(chunk => chunk.length > 0);
     const parsedSets: Array<{setNumber: number, reps: number, weight: number}> = [];
@@ -492,7 +502,7 @@ function TodaysWorkoutPageContent() {
     const input = message.trim();
     const lower = input.toLowerCase();
     
-    console.log('router hit', { message, quick: isQuickEntry(message) });
+    console.log('router-debug', { msg: message });
 
     // Add user message to chat
     setChatMessages(prev => [
@@ -503,17 +513,15 @@ function TodaysWorkoutPageContent() {
 
     // ── 1️⃣ QUICK-ENTRY SETS FIRST ──
     if (isQuickEntry(message)) {
-      console.log('[TRACE] matched quick-entry:', message);
+      console.log('router-debug → quick-entry');
       handleQuickEntrySets(message);
       return;
     }
 
     // ── 2️⃣ DAY-OF-WEEK SECOND ──
-    console.log('[TRACE] hit day-of-week branch');
-    const dayMatch = input.match(/it'?s?\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i);
-    if (dayMatch) {
-      console.log('[TRACE] matched day-of-week:', dayMatch[1]);
-      const day = dayMatch[1].toLowerCase();
+    const day = getDayOfWeek(message);
+    if (day) {
+      console.log('router-debug → day-of-week', day);
       
       try {
         const result = await buildWorkoutByDay(user?.id || 'anonymous', day, timeAvailable || 45);
@@ -558,9 +566,8 @@ function TodaysWorkoutPageContent() {
     }
 
     // ── 3️⃣ NIKE THIRD ──
-    console.log('[TRACE] hit Nike branch');
     if (lower.includes('nike')) {
-      console.log('[TRACE] matched Nike branch');
+      console.log('router-debug → nike');
       if (!user?.id) {
         setChatMessages(prev => [
           ...prev,
@@ -574,10 +581,9 @@ function TodaysWorkoutPageContent() {
     }
 
     // ── 4️⃣ INSTRUCTION LOOK-UP FOURTH ──
-    console.log('[TRACE] hit instruction look-up branch');
     const howMatch = input.match(/how (?:do|to) (?:i|you)? ?(?:do)? ?(.+?)\?*$/i);
     if (howMatch) {
-      console.log('[TRACE] matched instruction look-up:', howMatch[1]);
+      console.log('router-debug → instruction look-up:', howMatch[1]);
       const exName = howMatch[1].trim();
       const instr = await fetchInstructions(exName);
 
@@ -594,9 +600,8 @@ function TodaysWorkoutPageContent() {
     }
 
     // ── 5️⃣ EXERCISE GUIDANCE FIFTH ──
-    console.log('[TRACE] hit exercise guidance branch');
     if (lower.startsWith('how should i perform') || lower.startsWith('how do i do')) {
-      console.log('[TRACE] matched exercise guidance branch');
+      console.log('router-debug → exercise guidance');
       const exerciseName = message.split('perform ')[1] || message.split('do ')[1];
 
       if (!exerciseName) {
@@ -634,7 +639,7 @@ function TodaysWorkoutPageContent() {
 
     // ── 6️⃣ REGENERATE WORKOUT SIXTH ──
     if (/regenerate workout/i.test(input)) {
-      console.log('[TRACE] matched regenerate workout');
+      console.log('router-debug → regenerate workout');
       // clear current state first
       setPendingWorkout(null);
       setActiveWorkout(null);
@@ -649,8 +654,8 @@ function TodaysWorkoutPageContent() {
     }
 
     // ── 7️⃣ CATCH-ALL GPT LAST ──
+    console.log('router-debug → fallback (GPT)');
     try {
-      console.log('[TRACE] catch-all GPT route fires');
       const coachReply = await fetch('/api/workoutChat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
