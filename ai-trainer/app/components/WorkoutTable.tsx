@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
+import { useWorkoutStore } from '@/lib/workoutStore';
 
 interface GeneratedWorkout {
   warmup: string[];
@@ -322,10 +323,23 @@ export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer, el
   const { user } = useAuth();
   const router = useRouter();
   
+  // Get local sets from store
+  const { getLocalSetsForExercise, clearLocalSets, localSets } = useWorkoutStore();
+  
   const [sets, setSets] = useState<WorkoutSet[]>([]);
   const [sessionId, setSessionId] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // TEMPORARY LOGGING
+  console.log('🔍 WORKOUT TABLE RENDER:', { 
+    workout, 
+    quickEntrySets, 
+    setsCount: sets.length,
+    sets: sets.slice(0, 3), // First 3 sets for debugging
+    // Log local sets for each exercise
+    localSets: sets.map(s => ({ exercise: s.exerciseName, localSets: getLocalSetsForExercise(s.exerciseName) }))
+  });
 
   // Initialize sets from workout data
   useEffect(() => {
@@ -335,6 +349,77 @@ export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer, el
       setSessionId(`session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
     }
   }, [workout]);
+
+  // Merge local sets with server sets
+  const mergeLocalAndServerSets = (serverSets: WorkoutSet[]): WorkoutSet[] => {
+    const merged = [...serverSets];
+    
+    // Group server sets by exercise
+    const serverSetsByExercise = new Map<string, WorkoutSet[]>();
+    serverSets.forEach(set => {
+      if (!serverSetsByExercise.has(set.exerciseName)) {
+        serverSetsByExercise.set(set.exerciseName, []);
+      }
+      serverSetsByExercise.get(set.exerciseName)!.push(set);
+    });
+    
+    // For each exercise, merge local sets
+    serverSetsByExercise.forEach((serverSetsForExercise, exerciseName) => {
+      const localSets = getLocalSetsForExercise(exerciseName);
+      
+      if (localSets.length > 0) {
+        console.log(`🔍 Merging local sets for ${exerciseName}:`, localSets);
+        
+        localSets.forEach(localSet => {
+          // Find if there's already a server set with this set number
+          const existingIndex = merged.findIndex(s => 
+            s.exerciseName === exerciseName && s.setNumber === localSet.setNumber
+          );
+          
+          if (existingIndex >= 0) {
+            // Update existing set with local data
+            merged[existingIndex] = {
+              ...merged[existingIndex],
+              actualWeight: localSet.actualWeight,
+              actualReps: localSet.reps,
+              completed: localSet.completed
+            };
+          } else {
+            // Create new set from local data
+            const newSet: WorkoutSet = {
+              id: `${exerciseName}-local-${localSet.setNumber}`,
+              exerciseName,
+              setNumber: localSet.setNumber,
+              prescribedWeight: 0,
+              prescribedReps: localSet.reps,
+              actualWeight: localSet.actualWeight,
+              actualReps: localSet.reps,
+              completed: localSet.completed,
+              restSeconds: 60,
+              section: 'workout'
+            };
+            merged.push(newSet);
+          }
+        });
+      }
+    });
+    
+    // Sort by exercise name and set number
+    return merged.sort((a, b) => {
+      if (a.exerciseName !== b.exerciseName) {
+        return a.exerciseName.localeCompare(b.exerciseName);
+      }
+      return a.setNumber - b.setNumber;
+    });
+  };
+
+  // Update sets when local sets change
+  useEffect(() => {
+    if (sets.length > 0) {
+      const mergedSets = mergeLocalAndServerSets(sets);
+      setSets(mergedSets);
+    }
+  }, [sets, getLocalSetsForExercise]);
 
   // Apply quick entry sets when they change
   useEffect(() => {
@@ -423,6 +508,10 @@ export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer, el
     setError('');
 
     try {
+      // Get all local sets from store
+      const allLocalSets = Object.values(localSets).flat();
+      console.log('🔍 Saving local sets:', allLocalSets);
+      
       // Save workout session
       const sessionResponse = await fetch('/api/saveWorkoutSession', {
         method: 'POST',
@@ -444,9 +533,20 @@ export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer, el
         throw new Error(`Failed to save workout session: ${errorData.details || errorData.error || 'Unknown error'}`);
       }
 
-      // Save individual sets (including quick entry sets)
+      // Save individual sets (including local sets from store)
       const completedSets = sets.filter(s => s.completed);
-      if (completedSets.length > 0) {
+      const localSetsToSave = allLocalSets.map((localSet: any) => ({
+        sessionId,
+        exerciseName: localSet.exerciseName,
+        setNumber: localSet.setNumber,
+        reps: localSet.reps,
+        actualWeight: localSet.actualWeight,
+        completed: localSet.completed
+      }));
+      
+      const allSetsToSave = [...completedSets, ...localSetsToSave];
+      
+      if (allSetsToSave.length > 0) {
         const setsResponse = await fetch('/api/saveWorkoutSets', {
           method: 'POST',
           headers: {
@@ -455,7 +555,7 @@ export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer, el
           body: JSON.stringify({
             userId: user.id,
             sessionId,
-            sets: completedSets
+            sets: allSetsToSave
           })
         });
 
@@ -464,6 +564,10 @@ export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer, el
           throw new Error(`Failed to save workout sets: ${errorData.details || errorData.error || 'Unknown error'}`);
         }
       }
+
+      // Clear local sets from store
+      clearLocalSets();
+      console.log('✅ Cleared local sets from store');
 
       // Handle Nike workout completion
       if ('workoutNumber' in workout) {

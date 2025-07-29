@@ -6,12 +6,15 @@ export function quickEntryHandler(
   firstPostWarmupExercise: string | null, 
   addLocalSet: (set: LocalSet) => void
 ): void {
+  console.log('🔍 QUICK ENTRY HANDLER CALLED:', { entries, firstPostWarmupExercise });
+  
   if (!firstPostWarmupExercise) {
     console.error('No exercise found after warm-up');
     return;
   }
 
   entries.forEach(({ setNumber, reps, weight }) => {
+    console.log('quick-entry saving →', { setNumber, reps, weight, exerciseName: firstPostWarmupExercise });
     addLocalSet({
       exerciseName: firstPostWarmupExercise,
       setNumber,
