@@ -1,15 +1,7 @@
 // Pull the exact row type Supabase's codegen produced for the exercises table
-// For now, we'll define it manually until we have the database types
-export interface ExerciseRow {
-  id: string;
-  name: string;
-  category: string;
-  primary_muscle: string;
-  equipment_required: string[];
-  is_main_lift: boolean;
-  exercise_phase: 'warmup' | 'cooldown' | 'main';
-  instruction?: string;
-}
+import { Database } from '@/lib/database.types';
+
+export type ExerciseRow = Database['public']['Tables']['exercises']['Row']; // plural
 
 /** Lean shape the app uses in workout builders & pickers */
 export interface Exercise {

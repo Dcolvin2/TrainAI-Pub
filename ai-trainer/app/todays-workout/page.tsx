@@ -398,7 +398,7 @@ function TodaysWorkoutPageContent() {
       }
 
       const { data } = await supabase
-        .from('exercise')
+        .from('exercises')
         .select('instruction_text')
         .ilike('name', `%${exerciseName.trim()}%`)
         .limit(1);
