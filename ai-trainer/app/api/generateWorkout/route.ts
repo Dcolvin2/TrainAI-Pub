@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 import { chatWithFunctions } from '@/lib/chatService';
 
@@ -63,7 +63,7 @@ const getUserProfile = async (userId: string) => {
 
 
 
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   try {
     const { userId, minutes, prompt } = await req.json();
 
@@ -198,7 +198,7 @@ export async function POST(req: NextRequest) {
       IMPORTANT: Use exact exercise names from the available exercises list. Do NOT add "(bodyweight)" to exercise names unless it's explicitly part of the exercise name.`;
     }
 
-    // Call Claude
+    // Call OpenAI
     const history = [
       { role: 'system' as const, content: systemPrompt },
       { role: 'user' as const, content: userPrompt }
@@ -219,9 +219,9 @@ export async function POST(req: NextRequest) {
       minutes: minutes,
       prompt: prompt,
       plan: plan,
-      used_model: 'claude-3-5-sonnet-20241022',
-      is_nike: isNike,
-      workout_type: isNike ? 'nike' : null,
+      used_model: 'gpt-3.5-turbo',
+              is_nike: isNike,
+        workout_type: isNike ? 'nike' : null,
       day_of_week: null
     });
 

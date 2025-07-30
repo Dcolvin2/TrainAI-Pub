@@ -1,7 +1,7 @@
 'use client'
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { useState, useEffect, useRef } from 'react'
-import { supabase } from '@/lib/supabaseClient'
+import { createClient } from '@supabase/supabase-js'
 import { WorkoutTimer } from './WorkoutTimer'
 import { WorkoutExerciseCard, LogSet } from './WorkoutExerciseCard'
 
@@ -78,6 +78,11 @@ interface UserContext {
   equipment: string[]
   recentWorkouts: string[]
 }
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 export default function WorkoutChatBuilder({ userId }: { userId: string }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -259,13 +264,10 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
     setIsLoading(true)
 
     try {
-      const res = await fetch('/api/claude-chat', {
+      const res = await fetch('/api/workoutChat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          message: content,
-          workoutData: editableWorkout 
-        })
+        body: JSON.stringify({ userId, messages: updated })
       })
 
       const data = await res.json()
@@ -277,8 +279,13 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
       // Add assistant message to chat
       setMessages(msgs => [...msgs, { 
         role: 'assistant', 
-        content: data.content 
+        content: data.assistantMessage 
       }])
+
+      // Set editable workout
+      if (data.plan) {
+        setEditableWorkout(data.plan.workout || [])
+      }
     } catch (error) {
       console.error('Chat error:', error)
       setMessages(msgs => [...msgs, { 

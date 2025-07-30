@@ -2,7 +2,7 @@
 require('dotenv').config({ path: '.env.local' });
 
 console.log('=== Environment Variables Check ===');
-console.log('Claude API Key:', process.env.ANTHROPIC_API_KEY ? '✅ Set' : '❌ Missing');
+console.log('OpenAI API Key:', process.env.OPENAI_API_KEY ? '✅ Set' : '❌ Missing');
 console.log('Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? '✅ Set' : '❌ Missing');
 console.log('Supabase Service Key:', process.env.SUPABASE_SERVICE_KEY ? '✅ Set' : '❌ Missing');
 

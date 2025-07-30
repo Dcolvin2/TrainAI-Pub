@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 
 // TypeScript-safe workout completion handler
@@ -14,7 +14,7 @@ interface LogSet {
   done: boolean;
 }
 
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   try {
     const { userId, logSets } = await req.json();
 

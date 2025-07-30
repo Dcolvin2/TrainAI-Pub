@@ -1,8 +1,12 @@
+import OpenAI from 'openai';
 import { workoutSchema } from './workoutSchema';
+import { chooseModel } from '@/utils/chooseModel';
+
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Global cost tracking
 declare global {
-  var cost: { claude: number } | undefined;
+  var cost: { mini: number; full: number } | undefined;
 }
 
 interface FunctionSchema {
@@ -13,8 +17,9 @@ interface FunctionSchema {
 
 interface ChatCompletionPayload {
   model: string;
-  messages: any[];
-  max_tokens?: number;
+  messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
+  functions?: FunctionSchema[];
+  function_call?: "auto" | "none" | { name: string };
   temperature?: number;
 }
 
@@ -31,86 +36,61 @@ interface ChatResponse {
 }
 
 export async function chatWithFunctions(
-  history: any[]
+  history: OpenAI.Chat.Completions.ChatCompletionMessageParam[]
 ): Promise<ChatResponse> {
-  const model = "claude-3-5-sonnet-20241022";
+  const functions: FunctionSchema[] = [workoutSchema]; // Add workout schema
   
-  // Convert to Claude format
-  const claudeMessages = history.map(msg => ({
-    role: msg.role,
-    content: msg.content
-  }));
-
-  // Add function calling instructions to the system message
-  const systemMessage = claudeMessages.find(msg => msg.role === 'system');
-  if (systemMessage) {
-    systemMessage.content += `
-
-IMPORTANT: You must ALWAYS call the updateWorkout function when generating or modifying workouts. 
-Here's the function schema:
-${JSON.stringify(workoutSchema, null, 2)}
-
-You must respond with a JSON object that matches this schema exactly.`;
-  }
-
+  // Get the last user message to choose model
+  const lastUserMessage = history.find(msg => msg.role === 'user');
+  const userInput = typeof lastUserMessage?.content === 'string' 
+    ? lastUserMessage.content 
+    : Array.isArray(lastUserMessage?.content) 
+      ? lastUserMessage.content.map((part: any) => 
+          typeof part === 'string' ? part : part.text || ''
+        ).join(' ')
+      : '';
+  const model = chooseModel(userInput);
+  
   while (true) {
-    const payload = {
+    const payload: ChatCompletionPayload = {
       model,
-      messages: claudeMessages,
-      max_tokens: 4000,
-      temperature: 0.7,
+      messages: history,
+      functions,
+      function_call: { name: "updateWorkout" },   // ← FORCE updateWorkout every time
+      temperature: model === "gpt-4o-mini" ? 0.4 : 0.7,
     };
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY || '',
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      throw new Error(`Claude API error: ${response.status} ${response.statusText}`);
-    }
-
-    const resp = await response.json();
-    const msg = resp.content[0];
+    const resp = await client.chat.completions.create(payload);
+    const msg = resp.choices[0].message!;
     
     // Monitor cost
-    globalThis.cost = globalThis.cost ?? { claude: 0 };
-    const tokensUsed = (resp.usage?.input_tokens || 0) + (resp.usage?.output_tokens || 0);
-    globalThis.cost.claude += tokensUsed;
+    globalThis.cost = globalThis.cost ?? { mini: 0, full: 0 };
+    const tokensUsed = resp.usage?.total_tokens ?? 0;
+    
+    if (model === "gpt-4o-mini") {
+      globalThis.cost.mini += tokensUsed;
+    } else {
+      globalThis.cost.full += tokensUsed;
+    }
     
     console.log(`[AI] model = ${model}, tokens = ${tokensUsed}`);
     console.log("[COST] cumulative", globalThis.cost);
     
-    // Check if response contains function call
-    const content = msg.text;
-    if (content.includes('updateWorkout') && content.includes('{')) {
-      try {
-        // Extract JSON from the response
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const functionData = JSON.parse(jsonMatch[0]);
-          return {
-            content: '',
-            functionCall: {
-              name: 'updateWorkout',
-              arguments: functionData
-            },
-            modelUsed: model,
-            tokensUsed
-          };
-        }
-      } catch (error) {
-        console.error('Failed to parse function call:', error);
-      }
+    if (msg.function_call) {
+      // Return function call data
+      return {
+        content: '',
+        functionCall: {
+          name: msg.function_call.name,
+          arguments: JSON.parse(msg.function_call.arguments)
+        },
+        modelUsed: model,
+        tokensUsed
+      };
     }
     
     return { 
-      content: content, 
+      content: msg.content || '', 
       modelUsed: model,
       tokensUsed
     };
