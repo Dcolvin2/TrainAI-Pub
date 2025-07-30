@@ -259,10 +259,13 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
     setIsLoading(true)
 
     try {
-      const res = await fetch('/api/workoutChat', {
+      const res = await fetch('/api/claude-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, messages: updated })
+        body: JSON.stringify({ 
+          message: content,
+          workoutData: editableWorkout 
+        })
       })
 
       const data = await res.json()
@@ -274,13 +277,8 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
       // Add assistant message to chat
       setMessages(msgs => [...msgs, { 
         role: 'assistant', 
-        content: data.assistantMessage 
+        content: data.content 
       }])
-
-      // Set editable workout
-      if (data.plan) {
-        setEditableWorkout(data.plan.workout || [])
-      }
     } catch (error) {
       console.error('Chat error:', error)
       setMessages(msgs => [...msgs, { 
