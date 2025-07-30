@@ -61,7 +61,7 @@ http://localhost:3000/claude-test
 
 ### Environment Variables:
 ```bash
-ANTHROPIC_API_KEY=sk-ant-api03-...  # Claude API key
+ANTHROPIC_API_KEY=sk-ant-api03-...  # Claude API key (required)
 ```
 
 ### VS Code Settings:
@@ -129,7 +129,7 @@ ANTHROPIC_API_KEY=sk-ant-api03-...  # Claude API key
 ### Debug Commands:
 ```bash
 # Check API keys
-cat .env.local | grep ANTHROPIC
+cat .env.local | grep ANTHROPIC_API_KEY
 
 # Test Claude API
 curl -X POST http://localhost:3000/api/claude-workout-chat \
