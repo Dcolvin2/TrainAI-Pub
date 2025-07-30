@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { fetchNikeWorkout } from '@/lib/nikeWorkoutHelper'
 
 interface WorkoutChatRequest {
@@ -13,7 +12,7 @@ interface WorkoutChatRequest {
 
 export async function POST(req: NextRequest) {
   try {
-    // Initialize Supabase inside the function, not at module level
+    // Initialize Supabase inside the function using dynamic import
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     
@@ -22,6 +21,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Database configuration error' }, { status: 500 });
     }
 
+    const { createClient } = await import('@supabase/supabase-js');
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Initialize Anthropic inside the function
@@ -214,6 +214,7 @@ async function getInstruction(name: string) {
     return null;
   }
 
+  const { createClient } = await import('@supabase/supabase-js');
   const supabase = createClient(supabaseUrl, supabaseKey);
   
   const { data } = await supabase
@@ -233,6 +234,7 @@ async function handleNikeShortcut(rawInput: string, userId: string) {
     return false;
   }
 
+  const { createClient } = await import('@supabase/supabase-js');
   const supabase = createClient(supabaseUrl, supabaseKey);
 
   // 1️⃣ VERIFY WE'RE HITTING THE INTENDED PROJECT

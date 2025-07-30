@@ -1,6 +1,4 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import { chatWithFunctions } from '@/lib/chatService';
 
 // Day of week workout schedule
 const workoutSchedule = {
@@ -63,7 +61,7 @@ const getUserProfile = async (supabase: any, userId: string) => {
 
 export async function POST(req: Request) {
   try {
-    // Initialize Supabase inside the function, not at module level
+    // Initialize Supabase inside the function using dynamic import
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     
@@ -72,6 +70,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Database configuration error' }, { status: 500 });
     }
 
+    const { createClient } = await import('@supabase/supabase-js');
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const { userId, minutes, prompt } = await req.json();
@@ -213,9 +212,8 @@ export async function POST(req: Request) {
       { role: 'user' as const, content: userPrompt }
     ];
     
-    await chatWithFunctions(history);
-    
-    // For now, return a simple response since we're not using function calls yet
+    // The chatWithFunctions import was removed, so this line is commented out or removed if not needed.
+    // For now, we'll just return a placeholder plan.
     const plan = {
       warmup: ['Dynamic stretching', 'Light cardio'],
       workout: ['Main exercise: 3x8', 'Accessory: 3x12'],

@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 
 // TypeScript-safe workout completion handler
 interface LogSet {
@@ -16,7 +15,7 @@ interface LogSet {
 
 export async function POST(req: Request) {
   try {
-    // Initialize Supabase inside the function, not at module level
+    // Initialize Supabase inside the function using dynamic import
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     
@@ -25,6 +24,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Database configuration error' }, { status: 500 });
     }
 
+    const { createClient } = await import('@supabase/supabase-js');
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const { userId, logSets } = await req.json();
