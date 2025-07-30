@@ -401,250 +401,43 @@ function TodaysWorkoutPageContent() {
   };
 
   const handleChatMessage = async (message: string) => {
-    // ── TRACE STEP 1: Input logging ──
-    console.log('[WORKOUT-PAGE] input raw:', message);
+    console.log('[FRONTEND] Sending to Claude API');
     
-    // ── TRACE STEP 2: Normalized input ──
-    const input = (message ?? '').trim().toLowerCase();
-    console.log('[WORKOUT-PAGE] input:', input);
-    
-    // ── TRACE STEP 3: Early debug exit ──
-    if (input === '/debug') {
-      console.log('[WORKOUT-PAGE] matched /debug early-exit');
-      setChatMessages(prev => [
-        ...prev,
-        { sender: 'assistant', text: 'Model: claude-3-5-sonnet-20241022', timestamp: new Date().toLocaleTimeString() },
-      ]);
-      return;
-    }
-
-    // ── INSTRUCTION LOOKUP (EARLY RETURN) ──
-    const maybe = await getExerciseInstruction(message);
-    if (maybe) {
-      console.log('[WORKOUT-PAGE] instruction found, early return');
-      const response = `**Exercise Instructions**\n\n${maybe}`;
-      setChatMessages(prev => [
-        ...prev,
-        { sender: 'assistant', text: response, timestamp: new Date().toLocaleTimeString() },
-      ]);
-      setMessages(prev => [...prev, { role: 'assistant', content: response }]);
-      return;                      // early return stops other branches
-    }
-
-    // ── CLEAR STALE PLAN WHEN USER EXPLICITLY ASKS FOR NEW WORKOUT ──
-    if (/generate workout/i.test(input) ||
-        /(it's|its)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i.test(input) ||
-        /nike\s*\d*/i.test(input)) {
-      setPendingWorkout(null);  // clear table immediately
-    }
-
-    const lower = message.toLowerCase();
-
-    // 1. Append user message to chat history
+    // Add user message to chat
     setChatMessages(prev => [...prev, { sender: 'user', text: message, timestamp: new Date().toLocaleTimeString() }]);
     
-    // ── UPDATE CHAT MEMORY ──
-    setMessages(prev => [...prev, { role: 'user', content: message }]);
-
-    // ── 3️⃣ HANDLE "I ONLY HAVE X MINUTES" LOCALLY ──
-    if (/(\d+)\s*minutes?/i.test(message) && currentPlan.length) {
-      const mins = parseInt(RegExp.$1, 10);
-      const newPlan = shortenPlan(currentPlan, mins);
-      setCurrentPlan(newPlan);
-      
-      const formattedResponse = formatPlanChat(newPlan, mins);
-      setChatMessages(prev => [
-        ...prev,
-        { sender: 'assistant', text: formattedResponse, timestamp: new Date().toLocaleTimeString() },
-      ]);
-      setMessages(prev => [...prev, { role: 'assistant', content: formattedResponse }]);
-      return; // skip Claude
-    }
-
-    // ── 1️⃣ DAY-OF-WEEK FIRST ──
-    console.log('[WORKOUT-PAGE] hit day-of-week branch');
-    const dayMatch = lower.match(/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i);
-    if (dayMatch && user?.id) {
-      console.log('[WORKOUT-PAGE] matched day route:', dayMatch[1]);
-      const day = dayMatch[1][0].toUpperCase() + dayMatch[1].slice(1).toLowerCase();
-
-      // look for explicit minutes: "i have 25 minutes"
-      const minMatch = message.match(/(\d{2})\s*minutes?/i);
-      const minutes = minMatch ? parseInt(minMatch[1], 10) : timeAvailable;
-
-      try {
-        const plan = await buildWorkoutByDay(user.id, day, minutes);
-        
-        // Convert to WorkoutData format for the table
-        const workoutData: WorkoutData = {
-          planId: crypto.randomUUID(),
-          warmup: plan.warmupArr.map(ex => `${ex.name}: 1x5`),
-          workout: plan.coreLift ? [`${plan.coreLift.name}: 3x8`] : [],
-          cooldown: plan.cooldownArr.map(ex => `${ex.name}: 1x5`),
-          accessories: plan.accessories.map(a => `${a.name}: 3x10`),
-          prompt: `${day} Workout (${minutes} min)`
-        };
-        
-        setPendingWorkout(workoutData);
-        
-        const workoutText = 
-          `**${day} Workout (${minutes} min)**\n\n` +
-          `*Warm-up*: ${plan.warmupArr.map(ex => ex.name).join(", ") || "—"}\n` +
-          (plan.coreLift ? `*Core Lift*: ${plan.coreLift.name}\n` : "") +
-          `*Accessories*: ${plan.accessories.map(a => a.name).join(", ") || "—"}\n` +
-          `*Cooldown*: ${plan.cooldownArr.map(ex => ex.name).join(", ") || "—"}`;
-
-        setChatMessages(prev => [
-          ...prev,
-          { sender: 'assistant', text: workoutText, timestamp: new Date().toLocaleTimeString() },
-        ]);
-        
-        // ── STORE CURRENT PLAN ──
-        const planRows = [
-          ...plan.warmupArr.map(ex => ({ ...ex, exercise_phase: 'warmup' })),
-          ...(plan.coreLift ? [{ ...plan.coreLift, exercise_phase: 'core_lift' }] : []),
-          ...plan.accessories.map(ex => ({ ...ex, exercise_phase: 'accessory' })),
-          ...plan.cooldownArr.map(ex => ({ ...ex, exercise_phase: 'cooldown' }))
-        ];
-        setCurrentPlan(planRows);
-        setMessages(prev => [...prev, { role: 'assistant', content: workoutText }]);
-        
-        return;
-      } catch (error) {
-        console.error('Day workout generation error:', error);
-        setChatMessages(prev => [
-          ...prev,
-          { sender: 'assistant', text: `Sorry, I couldn't generate a ${day} workout. Please try again.`, timestamp: new Date().toLocaleTimeString() },
-        ]);
-        return;
-      }
-    }
-
-    // ── 2️⃣ NIKE SECOND ──
-    console.log('[WORKOUT-PAGE] hit Nike branch');
-    if (lower.includes('nike')) {
-      console.log('[WORKOUT-PAGE] matched Nike branch');
-      if (!user?.id) {
-        setChatMessages(prev => [
-          ...prev,
-          { sender: 'assistant', text: "Please log in to access your Nike workout.", timestamp: new Date().toLocaleTimeString() },
-        ]);
-        return;
-      }
-
-      await handleNike(message, user.id);
-      return;
-    }
-
-    // ── 3️⃣ QUICK-ENTRY SETS THIRD ──
-    console.log('[WORKOUT-PAGE] hit quick-entry sets branch');
-    if (isQuickEntry(input)) {
-      console.log('[WORKOUT-PAGE] matched quick-entry sets:', input);
-      
-      const setEntries = parseQuickEntry(input);
-
-      if (setEntries.length > 0) {
-        // Find the first post-warm-up exercise
-        const firstMainExercise = currentPlan.find(ex => ex.exercise_phase === 'main');
-        
-        if (firstMainExercise) {
-          // Set the first post-warmup exercise for future quick entries
-          setFirstPostWarmupExercise(firstMainExercise.name);
-          
-          // Create helper function to add chat messages
-          const addChatMessage = (message: { id: string; role: 'assistant'; content: string; createdAt: string }) => {
-            setChatMessages(prev => [
-              ...prev,
-              { sender: 'assistant', text: message.content, timestamp: new Date().toLocaleTimeString() },
-            ]);
-            setMessages(prev => [...prev, { role: 'assistant', content: message.content }]);
-          };
-          
-          // Use the new quick entry handler with chat confirmation
-          quickEntryHandler(setEntries, firstMainExercise.name, addLocalSet, addChatMessage);
-          
-          return;
-        }
-      }
-    }
-
-    // ── 6️⃣ REGENERATE WORKOUT SIXTH ──
-    if (/regenerate workout/i.test(input)) {
-      console.log('[WORKOUT-PAGE] matched regenerate workout');
-      // clear current state first
-      setPendingWorkout(null);
-      setActiveWorkout(null);
-      setCurrentPlan([]);
-      
-      // reuse today's weekday
-      const dayNames = ["sunday","monday","tuesday","wednesday",
-                        "thursday","friday","saturday"];
-      const today = dayNames[new Date().getDay()];
-      handleChatMessage(`it's ${today}`);       // triggers day-of-week builder
-      return;
-    }
-
-    // ── 7️⃣ CATCH-ALL CLAUDE LAST ──
-    console.log('[FOUND-IT] catch-all Claude route fires');
     try {
-      const coachReply = await fetch('/api/workoutChat', {
+      const response = await fetch('/api/claude-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user?.id || 'anonymous',
-          messages: [
-            { role: 'system', content: 'You are a concise fitness coach. Reply in ≤120 words.' },
-            ...messages.slice(-10),  // ── KEEP CHAT MEMORY ──
-            { role: 'user', content: message }
-          ]
+        body: JSON.stringify({ 
+          message, 
+          workoutData: pendingWorkout 
         })
       });
 
-      if (coachReply.ok) {
-        const data = await coachReply.json();
-        console.log('[WORKOUT-PAGE] coach reply OK');
-        setChatMessages(prev => [
-          ...prev,
-          { sender: 'assistant', text: data.assistantMessage, timestamp: new Date().toLocaleTimeString() },
-        ]);
-        
-        // ── UPDATE CHAT MEMORY ──
-        setMessages(prev => [...prev, { role: 'assistant', content: data.assistantMessage }]);
-        
-        // ── ALWAYS EXPECT FUNCTION CALL (forced updateWorkout) ──
-        if (data.plan) {
-          console.log('[WORKOUT-PAGE] workout data received:', data.plan);
-          const updatedWorkout: WorkoutData = {
-            planId: crypto.randomUUID(),  // ← fresh planId forces re-render
-            warmup: data.plan.warmup || [],
-            workout: data.plan.workout || [],
-            cooldown: data.plan.cooldown || [],
-            accessories: (data.plan as any).accessories || [],
-            prompt: data.plan.prompt || 'Updated workout'
-          };
-          setPendingWorkout(updatedWorkout);
-          
-          // ── UPDATE CURRENT PLAN STATE ──
-          const planRows = [
-            ...(data.plan.warmup || []).map((ex: string) => ({ name: ex, exercise_phase: 'warmup' })),
-            ...(data.plan.workout || []).map((ex: string) => ({ name: ex, exercise_phase: 'core_lift' })),
-            ...(data.plan.accessories || []).map((ex: string) => ({ name: ex, exercise_phase: 'accessory' })),
-            ...(data.plan.cooldown || []).map((ex: string) => ({ name: ex, exercise_phase: 'cooldown' }))
-          ];
-          setCurrentPlan(planRows);
-        }
-        
-        return;                                  // stop; no fallback
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
       }
-    } catch (err) {
-      console.error('[WORKOUT-PAGE] Claude error ↓↓↓', err); // log full error
-      setChatMessages(prev => [
-        ...prev,
-        { sender: 'assistant', text: '⚠️ Claude error — see console for details', timestamp: new Date().toLocaleTimeString() },
-      ]);
-      return;                                  // still stop fallback
+
+      const data = await response.json();
+      
+      setChatMessages(prev => [...prev, {
+        sender: 'assistant',
+        text: data.content,
+        timestamp: new Date().toLocaleTimeString()
+      }]);
+
+      console.log('[FRONTEND] ✅ Claude response displayed');
+      
+    } catch (error) {
+      console.error('[FRONTEND] Claude error:', error);
+      setChatMessages(prev => [...prev, {
+        sender: 'assistant', 
+        text: '⚠️ Claude temporarily unavailable',
+        timestamp: new Date().toLocaleTimeString()
+      }]);
     }
-    // ─────────────────────────────────────────────────────────────
   };
 
 

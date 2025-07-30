@@ -236,10 +236,7 @@ When you do call the function, you must return a JSON object matching its schema
       const workoutData = resp.functionCall.arguments;
       
       // Add model tag for Claude responses
-      let assistantMessage = "✅ Workout updated!";
-      if (resp.modelUsed === "claude-3-5-sonnet-20241022") {
-        assistantMessage += "\n\n*(powered by Claude 3.5 Sonnet)*";
-      }
+      let assistantMessage = "✅ Workout updated! (powered by Claude)";
       
       return NextResponse.json({
         assistantMessage,
@@ -260,7 +257,7 @@ When you do call the function, you must return a JSON object matching its schema
     console.error("Expected function call but got:", resp);
     
     // Add model tag for non-function responses
-    let assistantMessage = "I'll update your workout plan.";
+    let assistantMessage = "I'll update your workout plan. (powered by Claude)";
     if (resp.modelUsed === "claude-3-5-sonnet-20241022") {
       assistantMessage += "\n\n*(powered by Claude 3.5 Sonnet)*";
     }
