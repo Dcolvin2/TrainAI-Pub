@@ -585,7 +585,7 @@ function TodaysWorkoutPageContent() {
     }
 
     // ── 7️⃣ CATCH-ALL CLAUDE LAST ──
-    console.log('[WORKOUT-PAGE] catch-all Claude route fires');
+    console.log('[FOUND-IT] catch-all Claude route fires');
     try {
       const coachReply = await fetch('/api/workoutChat', {
         method: 'POST',
