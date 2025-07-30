@@ -41,10 +41,10 @@ export default function EquipmentPage() {
 
       // Insert missing rows so every stock item is pre-checked first time
       if (eqList && uRows) {
-        const existing = uRows.map((r) => r.equipment_id).filter(Boolean);
-        const missing = eqList.filter((e) => !existing.includes(e.id)).map((e) => e.id);
+        const existing = uRows.map((r: { equipment_id: string | null }) => r.equipment_id).filter(Boolean);
+        const missing = eqList.filter((e: { id: string }) => !existing.includes(e.id)).map((e: { id: string }) => e.id);
         if (missing.length) {
-          const toInsert = missing.map((id) => ({ user_id: user.id, equipment_id: id, custom_name: '' }));
+          const toInsert = missing.map((id: string) => ({ user_id: user.id, equipment_id: id, custom_name: '' }));
           const { data: inserted } = await supabase
             .from('user_equipment')
             .insert(toInsert)
