@@ -54,7 +54,7 @@ export async function POST(req: Request) {
       throw new Error('Failed to calculate volume');
     }
 
-    const totalVolume = volumeAgg?.reduce((sum, set) => sum + ((set.actual_weight || 0) * (set.reps || 0)), 0) || 0;
+    const totalVolume = volumeAgg?.reduce((sum: number, set: { actual_weight: number | null; reps: number | null }) => sum + ((set.actual_weight || 0) * (set.reps || 0)), 0) || 0;
 
     await supabase
       .from('workout_sessions')
