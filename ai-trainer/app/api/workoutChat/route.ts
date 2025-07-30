@@ -235,10 +235,10 @@ When you do call the function, you must return a JSON object matching its schema
     if (resp.functionCall && resp.functionCall.name === 'updateWorkout') {
       const workoutData = resp.functionCall.arguments;
       
-      // Add model tag for GPT-4o responses
+      // Add model tag for Claude responses
       let assistantMessage = "✅ Workout updated!";
-      if (resp.modelUsed === "gpt-4o") {
-        assistantMessage += "\n\n*(powered by GPT-4o)*";
+      if (resp.modelUsed === "claude-3-5-sonnet-20241022") {
+        assistantMessage += "\n\n*(powered by Claude 3.5 Sonnet)*";
       }
       
       return NextResponse.json({
@@ -261,8 +261,8 @@ When you do call the function, you must return a JSON object matching its schema
     
     // Add model tag for non-function responses
     let assistantMessage = "I'll update your workout plan.";
-    if (resp.modelUsed === "gpt-4o") {
-      assistantMessage += "\n\n*(powered by GPT-4o)*";
+    if (resp.modelUsed === "claude-3-5-sonnet-20241022") {
+      assistantMessage += "\n\n*(powered by Claude 3.5 Sonnet)*";
     }
     
     return NextResponse.json({ 
