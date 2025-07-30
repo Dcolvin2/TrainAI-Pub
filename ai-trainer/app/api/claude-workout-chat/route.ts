@@ -10,107 +10,25 @@ interface WorkoutChatRequest {
   }>;
 }
 
-// Copy the EXACT pattern from working routes:
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
-/* helper */
-async function getInstruction(name: string) {
-  const { data } = await supabase
-    .from("exercises_final")
-    .select("instruction")
-    .ilike("name", `%${name}%`)
-    .maybeSingle();
-  return data?.instruction ?? null;
-}
-
-// Claude API integration
-async function chatWithClaude(messages: any[], userId: string) {
-  const claudeApiKey = process.env.ANTHROPIC_API_KEY;
-  
-  if (!claudeApiKey) {
-    throw new Error('Claude API key not configured');
-  }
-
-  // Fetch user context from Supabase using the same pattern as working routes
-  const { data: userProfile } = await supabase
-    .from('profiles')
-    .select('name, goals, current_weight, equipment')
-    .eq('user_id', userId)
-    .single();
-
-  const { data: recentWorkouts } = await supabase
-    .from('workout_sessions')
-    .select('created_at, workout_type')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(5);
-
-  // Build context for Claude
-  const userContext = {
-    name: userProfile?.name || 'User',
-    goals: userProfile?.goals || [],
-    currentWeight: userProfile?.current_weight || 'Unknown',
-    equipment: userProfile?.equipment || [],
-    recentWorkouts: recentWorkouts?.map(w => w.workout_type) || []
-  };
-
-  // System prompt for Claude
-  const systemPrompt = `You are TrainAI, an expert fitness trainer and workout coach. You help users create personalized workout plans and provide fitness guidance.
-
-User Context:
-- Name: ${userContext.name}
-- Goals: ${userContext.goals.join(', ')}
-- Current Weight: ${userContext.currentWeight}
-- Available Equipment: ${userContext.equipment.join(', ')}
-- Recent Workouts: ${userContext.recentWorkouts.join(', ')}
-
-Guidelines:
-1. Create personalized workout plans based on user goals and equipment
-2. Provide clear, actionable fitness advice
-3. Be encouraging and motivational
-4. Ask clarifying questions when needed
-5. Suggest progressive overload strategies
-6. Consider user's fitness level and experience
-
-Respond in a helpful, encouraging tone.`;
-
-  try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': claudeApiKey,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-3-5-sonnet-20241022',
-        max_tokens: 1000,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          ...messages
-        ]
-      })
-    });
-
-    if (!response.ok) {
-      const errorData = await response.text();
-      console.error('Claude API error:', response.status, errorData);
-      throw new Error(`Claude API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data.content[0].text;
-  } catch (error) {
-    console.error('Claude chat error:', error);
-    throw error;
-  }
-}
-
 export async function POST(req: NextRequest) {
   try {
+    // Initialize Supabase inside the function, not at module level
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseKey) {
+      console.error('Missing Supabase environment variables');
+      return NextResponse.json({ error: 'Database configuration error' }, { status: 500 });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Same for Anthropic
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthropicKey) {
+      return NextResponse.json({ error: 'AI service not configured' }, { status: 500 });
+    }
+
     const { userId, messages }: WorkoutChatRequest = await req.json();
 
     if (!userId || !messages || messages.length === 0) {
@@ -122,6 +40,16 @@ export async function POST(req: NextRequest) {
 
     const lastMessage = messages[messages.length - 1];
     const userInput = lastMessage.content.toLowerCase().trim();
+
+    // Helper function for instruction lookup
+    async function getInstruction(name: string) {
+      const { data } = await supabase
+        .from("exercises_final")
+        .select("instruction")
+        .ilike("name", `%${name}%`)
+        .maybeSingle();
+      return data?.instruction ?? null;
+    }
 
     // Check for instruction requests first
     if (userInput.includes('how') || userInput.includes('instruction') || userInput.includes('do')) {
@@ -143,6 +71,83 @@ export async function POST(req: NextRequest) {
         assistantMessage: `I'll create a ${day} workout plan for you! Let me generate that now...`,
         plan: null
       });
+    }
+
+    // Claude API integration
+    async function chatWithClaude(messages: any[], userId: string) {
+      // Fetch user context from Supabase using the same pattern as working routes
+      const { data: userProfile } = await supabase
+        .from('profiles')
+        .select('name, goals, current_weight, equipment')
+        .eq('user_id', userId)
+        .single();
+
+      const { data: recentWorkouts } = await supabase
+        .from('workout_sessions')
+        .select('created_at, workout_type')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      // Build context for Claude
+      const userContext = {
+        name: userProfile?.name || 'User',
+        goals: userProfile?.goals || [],
+        currentWeight: userProfile?.current_weight || 'Unknown',
+        equipment: userProfile?.equipment || [],
+        recentWorkouts: recentWorkouts?.map(w => w.workout_type) || []
+      };
+
+      // System prompt for Claude
+      const systemPrompt = `You are TrainAI, an expert fitness trainer and workout coach. You help users create personalized workout plans and provide fitness guidance.
+
+User Context:
+- Name: ${userContext.name}
+- Goals: ${userContext.goals.join(', ')}
+- Current Weight: ${userContext.currentWeight}
+- Available Equipment: ${userContext.equipment.join(', ')}
+- Recent Workouts: ${userContext.recentWorkouts.join(', ')}
+
+Guidelines:
+1. Create personalized workout plans based on user goals and equipment
+2. Provide clear, actionable fitness advice
+3. Be encouraging and motivational
+4. Ask clarifying questions when needed
+5. Suggest progressive overload strategies
+6. Consider user's fitness level and experience
+
+Respond in a helpful, encouraging tone.`;
+
+      try {
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': anthropicKey!,
+            'anthropic-version': '2023-06-01'
+          },
+          body: JSON.stringify({
+            model: 'claude-3-5-sonnet-20241022',
+            max_tokens: 1000,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              ...messages
+            ]
+          })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.text();
+          console.error('Claude API error:', response.status, errorData);
+          throw new Error(`Claude API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data.content[0].text;
+      } catch (error) {
+        console.error('Claude chat error:', error);
+        throw error;
+      }
     }
 
     // Use Claude for all other chat interactions
