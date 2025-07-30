@@ -4,10 +4,10 @@
 
 To use the "Generate Today's Workout" feature, you need to set up the following API keys:
 
-### 1. OpenAI API Key
-- Go to https://platform.openai.com/account/api-keys
+### 1. Claude API Key
+- Go to https://console.anthropic.com/
 - Create a new API key
-- Copy the key (starts with `sk-`)
+- Copy the key (starts with `sk-ant-`)
 
 ### 2. Supabase Service Role Key
 - Go to your Supabase project dashboard
@@ -19,8 +19,8 @@ To use the "Generate Today's Workout" feature, you need to set up the following 
 Create a `.env.local` file in the root directory with:
 
 ```bash
-# OpenAI API Key
-OPENAI_API_KEY=your-openai-api-key-here
+# Claude API Key
+ANTHROPIC_API_KEY=your-claude-api-key-here
 
 # Supabase Configuration (you should already have these)
 NEXT_PUBLIC_SUPABASE_URL=your-supabase-project-url
@@ -56,7 +56,7 @@ CREATE TABLE user_goals (
 
 1. **Install dependencies:**
    ```bash
-   npm install openai
+   npm install
    ```
 
 2. **Set up environment variables** (see above)
@@ -88,6 +88,6 @@ CREATE TABLE user_goals (
 
 ## Troubleshooting
 
-- **"Failed to generate workout"**: Check your OpenAI API key and credits
+- **"Failed to generate workout"**: Check your Claude API key and credits
 - **"User ID is required"**: Ensure user is properly authenticated
 - **Empty workouts**: Check that equipment and goals tables have data 

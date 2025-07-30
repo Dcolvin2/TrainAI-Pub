@@ -5,8 +5,8 @@
 Create a file named `.env.local` in the project root (same level as `package.json`) with the following content:
 
 ```bash
-# OpenAI API Key
-OPENAI_API_KEY=your-openai-api-key-here
+# Claude API Key
+ANTHROPIC_API_KEY=your-claude-api-key-here
 
 # Supabase Configuration
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
@@ -26,7 +26,7 @@ SUPABASE_SERVICE_KEY=your-supabase-service-role-key-here
 ## Step 3: Install Dependencies
 
 ```bash
-npm install openai
+npm install
 ```
 
 ## Step 4: Create Database Tables
@@ -63,7 +63,7 @@ npm run dev
 
 1. The API route will log environment variable status to the console
 2. Check your terminal/console for these messages:
-   - "OpenAI API Key loaded: Yes"
+   - "Claude API Key loaded: Yes"
    - "Supabase URL loaded: Yes"
    - "Supabase Service Key loaded: Yes"
 
@@ -80,7 +80,6 @@ After confirming everything works, remove the console.log statements from `pages
 
 ## Troubleshooting
 
-- **"Cannot find module 'openai'"**: Run `npm install openai`
 - **"User ID is required"**: Ensure user is authenticated
-- **"Failed to generate workout"**: Check OpenAI API key and credits
+- **"Failed to generate workout"**: Check Claude API key and credits
 - **Empty workouts**: Add equipment and goals to the database tables
