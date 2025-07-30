@@ -458,7 +458,7 @@ function TodaysWorkoutPageContent() {
         { sender: 'assistant', text: formattedResponse, timestamp: new Date().toLocaleTimeString() },
       ]);
       setMessages(prev => [...prev, { role: 'assistant', content: formattedResponse }]);
-      return; // skip OpenAI
+      return; // skip Claude
     }
 
     // ── 1️⃣ DAY-OF-WEEK FIRST ──
