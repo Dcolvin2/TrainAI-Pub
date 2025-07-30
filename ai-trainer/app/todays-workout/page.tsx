@@ -402,15 +402,15 @@ function TodaysWorkoutPageContent() {
 
   const handleChatMessage = async (message: string) => {
     // ── TRACE STEP 1: Input logging ──
-    console.log('[TRACE] input raw:', message);
+    console.log('[WORKOUT-PAGE] input raw:', message);
     
     // ── TRACE STEP 2: Normalized input ──
     const input = (message ?? '').trim().toLowerCase();
-    console.log('[TRACE] input:', input);
+    console.log('[WORKOUT-PAGE] input:', input);
     
     // ── TRACE STEP 3: Early debug exit ──
     if (input === '/debug') {
-      console.log('[TRACE] matched /debug early-exit');
+      console.log('[WORKOUT-PAGE] matched /debug early-exit');
       setChatMessages(prev => [
         ...prev,
         { sender: 'assistant', text: 'Model: claude-3-5-sonnet-20241022', timestamp: new Date().toLocaleTimeString() },
@@ -421,7 +421,7 @@ function TodaysWorkoutPageContent() {
     // ── INSTRUCTION LOOKUP (EARLY RETURN) ──
     const maybe = await getExerciseInstruction(message);
     if (maybe) {
-      console.log('[TRACE] instruction found, early return');
+      console.log('[WORKOUT-PAGE] instruction found, early return');
       const response = `**Exercise Instructions**\n\n${maybe}`;
       setChatMessages(prev => [
         ...prev,
@@ -462,10 +462,10 @@ function TodaysWorkoutPageContent() {
     }
 
     // ── 1️⃣ DAY-OF-WEEK FIRST ──
-    console.log('[TRACE] hit day-of-week branch');
+    console.log('[WORKOUT-PAGE] hit day-of-week branch');
     const dayMatch = lower.match(/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i);
     if (dayMatch && user?.id) {
-      console.log('[TRACE] matched day route:', dayMatch[1]);
+      console.log('[WORKOUT-PAGE] matched day route:', dayMatch[1]);
       const day = dayMatch[1][0].toUpperCase() + dayMatch[1].slice(1).toLowerCase();
 
       // look for explicit minutes: "i have 25 minutes"
@@ -521,9 +521,9 @@ function TodaysWorkoutPageContent() {
     }
 
     // ── 2️⃣ NIKE SECOND ──
-    console.log('[TRACE] hit Nike branch');
+    console.log('[WORKOUT-PAGE] hit Nike branch');
     if (lower.includes('nike')) {
-      console.log('[TRACE] matched Nike branch');
+      console.log('[WORKOUT-PAGE] matched Nike branch');
       if (!user?.id) {
         setChatMessages(prev => [
           ...prev,
@@ -537,9 +537,9 @@ function TodaysWorkoutPageContent() {
     }
 
     // ── 3️⃣ QUICK-ENTRY SETS THIRD ──
-    console.log('[TRACE] hit quick-entry sets branch');
+    console.log('[WORKOUT-PAGE] hit quick-entry sets branch');
     if (isQuickEntry(input)) {
-      console.log('[TRACE] matched quick-entry sets:', input);
+      console.log('[WORKOUT-PAGE] matched quick-entry sets:', input);
       
       const setEntries = parseQuickEntry(input);
 
@@ -570,7 +570,7 @@ function TodaysWorkoutPageContent() {
 
     // ── 6️⃣ REGENERATE WORKOUT SIXTH ──
     if (/regenerate workout/i.test(input)) {
-      console.log('[TRACE] matched regenerate workout');
+      console.log('[WORKOUT-PAGE] matched regenerate workout');
       // clear current state first
       setPendingWorkout(null);
       setActiveWorkout(null);
@@ -585,7 +585,7 @@ function TodaysWorkoutPageContent() {
     }
 
     // ── 7️⃣ CATCH-ALL CLAUDE LAST ──
-    console.log('[TRACE] catch-all Claude route fires');
+    console.log('[WORKOUT-PAGE] catch-all Claude route fires');
     try {
       const coachReply = await fetch('/api/workoutChat', {
         method: 'POST',
@@ -602,7 +602,7 @@ function TodaysWorkoutPageContent() {
 
       if (coachReply.ok) {
         const data = await coachReply.json();
-        console.log('[TRACE] coach reply OK');
+        console.log('[WORKOUT-PAGE] coach reply OK');
         setChatMessages(prev => [
           ...prev,
           { sender: 'assistant', text: data.assistantMessage, timestamp: new Date().toLocaleTimeString() },
@@ -613,7 +613,7 @@ function TodaysWorkoutPageContent() {
         
         // ── ALWAYS EXPECT FUNCTION CALL (forced updateWorkout) ──
         if (data.plan) {
-          console.log('[TRACE] workout data received:', data.plan);
+          console.log('[WORKOUT-PAGE] workout data received:', data.plan);
           const updatedWorkout: WorkoutData = {
             planId: crypto.randomUUID(),  // ← fresh planId forces re-render
             warmup: data.plan.warmup || [],
@@ -637,7 +637,7 @@ function TodaysWorkoutPageContent() {
         return;                                  // stop; no fallback
       }
     } catch (err) {
-      console.error('[TRACE] Claude error ↓↓↓', err); // log full error
+      console.error('[WORKOUT-PAGE] Claude error ↓↓↓', err); // log full error
       setChatMessages(prev => [
         ...prev,
         { sender: 'assistant', text: '⚠️ Claude error — see console for details', timestamp: new Date().toLocaleTimeString() },

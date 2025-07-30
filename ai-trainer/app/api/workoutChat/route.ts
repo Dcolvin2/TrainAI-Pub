@@ -25,7 +25,7 @@ async function getInstruction(name: string) {
 // Nike Workout Shortcut Handler
 async function handleNikeShortcut(rawInput: string, userId: string) {
   // 1️⃣ VERIFY WE'RE HITTING THE INTENDED PROJECT
-  console.log('SUPA URL', process.env.NEXT_PUBLIC_SUPABASE_URL);
+  console.log('[API-ROUTE] SUPA URL', process.env.NEXT_PUBLIC_SUPABASE_URL);
   
   // STEP 0: Match "Nike" or "Nike 2" (case-insensitive)
   const m = /^nike\s*(\d+)?/i.exec(rawInput.trim());
