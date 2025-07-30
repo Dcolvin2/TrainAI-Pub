@@ -637,10 +637,10 @@ function TodaysWorkoutPageContent() {
         return;                                  // stop; no fallback
       }
     } catch (err) {
-      console.error('[TRACE] OpenAI error ↓↓↓', err); // log full error
+      console.error('[TRACE] Claude error ↓↓↓', err); // log full error
       setChatMessages(prev => [
         ...prev,
-        { sender: 'assistant', text: '⚠️ OpenAI error — see console for details', timestamp: new Date().toLocaleTimeString() },
+        { sender: 'assistant', text: '⚠️ Claude error — see console for details', timestamp: new Date().toLocaleTimeString() },
       ]);
       return;                                  // still stop fallback
     }
