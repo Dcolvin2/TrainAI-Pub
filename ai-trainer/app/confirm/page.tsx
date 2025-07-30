@@ -24,7 +24,7 @@ function ConfirmPageContent() {
     if (t === 'signup' && token) {
       supabase.auth
         .setSession({ access_token: token, refresh_token: '' })
-        .then(({ error }) => {
+        .then(({ error }: { error: any }) => {
           if (error) {
             setStatus('error');
             setMessage('Error confirming email: ' + error.message);
