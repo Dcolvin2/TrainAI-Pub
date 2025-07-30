@@ -27,7 +27,7 @@ const getDayWorkoutType = (day: string) => {
 // Get available exercises based on user equipment and category
 const getAvailableExercises = async (equipmentList: string[], category?: string) => {
   let query = supabase
-    .from('exercises')
+    .from('exercises_final')
     .select('*');
   
   if (category) {
@@ -114,7 +114,7 @@ export async function POST(req: Request) {
 
         // Cross-reference with exercise table to get metadata
         const { data: matchedExercises } = await supabase
-          .from('exercises')
+          .from('exercises_final')
           .select('*')
           .in('name', nikeExercises);
 

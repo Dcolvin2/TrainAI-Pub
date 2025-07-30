@@ -5,27 +5,27 @@ type RawRow = {
   category: string | null;
   rest_seconds_default: number | null;
   set_duration_seconds: number | null;
-  is_main_lift: boolean | null;
+  exercise_phase: string;
 };
 
 const BAD_CATEGORIES = ['warmup', 'mobility', 'cooldown'];
 
 export async function getAccessoryPool(exclude: string[] = []) {
-  // Fetch the global list of main-lifts
-  const { data: mainLiftRows = [], error: mainLiftErr } = await supabase
-    .from('exercises')
+  // Fetch the global list of core-lifts
+  const { data: coreLiftRows = [], error: coreLiftErr } = await supabase
+    .from('exercises_final')
     .select('name')
-    .eq('is_main_lift', true);
+    .eq('exercise_phase', 'core_lift');
   
-  if (mainLiftErr) {
-    console.error('main-lifts fetch error', mainLiftErr);
+  if (coreLiftErr) {
+    console.error('core-lifts fetch error', coreLiftErr);
   }
   
-  const mainLiftNames = (mainLiftRows || []).map(r => r.name.toLowerCase());
+  const coreLiftNames = (coreLiftRows || []).map(r => r.name.toLowerCase());
 
   const { data, error } = await supabase
-    .from('exercises')
-    .select('name, category, rest_seconds_default, set_duration_seconds, is_main_lift')
+    .from('exercises_final')
+    .select('name, category, rest_seconds_default, set_duration_seconds, exercise_phase')
     .not('category', 'in', `(${BAD_CATEGORIES.map(c => `'${c}'`).join(',')})`);
 
   if (error || !data) {
@@ -38,7 +38,7 @@ export async function getAccessoryPool(exclude: string[] = []) {
   return data
     .filter(row => {
       const nameLower = row.name.toLowerCase();
-      return !excludeSet.has(nameLower) && !mainLiftNames.includes(nameLower);
+      return !excludeSet.has(nameLower) && !coreLiftNames.includes(nameLower);
     })
     .map(row => ({
       name:  row.name,

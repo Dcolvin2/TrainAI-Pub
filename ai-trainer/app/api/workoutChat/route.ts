@@ -20,7 +20,7 @@ const supabase = createClient(
 /* helper */
 async function getInstruction(name: string) {
   const { data } = await supabase
-    .from("exercises")
+    .from("exercises_final")
     .select("instruction")
     .ilike("name", `%${name}%`)
     .maybeSingle();

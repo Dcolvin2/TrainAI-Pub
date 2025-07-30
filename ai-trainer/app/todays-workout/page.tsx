@@ -143,11 +143,11 @@ function TodaysWorkoutPageContent() {
 
   // ── HELPER FUNCTIONS ──
   function shortenPlan(plan: any[], minutes: number): any[] {
-    const coreLift = plan.find((p: any) => p.is_main_lift);
+    const coreLift = plan.find((p: any) => p.exercise_phase === 'core_lift');
     const warmups = plan.filter((p: any) => p.exercise_phase === 'warmup');
     const cooldown = plan.filter((p: any) => p.exercise_phase === 'cooldown');
     const accessories = plan.filter(
-      (p: any) => !p.is_main_lift && p.exercise_phase === 'main'
+      (p: any) => p.exercise_phase === 'accessory'
     );
 
     const slots = Math.max(0, Math.floor((minutes - 10) / 5));
@@ -161,8 +161,8 @@ function TodaysWorkoutPageContent() {
 
   function formatPlanChat(plan: any[], minutes: number): string {
     const warmups = plan.filter((p: any) => p.exercise_phase === 'warmup');
-    const coreLift = plan.find((p: any) => p.is_main_lift);
-    const accessories = plan.filter((p: any) => !p.is_main_lift && p.exercise_phase === 'main');
+    const coreLift = plan.find((p: any) => p.exercise_phase === 'core_lift');
+    const accessories = plan.filter((p: any) => p.exercise_phase === 'accessory');
     const cooldown = plan.filter((p: any) => p.exercise_phase === 'cooldown');
 
     return `**${minutes}-Minute Workout**\n\n` +
@@ -489,8 +489,8 @@ function TodaysWorkoutPageContent() {
         // ── STORE CURRENT PLAN ──
         const planRows = [
           ...plan.warmupArr.map(ex => ({ ...ex, exercise_phase: 'warmup' })),
-          ...(plan.coreLift ? [{ ...plan.coreLift, exercise_phase: 'main', is_main_lift: true }] : []),
-          ...plan.accessories.map(ex => ({ ...ex, exercise_phase: 'main' })),
+          ...(plan.coreLift ? [{ ...plan.coreLift, exercise_phase: 'core_lift' }] : []),
+          ...plan.accessories.map(ex => ({ ...ex, exercise_phase: 'accessory' })),
           ...plan.cooldownArr.map(ex => ({ ...ex, exercise_phase: 'cooldown' }))
         ];
         setCurrentPlan(planRows);
@@ -633,8 +633,8 @@ function TodaysWorkoutPageContent() {
           // ── UPDATE CURRENT PLAN STATE ──
           const planRows = [
             ...(data.plan.warmup || []).map((ex: string) => ({ name: ex, exercise_phase: 'warmup' })),
-            ...(data.plan.workout || []).map((ex: string) => ({ name: ex, exercise_phase: 'main', is_main_lift: true })),
-            ...(data.plan.accessories || []).map((ex: string) => ({ name: ex, exercise_phase: 'main' })),
+            ...(data.plan.workout || []).map((ex: string) => ({ name: ex, exercise_phase: 'core_lift' })),
+            ...(data.plan.accessories || []).map((ex: string) => ({ name: ex, exercise_phase: 'accessory' })),
             ...(data.plan.cooldown || []).map((ex: string) => ({ name: ex, exercise_phase: 'cooldown' }))
           ];
           setCurrentPlan(planRows);

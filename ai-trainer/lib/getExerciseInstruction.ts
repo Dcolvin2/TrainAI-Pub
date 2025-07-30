@@ -7,12 +7,12 @@ import { supabase } from './supabaseClient';
  */
 export async function getExerciseInstruction(name: string): Promise<string | null> {
   const { data, error } = await supabase
-    .from('exercises')              // 👉 or 'exercise' if that's where the column lives
-    .select('name,instruction_text')
+    .from('exercises_final')              // Updated to exercises_final
+    .select('name,instruction')
     .ilike('name', `%${name}%`)
     .limit(1)
     .single();
 
   if (error || !data) return null;
-  return data.instruction_text;
+  return data.instruction;
 } 

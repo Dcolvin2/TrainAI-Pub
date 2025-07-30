@@ -127,9 +127,10 @@ export async function buildWorkoutByDay(
       category: 'accessory',
       primary_muscle: '', // Will be filled by the pool data
       equipment_required: [], // Simplified for now
-      is_main_lift: false,
-      exercise_phase: 'main',
-      instruction: ''
+      exercise_phase: 'accessory',
+      instruction: '',
+      rest_seconds_default: pick.rest ?? 60,
+      set_duration_seconds: pick.setSec ?? 30
     };
 
     accessories.push(accessoryExercise);

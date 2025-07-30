@@ -2,10 +2,10 @@ import { supabase } from "@/lib/supabaseClient";
 
 export async function fetchInstructions(name: string): Promise<string | null> {
   const { data } = await supabase
-    .from("exercises")
-    .select("instruction_text")
+    .from("exercises_final")
+    .select("instruction")
     .ilike("name", `%${name}%`)
     .maybeSingle();
 
-  return data?.instruction_text ?? null;
+  return data?.instruction ?? null;
 } 
