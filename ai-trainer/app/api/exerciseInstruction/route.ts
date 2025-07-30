@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { chatWithFunctions } from '@/lib/chatService';
 
 interface ExerciseInstructionRequest {
   exerciseName: string;
@@ -8,6 +7,12 @@ interface ExerciseInstructionRequest {
 
 export async function POST(req: NextRequest) {
   try {
+    // Initialize Anthropic inside the function, not at module level
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthropicKey) {
+      return NextResponse.json({ error: 'AI service not configured' }, { status: 500 });
+    }
+
     const { exerciseName, userId }: ExerciseInstructionRequest = await req.json();
 
     if (!exerciseName) {
@@ -18,27 +23,53 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
     }
 
-    // Generate exercise instruction using GPT
+    // Generate exercise instruction using Claude
     const systemPrompt = `You are a knowledgeable fitness coach. Provide clear, safe, and concise exercise form instructions. Keep responses under 100 words and focus on key form points.`;
     const userPrompt = `Provide proper form instructions for the exercise: ${exerciseName}. Include key safety tips and common mistakes to avoid.`;
 
-    const history = [
-      { role: 'system' as const, content: systemPrompt },
-      { role: 'user' as const, content: userPrompt }
-    ];
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': anthropicKey,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: 'claude-3-5-sonnet-20241022',
+          max_tokens: 200,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ]
+        })
+      });
 
-    const instruction = await chatWithFunctions(history) || 
-      `For ${exerciseName}: Focus on proper form, controlled movement, and full range of motion. If you're unsure about technique, consider consulting a fitness professional.`;
+      if (!response.ok) {
+        throw new Error(`Claude API error: ${response.status}`);
+      }
 
-    return NextResponse.json({ 
-      success: true, 
-      instruction,
-      exerciseName
-    });
+      const data = await response.json();
+      const instruction = data.content[0].text;
+
+      return NextResponse.json({ 
+        success: true, 
+        instruction,
+        exerciseName
+      });
+    } catch (claudeError) {
+      console.error('Claude API error:', claudeError);
+      // Fallback instruction
+      const instruction = `For ${exerciseName}: Focus on proper form, controlled movement, and full range of motion. If you're unsure about technique, consider consulting a fitness professional.`;
+      
+      return NextResponse.json({ 
+        success: true, 
+        instruction,
+        exerciseName
+      });
+    }
   } catch (error) {
     console.error('Exercise instruction error:', error);
-    return NextResponse.json({
-      error: error instanceof Error ? error.message : 'Failed to get exercise instruction'
-    }, { status: 500 });
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 } 
