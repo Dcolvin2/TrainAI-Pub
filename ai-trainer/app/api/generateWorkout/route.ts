@@ -35,7 +35,7 @@ const getAvailableExercises = async (equipmentList: string[], category?: string)
   if (!exercises) return [];
   
   // Filter exercises based on available equipment
-  return exercises.filter(exercise => {
+  return exercises.filter((exercise: { equipment_required?: string[] }) => {
     if (!exercise.equipment_required || exercise.equipment_required.length === 0) {
       return true; // Bodyweight exercises
     }
@@ -114,8 +114,8 @@ export async function POST(req: Request) {
           .in('name', nikeExercises);
 
         // Merge Nike data with exercise metadata
-        const enrichedNike = nikeRaw.map(row => {
-          const match = matchedExercises?.find(ex => ex.name === row.exercise_name);
+        const enrichedNike = nikeRaw.map((row: { exercise_name: string }) => {
+          const match = matchedExercises?.find((ex: { name: string }) => ex.name === row.exercise_name);
           return {
             ...row,
             category: match?.category,
@@ -127,7 +127,7 @@ export async function POST(req: Request) {
 
         // Get available exercises for Nike workout
         const availableExercises = await getAvailableExercises(equipmentList);
-        const exerciseOptions = availableExercises.map(ex => `${ex.name} (${ex.category})`).join('\n');
+        const exerciseOptions = availableExercises.map((ex: { name: string; category: string }) => `${ex.name} (${ex.category})`).join('\n');
         
         systemPrompt = `You are TrainAI, an expert fitness coach. The user is following the Nike workout program.
         
