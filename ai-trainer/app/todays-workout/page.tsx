@@ -418,6 +418,19 @@ function TodaysWorkoutPageContent() {
       return;
     }
 
+    // ── INSTRUCTION LOOKUP (EARLY RETURN) ──
+    const maybe = await getExerciseInstruction(message);
+    if (maybe) {
+      console.log('[TRACE] instruction found, early return');
+      const response = `**Exercise Instructions**\n\n${maybe}`;
+      setChatMessages(prev => [
+        ...prev,
+        { sender: 'assistant', text: response, timestamp: new Date().toLocaleTimeString() },
+      ]);
+      setMessages(prev => [...prev, { role: 'assistant', content: response }]);
+      return;                      // early return stops other branches
+    }
+
     // ── CLEAR STALE PLAN WHEN USER EXPLICITLY ASKS FOR NEW WORKOUT ──
     if (/generate workout/i.test(input) ||
         /(it's|its)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i.test(input) ||
@@ -553,20 +566,6 @@ function TodaysWorkoutPageContent() {
           return;
         }
       }
-    }
-
-    // ── 4️⃣ INSTRUCTION LOOK-UP FOURTH ──
-    console.log('[TRACE] hit instruction look-up branch');
-    const maybeInstr = await getExerciseInstruction(message);
-    if (maybeInstr) {
-      console.log('[TRACE] instruction found, early return');
-      const response = `**Exercise Instructions**\n\n${maybeInstr}`;
-      setChatMessages(prev => [
-        ...prev,
-        { sender: 'assistant', text: response, timestamp: new Date().toLocaleTimeString() },
-      ]);
-      setMessages(prev => [...prev, { role: 'assistant', content: response }]);
-      return;                      // early return stops other branches
     }
 
     // ── 6️⃣ REGENERATE WORKOUT SIXTH ──

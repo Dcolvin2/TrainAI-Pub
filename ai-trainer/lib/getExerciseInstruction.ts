@@ -1,29 +1,24 @@
 import { supabase } from '@/lib/supabaseClient';
 
-/**
- * Returns instruction text or `null` if not found.
- *  - Strips a leading "the "
- *  - Always queries public.exercises_final
- */
 export async function getExerciseInstruction(msg: string) {
-  // 1 Clean phrase
+  // 1. remove leading "how do i …", then leading articles a/an/the
   const cleaned = msg
     .replace(/^how\s+do\s+i\s+(?:perform|do)\s+/i, '')
-    .replace(/^(the\s+)/i, '')
+    .replace(/^(the|a|an)\s+/i, '')
     .replace(/\?$/, '')
     .trim();
 
-  console.log('[instr] cleaned →', cleaned);
+  console.log('[instr] cleaned →', cleaned);           // keep for smoke test
 
-  // 2 DB hit
+  // 2. query the new table
   const { data, error } = await supabase
     .from('exercises_final')
     .select('instruction')
     .ilike('name', `%${cleaned}%`)
     .limit(1)
-    .single();
+    .maybeSingle();                // ← tolerates 0 or >1 rows
 
-  console.log('[instr] data:', data, 'error:', error);
+  console.log('[instr] data:', data, 'error:', error); // smoke log
 
   return data?.instruction ?? null;
 } 
