@@ -1,29 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Lazy client creation to avoid build-time environment variable access
-let supabaseClient: ReturnType<typeof createClient> | null = null;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
+// Allow either NEXT_PUBLIC_SUPABASE_ANON_KEY (browser) or SUPABASE_ANON_KEY (server) env var
+const supabaseAnonKey = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY) as string;
 
-export const supabase = (() => {
-  if (supabaseClient) return supabaseClient;
-  
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !supabaseKey) {
-    console.warn('Missing Supabase environment variables');
-  }
-
-  supabaseClient = createClient(
-    supabaseUrl || 'https://placeholder.supabase.co',
-    supabaseKey || 'placeholder-key',
-    {
-      auth: {
-        autoRefreshToken: true,
-        persistSession: true,
-        detectSessionInUrl: true,
-      },
-    }
-  );
-  
-  return supabaseClient;
-})(); 
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true,
+  },
+}); 

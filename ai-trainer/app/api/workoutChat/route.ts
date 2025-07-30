@@ -1,9 +1,6 @@
-// 0. (Optional) declare Edge runtime
-export const runtime = 'edge';
-
-import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabaseClient';
-import { chatWithFunctions } from '@/lib/chatService';
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import { chatWithFunctions } from '@/lib/chatService'
 import { fetchNikeWorkout } from '@/lib/nikeWorkoutHelper'
 
 interface WorkoutChatRequest {
@@ -15,14 +12,17 @@ interface WorkoutChatRequest {
   }>;
 }
 
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
+
 /* helper */
 async function getInstruction(name: string) {
-  // 1. Escape wildcards in getInstruction
-  const safe = name.replace(/[%_]/g, '\\$&');
   const { data } = await supabase
     .from("exercises_final")
     .select("instruction")
-    .ilike("name", `%${safe}%`)
+    .ilike("name", `%${name}%`)
     .maybeSingle();
   return data?.instruction ?? null;
 }
@@ -64,15 +64,11 @@ async function handleNikeShortcut(rawInput: string, userId: string) {
   console.debug('Available Nike workouts', availableWorkouts?.map(r => r.workout));
 
   // 4️⃣ CHECK COLUMN NAME & TYPE ON THE FLY
-  // 2. Remove pg_catalog RPC after verifying schema
-  // or guard it
-  if (process.env.NODE_ENV !== 'production') {
-    try {
-      const { data: info } = await supabase.rpc('pg_catalog.get_columns', { table_name: 'nike_workouts' });
-      console.debug('Table schema info', info);
-    } catch (schemaError) {
-      console.debug('Schema check failed:', schemaError);
-    }
+  try {
+    const { data: info } = await supabase.rpc('pg_catalog.get_columns', { table_name: 'nike_workouts' });
+    console.debug('Table schema info', info);
+  } catch (schemaError) {
+    console.debug('Schema check failed:', schemaError);
   }
 
   if (error) {
@@ -125,13 +121,7 @@ export async function POST(req: NextRequest) {
       const nikeResult = await handleNikeShortcut(messages[messages.length - 1].content, userId);
       
       if (nikeResult) {
-        // 3. Add model tag to the two early-return paths
-        return NextResponse.json({
-          assistantMessage:
-            nikeResult.assistantMessage +
-            (process.env.MODEL_NAME ? `\n\n*(powered by ${process.env.MODEL_NAME})*` : ''),
-          plan: nikeResult.plan,
-        });
+        return NextResponse.json(nikeResult);
       }
     }
 
@@ -147,10 +137,9 @@ export async function POST(req: NextRequest) {
         const text = await getInstruction(exerciseName);
 
         return NextResponse.json({
-          assistantMessage: (text
+          assistantMessage: text
             ? `**${exerciseName}**\n${text}`
-            : `I couldn't find a cue for "${exerciseName}". Check the name or add it to the DB!`) +
-            (process.env.MODEL_NAME ? `\n\n*(powered by ${process.env.MODEL_NAME})*` : ''),
+            : `I couldn't find a cue for "${exerciseName}". Check the name or add it to the DB!`,
           plan: null
         });
       }
@@ -233,7 +222,7 @@ When you do call the function, you must return a JSON object matching its schema
       })
     ]
 
-    // D) Call Claude with function schema
+    // D) Call OpenAI with function schema
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const resp = await chatWithFunctions(chatMessages as any)
 
@@ -251,10 +240,10 @@ When you do call the function, you must return a JSON object matching its schema
     if (resp.functionCall && resp.functionCall.name === 'updateWorkout') {
       const workoutData = resp.functionCall.arguments;
       
-      // Add model tag for Claude responses
+      // Add model tag for GPT-4o responses
       let assistantMessage = "✅ Workout updated!";
-      if (resp.modelUsed === "claude-3-5-sonnet-20241022") {
-        assistantMessage += "\n\n*(powered by Claude 3.5 Sonnet)*";
+      if (resp.modelUsed === "gpt-4o") {
+        assistantMessage += "\n\n*(powered by GPT-4o)*";
       }
       
       return NextResponse.json({
@@ -277,8 +266,8 @@ When you do call the function, you must return a JSON object matching its schema
     
     // Add model tag for non-function responses
     let assistantMessage = "I'll update your workout plan.";
-    if (resp.modelUsed === "claude-3-5-sonnet-20241022") {
-      assistantMessage += "\n\n*(powered by Claude 3.5 Sonnet)*";
+    if (resp.modelUsed === "gpt-4o") {
+      assistantMessage += "\n\n*(powered by GPT-4o)*";
     }
     
     return NextResponse.json({ 

@@ -1,4 +1,9 @@
-import { supabase } from '@/lib/supabaseClient';
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 export async function getExerciseInstructions(rawName: string): Promise<string | null> {
   const { data, error } = await supabase
