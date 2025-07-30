@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 import { chatWithFunctions } from '@/lib/chatService';
 
@@ -63,7 +63,7 @@ const getUserProfile = async (userId: string) => {
 
 
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
     const { userId, minutes, prompt } = await req.json();
 
