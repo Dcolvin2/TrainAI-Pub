@@ -10,7 +10,7 @@ interface WorkoutChatRequest {
   }>;
 }
 
-// Copy the exact supabase setup from other working routes
+// Copy the EXACT pattern from working routes:
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -34,7 +34,7 @@ async function chatWithClaude(messages: any[], userId: string) {
     throw new Error('Claude API key not configured');
   }
 
-  // Fetch user context from Supabase
+  // Fetch user context from Supabase using the same pattern as working routes
   const { data: userProfile } = await supabase
     .from('profiles')
     .select('name, goals, current_weight, equipment')
@@ -156,7 +156,7 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error('Claude workout chat error:', error);
     return NextResponse.json(
-      { error: 'Failed to process chat request' },
+      { error: 'Server error' },
       { status: 500 }
     );
   }
