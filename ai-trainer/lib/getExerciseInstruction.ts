@@ -1,18 +1,20 @@
 import { supabase } from './supabaseClient';
 
 /**
- * Returns the best-match instruction or null
- *  – case-insensitive  ILIKE '%query%'
- *  – falls back to pg_trgm similarity if enabled
+ * Fetches the instruction text from exercises_final.
+ * Returns null if not found.
  */
-export async function getExerciseInstruction(name: string): Promise<string | null> {
+export async function getExerciseInstruction(exName: string): Promise<string | null> {
   const { data, error } = await supabase
-    .from('exercises_final')              // Updated to exercises_final
-    .select('name,instruction')
-    .ilike('name', `%${name}%`)
+    .from('exercises_final')
+    .select('instruction')
+    .ilike('name', `%${exName}%`)
     .limit(1)
     .single();
 
-  if (error || !data) return null;
+  if (error || !data?.instruction) {
+    console.warn('No instruction found for', exName, error);
+    return null;
+  }
   return data.instruction;
 } 
