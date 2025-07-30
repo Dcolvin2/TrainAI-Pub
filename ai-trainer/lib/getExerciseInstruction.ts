@@ -1,10 +1,21 @@
-import { supabase } from './supabaseClient';
+import { supabase } from '@/lib/supabaseClient';
 
-export async function getExerciseInstruction(raw: string) {
-  const cleaned = raw.replace(/^the\s+/i, '').trim();
+/**
+ * Returns instruction text or `null` if not found.
+ *  - Strips a leading "the "
+ *  - Always queries public.exercises_final
+ */
+export async function getExerciseInstruction(msg: string) {
+  // 1 Clean phrase
+  const cleaned = msg
+    .replace(/^how\s+do\s+i\s+(?:perform|do)\s+/i, '')
+    .replace(/^(the\s+)/i, '')
+    .replace(/\?$/, '')
+    .trim();
 
-  console.log('[instr] searching for:', cleaned);   // step 3
+  console.log('[instr] cleaned →', cleaned);
 
+  // 2 DB hit
   const { data, error } = await supabase
     .from('exercises_final')
     .select('instruction')
@@ -12,8 +23,7 @@ export async function getExerciseInstruction(raw: string) {
     .limit(1)
     .single();
 
-  console.log('[instr] data:', data, 'err:', error); // step 5
+  console.log('[instr] data:', data, 'error:', error);
 
-  if (error || !data?.instruction) return null;
-  return data.instruction;
+  return data?.instruction ?? null;
 } 

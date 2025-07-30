@@ -557,21 +557,16 @@ function TodaysWorkoutPageContent() {
 
     // ── 4️⃣ INSTRUCTION LOOK-UP FOURTH ──
     console.log('[TRACE] hit instruction look-up branch');
-    const instrReq = getInstructionRequest(message);
-    if (instrReq) {
-      console.log('[TRACE] matched instruction request:', instrReq.exercise);
-      const instruction = await getExerciseInstruction(instrReq.exercise);
-      
-      const response = instruction
-        ? `**${instrReq.exercise} – How to**\n\n${instruction}`
-        : `Sorry, I couldn't find instructions for **${instrReq.exercise}** in the database.`;
-
+    const maybeInstr = await getExerciseInstruction(message);
+    if (maybeInstr) {
+      console.log('[TRACE] instruction found, early return');
+      const response = `**Exercise Instructions**\n\n${maybeInstr}`;
       setChatMessages(prev => [
         ...prev,
         { sender: 'assistant', text: response, timestamp: new Date().toLocaleTimeString() },
       ]);
       setMessages(prev => [...prev, { role: 'assistant', content: response }]);
-      return;                      // stop further routing
+      return;                      // early return stops other branches
     }
 
     // ── 6️⃣ REGENERATE WORKOUT SIXTH ──
