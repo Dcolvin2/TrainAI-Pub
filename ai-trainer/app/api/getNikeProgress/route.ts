@@ -1,40 +1,52 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { NextRequest, NextResponse } from 'next/server';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+interface GetNikeProgressRequest {
+  userId: string;
+}
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const { userId } = await req.json();
+    // Initialize Supabase inside the function using dynamic import
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseKey) {
+      return NextResponse.json({ error: 'Database not configured' }, { status: 500 });
+    }
+
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    const { userId }: GetNikeProgressRequest = await req.json();
 
     if (!userId) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
     }
 
-    // Get user's last completed Nike workout
+    // Get current Nike workout progress
     const { data: profile, error } = await supabase
       .from('profiles')
       .select('last_nike_workout')
-      .eq('id', userId)
+      .eq('user_id', userId)
       .single();
 
     if (error) {
-      console.error('Supabase error:', error);
-      return NextResponse.json({ error: 'Failed to get Nike progress' }, { status: 500 });
+      console.error('Error fetching Nike progress:', error);
+      return NextResponse.json({ 
+        error: 'Failed to fetch workout progress' 
+      }, { status: 500 });
     }
+
+    const currentProgress = profile?.last_nike_workout ?? 0;
 
     return NextResponse.json({ 
       success: true, 
-      lastWorkout: profile?.last_nike_workout || 0,
-      nextWorkout: (profile?.last_nike_workout || 0) + 1
+      currentProgress,
+      nextWorkout: currentProgress + 1
     });
+
   } catch (error) {
     console.error('Get Nike progress error:', error);
-    return NextResponse.json({
-      error: error instanceof Error ? error.message : 'Failed to get Nike progress'
-    }, { status: 500 });
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 } 

@@ -1,54 +1,54 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { NextRequest, NextResponse } from 'next/server';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+interface UpdateNikeProgressRequest {
+  userId: string;
+  workoutNumber: number;
+}
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const { userId } = await req.json();
+    // Initialize Supabase inside the function using dynamic import
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseKey) {
+      return NextResponse.json({ error: 'Database not configured' }, { status: 500 });
+    }
+
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    const { userId, workoutNumber }: UpdateNikeProgressRequest = await req.json();
 
     if (!userId) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
     }
 
-    // Get user's current Nike workout progress
-    const { data: profile, error: getError } = await supabase
-      .from('profiles')
-      .select('last_nike_workout')
-      .eq('id', userId)
-      .single();
-
-    if (getError) {
-      console.error('Supabase error getting profile:', getError);
-      return NextResponse.json({ error: 'Failed to get Nike progress' }, { status: 500 });
+    if (!workoutNumber) {
+      return NextResponse.json({ error: 'Workout number is required' }, { status: 400 });
     }
 
-    const currentWorkout = profile?.last_nike_workout || 0;
-    const nextWorkout = currentWorkout + 1;
-
-    // Update user's Nike workout progress
-    const { error: updateError } = await supabase
+    // Update Nike workout progress
+    const { error } = await supabase
       .from('profiles')
-      .update({ last_nike_workout: nextWorkout })
-      .eq('id', userId);
+      .update({ last_nike_workout: workoutNumber })
+      .eq('user_id', userId);
 
-    if (updateError) {
-      console.error('Supabase error updating profile:', updateError);
-      return NextResponse.json({ error: 'Failed to update Nike progress' }, { status: 500 });
+    if (error) {
+      console.error('Error updating Nike progress:', error);
+      return NextResponse.json({ 
+        error: 'Failed to update workout progress' 
+      }, { status: 500 });
     }
 
     return NextResponse.json({ 
       success: true, 
-      previousWorkout: currentWorkout,
-      newWorkout: nextWorkout
+      message: `Nike Workout progress updated to ${workoutNumber}`,
+      newProgress: workoutNumber
     });
+
   } catch (error) {
     console.error('Update Nike progress error:', error);
-    return NextResponse.json({
-      error: error instanceof Error ? error.message : 'Failed to update Nike progress'
-    }, { status: 500 });
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 } 
