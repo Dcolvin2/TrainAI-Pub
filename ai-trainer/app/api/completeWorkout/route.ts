@@ -14,13 +14,19 @@ interface LogSet {
   done: boolean;
 }
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
 export async function POST(req: Request) {
   try {
+    // Initialize Supabase inside the function, not at module level
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseKey) {
+      console.error('Missing Supabase environment variables');
+      return NextResponse.json({ error: 'Database configuration error' }, { status: 500 });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
     const { userId, logSets } = await req.json();
 
     // 1) Create or reuse a session
@@ -99,8 +105,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ sessionId: session.id, total_volume: totalVolume });
   } catch (error) {
     console.error('Complete workout error:', error);
-    return NextResponse.json({ 
-      error: error instanceof Error ? error.message : 'Failed to complete workout' 
-    }, { status: 500 });
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 } 

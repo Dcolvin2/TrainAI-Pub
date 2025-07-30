@@ -2,11 +2,6 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { chatWithFunctions } from '@/lib/chatService';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
 // Day of week workout schedule
 const workoutSchedule = {
   Monday: 'Legs (e.g., back squat + accessories)',
@@ -25,7 +20,7 @@ const getDayWorkoutType = (day: string) => {
 };
 
 // Get available exercises based on user equipment and category
-const getAvailableExercises = async (equipmentList: string[], category?: string) => {
+const getAvailableExercises = async (supabase: any, equipmentList: string[], category?: string) => {
   let query = supabase
     .from('exercises_final')
     .select('*');
@@ -40,7 +35,7 @@ const getAvailableExercises = async (equipmentList: string[], category?: string)
   if (!exercises) return [];
   
   // Filter exercises based on available equipment
-  return exercises.filter(exercise => {
+  return exercises.filter((exercise: any) => {
     if (!exercise.equipment_required || exercise.equipment_required.length === 0) {
       return true; // Bodyweight exercises
     }
@@ -56,7 +51,7 @@ const getAvailableExercises = async (equipmentList: string[], category?: string)
 };
 
 // Get user profile with equipment
-const getUserProfile = async (userId: string) => {
+const getUserProfile = async (supabase: any, userId: string) => {
   const { data: profile } = await supabase
     .from('profiles')
     .select('equipment, experience_level, first_name')
@@ -66,10 +61,19 @@ const getUserProfile = async (userId: string) => {
   return profile;
 };
 
-
-
 export async function POST(req: Request) {
   try {
+    // Initialize Supabase inside the function, not at module level
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseKey) {
+      console.error('Missing Supabase environment variables');
+      return NextResponse.json({ error: 'Database configuration error' }, { status: 500 });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
     const { userId, minutes, prompt } = await req.json();
 
     if (!userId) {
@@ -78,7 +82,7 @@ export async function POST(req: Request) {
 
     // Fetch user context with new dynamic exercise system
     const [profile, { data: goals }] = await Promise.all([
-      getUserProfile(userId),
+      getUserProfile(supabase, userId),
       supabase.from('user_goals').select('description').eq('user_id', userId)
     ]);
 
@@ -131,8 +135,8 @@ export async function POST(req: Request) {
 
 
         // Get available exercises for Nike workout
-        const availableExercises = await getAvailableExercises(equipmentList);
-        const exerciseOptions = availableExercises.map(ex => `${ex.name} (${ex.category})`).join('\n');
+        const availableExercises = await getAvailableExercises(supabase, equipmentList);
+        const exerciseOptions = availableExercises.map((ex: any) => `${ex.name} (${ex.category})`).join('\n');
         
         systemPrompt = `You are TrainAI, an expert fitness coach. The user is following the Nike workout program.
         
@@ -176,8 +180,8 @@ export async function POST(req: Request) {
         
         if (dayType && dayType.includes('Cardio')) {
           // Get cardio exercises from database
-          const cardioExercises = await getAvailableExercises(equipmentList, 'endurance');
-          const cardioOptions = cardioExercises.map(ex => ex.name).join(', ');
+          const cardioExercises = await getAvailableExercises(supabase, equipmentList, 'endurance');
+                      const cardioOptions = cardioExercises.map((ex: any) => ex.name).join(', ');
           daySpecificPrompt = `Today is ${detectedDay.charAt(0).toUpperCase() + detectedDay.slice(1)} and it's a cardio day. Available cardio exercises: ${cardioOptions}.`;
         } else if (dayType) {
           daySpecificPrompt = `Today is ${detectedDay.charAt(0).toUpperCase() + detectedDay.slice(1)} and it's a ${dayType} day. Focus the workout on ${dayType} training.`;
@@ -185,8 +189,8 @@ export async function POST(req: Request) {
       }
 
       // Get available exercises for the user
-      const availableExercises = await getAvailableExercises(equipmentList);
-      const exerciseOptions = availableExercises.map(ex => `${ex.name} (${ex.category})`).join('\n');
+      const availableExercises = await getAvailableExercises(supabase, equipmentList);
+              const exerciseOptions = availableExercises.map((ex: any) => `${ex.name} (${ex.category})`).join('\n');
       
       systemPrompt = `You are TrainAI, an expert fitness coach.
       
