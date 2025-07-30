@@ -1,4 +1,4 @@
-export function chooseModel(userInput: string): "gpt-4o-mini" | "gpt-4o" {
+export function chooseModel(userInput: string): "claude-3-5-sonnet-20241022" | "claude-3-5-sonnet-20241022" {
   // Heuristics → tweak as you wish
   const q = userInput.toLowerCase();
 
@@ -10,16 +10,6 @@ export function chooseModel(userInput: string): "gpt-4o-mini" | "gpt-4o" {
   const isNike      = /^nike/i.test(q);
   const saysGenerate= /generate workout/i.test(q);
 
-  // MINIs are fine for structured or numeric commands
-  if (isNumeric || isDayPrompt || isNike || saysGenerate) return "gpt-4o-mini";
-
-  // If it's a short, direct workout command → still mini
-  if (!isLong && !isQuestion && /^swap|add|remove|adjust/.test(q))
-    return "gpt-4o-mini";
-
-  // Otherwise default to full GPT-4o for reasoning / instructions
-  if (isQuestion || asksForm || isLong) return "gpt-4o";
-
-  // fallback
-  return "gpt-4o-mini";
+  // For now, always use Claude 3.5 Sonnet since we're not doing model switching
+  return "claude-3-5-sonnet-20241022";
 } 

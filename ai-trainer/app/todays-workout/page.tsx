@@ -413,7 +413,7 @@ function TodaysWorkoutPageContent() {
       console.log('[TRACE] matched /debug early-exit');
       setChatMessages(prev => [
         ...prev,
-        { sender: 'assistant', text: 'Model: gpt-4o-mini', timestamp: new Date().toLocaleTimeString() },
+        { sender: 'assistant', text: 'Model: claude-3-5-sonnet-20241022', timestamp: new Date().toLocaleTimeString() },
       ]);
       return;
     }
@@ -584,9 +584,9 @@ function TodaysWorkoutPageContent() {
       return;
     }
 
-    // ── 7️⃣ CATCH-ALL GPT LAST ──
+    // ── 7️⃣ CATCH-ALL CLAUDE LAST ──
+    console.log('[TRACE] catch-all Claude route fires');
     try {
-      console.log('[TRACE] catch-all GPT route fires');
       const coachReply = await fetch('/api/workoutChat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

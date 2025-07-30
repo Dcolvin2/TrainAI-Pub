@@ -217,7 +217,7 @@ When you do call the function, you must return a JSON object matching its schema
       })
     ]
 
-    // D) Call OpenAI with function schema
+    // D) Call Claude with function schema
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const resp = await chatWithFunctions(chatMessages as any)
 

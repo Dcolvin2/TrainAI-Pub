@@ -35,7 +35,7 @@ export async function chatWithFunctions(
 ): Promise<ChatResponse> {
   const model = "claude-3-5-sonnet-20241022";
   
-  // Convert OpenAI format to Claude format
+  // Convert to Claude format
   const claudeMessages = history.map(msg => ({
     role: msg.role,
     content: msg.content
