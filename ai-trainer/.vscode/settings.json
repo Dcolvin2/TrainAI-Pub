@@ -17,5 +17,7 @@
   "typescript.updateImportsOnFileMove.enabled": "always",
   "files.associations": {
     "*.tsx": "typescriptreact"
-  }
+  },
+  "cursor.cpp.model": "claude-3.5-sonnet",
+  "cursor.chat.model": "claude-3.5-sonnet"
 } 
