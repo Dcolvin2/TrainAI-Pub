@@ -26,7 +26,7 @@ function AuthCallbackContent() {
     if (type === 'magiclink' && access && refresh) {
       supabase.auth
         .setSession({ access_token: access, refresh_token: refresh })
-        .then(({ error }: { error: any }) => {
+        .then(({ error }) => {
           if (error) {
             console.error(error);
             setStatus('error');

@@ -35,7 +35,7 @@ const getAvailableExercises = async (equipmentList: string[], category?: string)
   if (!exercises) return [];
   
   // Filter exercises based on available equipment
-  return exercises.filter((exercise: { equipment_required?: string[] }) => {
+  return exercises.filter(exercise => {
     if (!exercise.equipment_required || exercise.equipment_required.length === 0) {
       return true; // Bodyweight exercises
     }
@@ -105,7 +105,7 @@ export async function POST(req: Request) {
 
       if (nikeRaw && nikeRaw.length > 0) {
         // Extract exercise names from Nike data
-        const nikeExercises = nikeRaw.map((row: { exercise_name: string }) => row.exercise_name);
+        const nikeExercises = nikeRaw.map(row => row.exercise_name);
 
         // Cross-reference with exercise table to get metadata
         const { data: matchedExercises } = await supabase
@@ -114,8 +114,8 @@ export async function POST(req: Request) {
           .in('name', nikeExercises);
 
         // Merge Nike data with exercise metadata
-        const enrichedNike = nikeRaw.map((row: { exercise_name: string }) => {
-          const match = matchedExercises?.find((ex: { name: string }) => ex.name === row.exercise_name);
+        const enrichedNike = nikeRaw.map(row => {
+          const match = matchedExercises?.find(ex => ex.name === row.exercise_name);
           return {
             ...row,
             category: match?.category,
@@ -127,12 +127,12 @@ export async function POST(req: Request) {
 
         // Get available exercises for Nike workout
         const availableExercises = await getAvailableExercises(equipmentList);
-        const exerciseOptions = availableExercises.map((ex: { name: string; category: string }) => `${ex.name} (${ex.category})`).join('\n');
+        const exerciseOptions = availableExercises.map(ex => `${ex.name} (${ex.category})`).join('\n');
         
         systemPrompt = `You are TrainAI, an expert fitness coach. The user is following the Nike workout program.
         
         User profile: ${profile?.first_name || 'Unknown'}.
-        Goals: ${goals?.map((g: { description: string }) => g.description).join(', ') || 'None'}.
+        Goals: ${goals?.map(g => g.description).join(', ') || 'None'}.
         Equipment: ${equipmentList.join(', ') || 'None'}.
         
         Available exercises for this user:
@@ -151,7 +151,7 @@ export async function POST(req: Request) {
         systemPrompt = `You are TrainAI, an expert fitness coach. The user wants a Nike-style workout.
         
         User profile: ${profile?.first_name || 'Unknown'}.
-        Goals: ${goals?.map((g: { description: string }) => g.description).join(', ') || 'None'}.
+        Goals: ${goals?.map(g => g.description).join(', ') || 'None'}.
         Equipment: ${equipmentList.join(', ') || 'None'}.
         
         Create a Nike-style workout that focuses on compound movements, progressive overload, and functional fitness.
@@ -172,7 +172,7 @@ export async function POST(req: Request) {
         if (dayType && dayType.includes('Cardio')) {
           // Get cardio exercises from database
           const cardioExercises = await getAvailableExercises(equipmentList, 'endurance');
-          const cardioOptions = cardioExercises.map((ex: { name: string }) => ex.name).join(', ');
+          const cardioOptions = cardioExercises.map(ex => ex.name).join(', ');
           daySpecificPrompt = `Today is ${detectedDay.charAt(0).toUpperCase() + detectedDay.slice(1)} and it's a cardio day. Available cardio exercises: ${cardioOptions}.`;
         } else if (dayType) {
           daySpecificPrompt = `Today is ${detectedDay.charAt(0).toUpperCase() + detectedDay.slice(1)} and it's a ${dayType} day. Focus the workout on ${dayType} training.`;
@@ -181,12 +181,12 @@ export async function POST(req: Request) {
 
       // Get available exercises for the user
       const availableExercises = await getAvailableExercises(equipmentList);
-      const exerciseOptions = availableExercises.map((ex: { name: string; category: string }) => `${ex.name} (${ex.category})`).join('\n');
+      const exerciseOptions = availableExercises.map(ex => `${ex.name} (${ex.category})`).join('\n');
       
       systemPrompt = `You are TrainAI, an expert fitness coach.
       
       User profile: ${profile?.first_name || 'Unknown'}.
-      Goals: ${goals?.map((g: { description: string }) => g.description).join(', ') || 'None'}.
+      Goals: ${goals?.map(g => g.description).join(', ') || 'None'}.
       Equipment: ${equipmentList.join(', ') || 'None'}.
       ${daySpecificPrompt}
       
