@@ -1,10 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { supabase } from '@/lib/supabaseClient'
 
 export async function GET(req: Request) {
   try {
@@ -60,18 +55,12 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       warmup: plan.warmup || [],
-      workout: plan.workout || [],
+      workout: details,
       cooldown: plan.cooldown || [],
-      details,
-      prompt: workout.prompt,
-      minutes: workout.minutes,
-      created_at: workout.created_at
+      accessories: plan.accessories || []
     })
-
   } catch (error) {
-    console.error('Current workout error:', error)
-    return NextResponse.json({ 
-      error: error instanceof Error ? error.message : 'Failed to fetch current workout' 
-    }, { status: 500 })
+    console.error('Error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 } 

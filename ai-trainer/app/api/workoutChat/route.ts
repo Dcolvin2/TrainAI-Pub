@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-import { chatWithFunctions } from '@/lib/chatService'
+import { NextRequest, NextResponse } from 'next/server';
+import { supabase } from '@/lib/supabaseClient';
+import { chatWithFunctions } from '@/lib/chatService';
 import { fetchNikeWorkout } from '@/lib/nikeWorkoutHelper'
 
 interface WorkoutChatRequest {
@@ -11,11 +11,6 @@ interface WorkoutChatRequest {
     name?: string;
   }>;
 }
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
 
 /* helper */
 async function getInstruction(name: string) {
