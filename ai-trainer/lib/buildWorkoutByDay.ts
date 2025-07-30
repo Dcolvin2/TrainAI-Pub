@@ -5,8 +5,8 @@ import { getAccessoryPool } from "@/lib/getExercisePool";
 import { calcExerciseMinutes } from "@/utils/calcExerciseMinutes";
 
 const FIXED_CORE_LIFTS: Record<string, string> = {
-  Monday: 'Barbell Back Squat',
-  Saturday: 'Trap Bar Deadlift',
+  monday:   'Barbell Back Squat',
+  saturday: 'Trap Bar Deadlift',
 };
 
 const TEMPLATE = {
@@ -39,7 +39,8 @@ export async function buildWorkoutByDay(
   if (!t) throw new Error("Unknown day");
 
   // 2️⃣ core lift (if any) - Monday & Saturday override
-  const fixedCoreLiftName = FIXED_CORE_LIFTS[day];
+  const dayKey = day.toLowerCase(); // e.g. "monday"
+  const fixedCoreLiftName = FIXED_CORE_LIFTS[dayKey];
   const coreLift: Exercise | null = fixedCoreLiftName
     ? exercises.find(e => e.name.toLowerCase().includes(fixedCoreLiftName.toLowerCase())) || null
     : t.core
