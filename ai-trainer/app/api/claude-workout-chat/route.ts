@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
       
       try {
         return await callClaude(messages, systemPrompt);
-      } catch (error) {
+      } catch (error: any) {
         console.error('Claude chat error:', error);
         throw error;
       }
@@ -115,10 +115,11 @@ export async function POST(req: NextRequest) {
       plan: null
     });
 
-  } catch (error: any) {
+  } catch (error) {
     console.error('API Error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
     return NextResponse.json(
-      { error: error.message },
+      { error: errorMessage },
       { status: 500 }
     );
   }
