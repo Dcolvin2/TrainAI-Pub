@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getSupabase } from '@/lib/supabase-server';
 
 interface SendConfirmRequest {
   email: string;
@@ -7,17 +8,7 @@ interface SendConfirmRequest {
 
 export async function POST(req: NextRequest) {
   try {
-    // Initialize Supabase inside the function using dynamic import
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    
-    if (!supabaseUrl || !supabaseKey) {
-      return NextResponse.json({ error: 'Database not configured' }, { status: 500 });
-    }
-
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
+    const supabase = getSupabase();
     const { email, token }: SendConfirmRequest = await req.json();
 
     if (!email || !token) {
@@ -46,8 +37,8 @@ export async function POST(req: NextRequest) {
       message: 'Confirmation email sent successfully' 
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Send confirm error:', error);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 } 

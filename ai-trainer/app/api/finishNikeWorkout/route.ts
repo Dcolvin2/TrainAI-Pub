@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getSupabase } from '@/lib/supabase-server';
 
 interface FinishNikeWorkoutRequest {
   userId: string;
@@ -7,17 +8,7 @@ interface FinishNikeWorkoutRequest {
 
 export async function POST(req: NextRequest) {
   try {
-    // Initialize Supabase inside the function using dynamic import
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    
-    if (!supabaseUrl || !supabaseKey) {
-      return NextResponse.json({ error: 'Database not configured' }, { status: 500 });
-    }
-
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
+    const supabase = getSupabase();
     const { userId, workoutNumber }: FinishNikeWorkoutRequest = await req.json();
 
     if (!userId) {
@@ -58,8 +49,8 @@ export async function POST(req: NextRequest) {
       newProgress: workoutNumber >= currentProgress ? workoutNumber : currentProgress
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Finish Nike workout error:', error);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 } 
