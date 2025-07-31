@@ -14,7 +14,11 @@ export async function POST(request) {
       messages: [{ role: 'user', content: message }]
     });
 
-    return Response.json({ content: response.content[0].text });
+    return Response.json({ 
+      content: response.content[0].text,
+      model: 'claude-3-5-sonnet-20241022',
+      timestamp: new Date().toISOString()
+    });
   } catch (error) {
     console.error('Claude API error:', error);
     return Response.json({ error: 'Claude error' }, { status: 500 });
