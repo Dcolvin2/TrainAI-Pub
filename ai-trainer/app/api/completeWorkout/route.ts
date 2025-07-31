@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getSupabase } from '@/lib/supabase-server';
 
 // TypeScript-safe workout completion handler
 interface LogSet {
@@ -15,18 +16,7 @@ interface LogSet {
 
 export async function POST(req: Request) {
   try {
-    // Initialize Supabase inside the function using dynamic import
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    
-    if (!supabaseUrl || !supabaseKey) {
-      console.error('Missing Supabase environment variables');
-      return NextResponse.json({ error: 'Database configuration error' }, { status: 500 });
-    }
-
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
+    const supabase = getSupabase();
     const { userId, logSets } = await req.json();
 
     // 1) Create or reuse a session
@@ -103,8 +93,8 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ sessionId: session.id, total_volume: totalVolume });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Complete workout error:', error);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 } 

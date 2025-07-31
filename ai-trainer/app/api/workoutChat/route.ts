@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getSupabase } from '@/lib/supabase-server'
+import { callClaude } from '@/lib/claude-server'
 import { fetchNikeWorkout } from '@/lib/nikeWorkoutHelper'
 
 interface WorkoutChatRequest {
@@ -12,24 +14,7 @@ interface WorkoutChatRequest {
 
 export async function POST(req: NextRequest) {
   try {
-    // Initialize Supabase inside the function using dynamic import
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    
-    if (!supabaseUrl || !supabaseKey) {
-      console.error('Missing Supabase environment variables');
-      return NextResponse.json({ error: 'Database configuration error' }, { status: 500 });
-    }
-
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    // Initialize Anthropic inside the function
-    const anthropicKey = process.env.ANTHROPIC_API_KEY;
-    if (!anthropicKey) {
-      return NextResponse.json({ error: 'AI service not configured' }, { status: 500 });
-    }
-
+    const supabase = getSupabase();
     const { userId, messages }: WorkoutChatRequest = await req.json();
 
     if (!userId || !messages || messages.length === 0) {
@@ -95,8 +80,8 @@ export async function POST(req: NextRequest) {
       goals: userProfile?.goals || [],
       currentWeight: userProfile?.current_weight || 'Unknown',
       equipment: userProfile?.equipment || [],
-      recentWorkouts: recentWorkouts?.map(w => w.workout_type) || [],
-      maxes: maxes?.map(m => `${m.exercise_name}: ${m.max_weight}lbs`) || []
+      recentWorkouts: recentWorkouts?.map((w: any) => w.workout_type) || [],
+      maxes: maxes?.map((m: any) => `${m.exercise_name}: ${m.max_weight}lbs`) || []
     };
 
     // System prompt for Claude with function calling instructions
@@ -133,31 +118,7 @@ IMPORTANT: When creating or modifying workouts, you MUST respond with a JSON obj
 Respond in a helpful, encouraging tone.`;
 
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': anthropicKey,
-          'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
-          model: 'claude-3-5-sonnet-20241022',
-          max_tokens: 1000,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            ...messages
-          ]
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.text();
-        console.error('Claude API error:', response.status, errorData);
-        throw new Error(`Claude API error: ${response.status}`);
-      }
-
-      const data = await response.json();
-      const claudeResponse = data.content[0].text;
+      const claudeResponse = await callClaude(messages, systemPrompt);
 
       // Try to parse function call from Claude's response
       try {
@@ -201,118 +162,111 @@ Respond in a helpful, encouraging tone.`;
 
   } catch (error) {
     console.error('Workout chat error:', error);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
 /* helper */
 async function getInstruction(name: string) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  
-  if (!supabaseUrl || !supabaseKey) {
+  try {
+    const supabase = getSupabase();
+    const { data } = await supabase
+      .from("exercises_final")
+      .select("instruction")
+      .ilike("name", `%${name}%`)
+      .maybeSingle();
+    return data?.instruction ?? null;
+  } catch (error: any) {
+    console.error('Error getting instruction:', error);
     return null;
   }
-
-  const { createClient } = await import('@supabase/supabase-js');
-  const supabase = createClient(supabaseUrl, supabaseKey);
-  
-  const { data } = await supabase
-    .from("exercises_final")
-    .select("instruction")
-    .ilike("name", `%${name}%`)
-    .maybeSingle();
-  return data?.instruction ?? null;
 }
 
 // Nike Workout Shortcut Handler
 async function handleNikeShortcut(rawInput: string, userId: string) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  
-  if (!supabaseUrl || !supabaseKey) {
+  try {
+    const supabase = getSupabase();
+
+    // 1️⃣ VERIFY WE'RE HITTING THE INTENDED PROJECT
+    console.log('SUPA URL', process.env.NEXT_PUBLIC_SUPABASE_URL);
+    
+    // STEP 0: Match "Nike" or "Nike 2" (case-insensitive)
+    const m = /^nike\s*(\d+)?/i.exec(rawInput.trim());
+    if (!m) return false;
+
+    // STEP 1: Determine which workout #
+    const explicit = m[1] ? parseInt(m[1], 10) : null;
+
+    // always fetch profile progress so we can increment if needed
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("last_nike_workout")
+      .eq("user_id", userId)
+      .single();
+
+    const last = profile?.last_nike_workout ?? 0;
+    const workoutNo = explicit ?? last + 1;
+
+    // STEP 2: 👇  THE ONLY QUERY – points at **public.nike_workouts**
+    const { data: rows, error } = await fetchNikeWorkout(workoutNo);
+
+    // 2️⃣ LOG EXACT QUERY RESULTS
+    console.debug('NIKE rows', { workoutNo, rows: rows?.length, error });
+
+    // 3️⃣ DUMP DISTINCT WORKOUT NUMBERS DIRECTLY THROUGH SUPABASE
+    const { data: availableWorkouts } = await supabase
+      .from('nike_workouts')
+      .select('workout')
+      .order('workout', { ascending: true })
+      .limit(100);
+    console.debug('Available Nike workouts', availableWorkouts?.map(r => r.workout));
+
+    // 4️⃣ CHECK COLUMN NAME & TYPE ON THE FLY
+    try {
+      const { data: info } = await supabase.rpc('pg_catalog.get_columns', { table_name: 'nike_workouts' });
+      console.debug('Table schema info', info);
+    } catch (schemaError) {
+      console.debug('Schema check failed:', schemaError);
+    }
+
+    if (error) {
+      return {
+        assistantMessage: `Supabase error: ${error.message}`,
+        plan: null
+      };
+    }
+    if (!rows || rows.length === 0) {
+      return {
+        assistantMessage: `I couldn't find Nike workout ${workoutNo}.`,
+        plan: null
+      };
+    }
+
+    // STEP 3: Group rows by phase and render
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const phases = { warmup: [], main: [], cooldown: [] } as Record<string, any[]>;
+    rows.forEach((r: any) => phases[r.exercise_phase || "main"].push(r));
+
+    const nikeWorkout = {
+      workoutType: "Nike",
+      workoutNumber: workoutNo,
+      warmup: phases.warmup.map(r => `${r.exercise}: ${r.sets}x${r.reps}`),
+      workout: phases.main.map(r => `${r.exercise}: ${r.sets}x${r.reps}`),
+      cooldown: phases.cooldown.map(r => `${r.exercise}: ${r.sets}x${r.reps}`)
+    };
+
+    // STEP 4: Return appropriate message based on whether it's the next workout
+    const isNext = workoutNo === last + 1;
+    const message = isNext 
+      ? `Here's your next Nike workout (#${workoutNo}):`
+      : `Here's Nike workout #${workoutNo}:`;
+
+    return {
+      assistantMessage: message,
+      plan: nikeWorkout
+    };
+  } catch (error) {
+    console.error('Nike shortcut error:', error);
     return false;
   }
-
-  const { createClient } = await import('@supabase/supabase-js');
-  const supabase = createClient(supabaseUrl, supabaseKey);
-
-  // 1️⃣ VERIFY WE'RE HITTING THE INTENDED PROJECT
-  console.log('SUPA URL', process.env.NEXT_PUBLIC_SUPABASE_URL);
-  
-  // STEP 0: Match "Nike" or "Nike 2" (case-insensitive)
-  const m = /^nike\s*(\d+)?/i.exec(rawInput.trim());
-  if (!m) return false;
-
-  // STEP 1: Determine which workout #
-  const explicit = m[1] ? parseInt(m[1], 10) : null;
-
-  // always fetch profile progress so we can increment if needed
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("last_nike_workout")
-    .eq("user_id", userId)
-    .single();
-
-  const last = profile?.last_nike_workout ?? 0;
-  const workoutNo = explicit ?? last + 1;
-
-  // STEP 2: 👇  THE ONLY QUERY – points at **public.nike_workouts**
-  const { data: rows, error } = await fetchNikeWorkout(workoutNo);
-
-  // 2️⃣ LOG EXACT QUERY RESULTS
-  console.debug('NIKE rows', { workoutNo, rows: rows?.length, error });
-
-  // 3️⃣ DUMP DISTINCT WORKOUT NUMBERS DIRECTLY THROUGH SUPABASE
-  const { data: availableWorkouts } = await supabase
-    .from('nike_workouts')
-    .select('workout')
-    .order('workout', { ascending: true })
-    .limit(100);
-  console.debug('Available Nike workouts', availableWorkouts?.map(r => r.workout));
-
-  // 4️⃣ CHECK COLUMN NAME & TYPE ON THE FLY
-  try {
-    const { data: info } = await supabase.rpc('pg_catalog.get_columns', { table_name: 'nike_workouts' });
-    console.debug('Table schema info', info);
-  } catch (schemaError) {
-    console.debug('Schema check failed:', schemaError);
-  }
-
-  if (error) {
-    return {
-      assistantMessage: `Supabase error: ${error.message}`,
-      plan: null
-    };
-  }
-  if (!rows || rows.length === 0) {
-    return {
-      assistantMessage: `I couldn't find Nike workout ${workoutNo}.`,
-      plan: null
-    };
-  }
-
-  // STEP 3: Group rows by phase and render
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const phases = { warmup: [], main: [], cooldown: [] } as Record<string, any[]>;
-  rows.forEach(r => phases[r.exercise_phase || "main"].push(r));
-
-  const nikeWorkout = {
-    workoutType: "Nike",
-    workoutNumber: workoutNo,
-    warmup: phases.warmup.map(r => `${r.exercise}: ${r.sets}x${r.reps}`),
-    workout: phases.main.map(r => `${r.exercise}: ${r.sets}x${r.reps}`),
-    cooldown: phases.cooldown.map(r => `${r.exercise}: ${r.sets}x${r.reps}`)
-  };
-
-  // STEP 4: Return appropriate message based on whether it's the next workout
-  const isNext = workoutNo === last + 1;
-  const message = isNext 
-    ? `Here's your next Nike workout (#${workoutNo}):`
-    : `Here's Nike workout #${workoutNo}:`;
-
-  return {
-    assistantMessage: message,
-    plan: nikeWorkout
-  };
 } 

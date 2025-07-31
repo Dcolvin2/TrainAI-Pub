@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { callClaude } from '@/lib/claude-server';
 
 interface ExerciseInstructionRequest {
   exerciseName: string;
@@ -7,12 +8,6 @@ interface ExerciseInstructionRequest {
 
 export async function POST(req: NextRequest) {
   try {
-    // Initialize Anthropic inside the function, not at module level
-    const anthropicKey = process.env.ANTHROPIC_API_KEY;
-    if (!anthropicKey) {
-      return NextResponse.json({ error: 'AI service not configured' }, { status: 500 });
-    }
-
     const { exerciseName, userId }: ExerciseInstructionRequest = await req.json();
 
     if (!exerciseName) {
@@ -28,29 +23,9 @@ export async function POST(req: NextRequest) {
     const userPrompt = `Provide proper form instructions for the exercise: ${exerciseName}. Include key safety tips and common mistakes to avoid.`;
 
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': anthropicKey,
-          'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
-          model: 'claude-3-5-sonnet-20241022',
-          max_tokens: 200,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ]
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Claude API error: ${response.status}`);
-      }
-
-      const data = await response.json();
-      const instruction = data.content[0].text;
+      const instruction = await callClaude([
+        { role: 'user', content: userPrompt }
+      ], systemPrompt);
 
       return NextResponse.json({ 
         success: true, 
@@ -68,8 +43,8 @@ export async function POST(req: NextRequest) {
         exerciseName
       });
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Exercise instruction error:', error);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 } 
