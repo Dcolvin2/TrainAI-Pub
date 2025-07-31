@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getSupabase } from '@/lib/supabase-server';
+import { createClient } from '@supabase/supabase-js';
 
 // TypeScript-safe workout completion handler
 interface LogSet {
@@ -14,14 +14,13 @@ interface LogSet {
   done: boolean;
 }
 
-interface WorkoutSet {
-  actual_weight?: number;
-  reps?: number;
-}
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function POST(req: Request) {
   try {
-    const supabase = getSupabase();
     const { userId, logSets } = await req.json();
 
     // 1) Create or reuse a session
@@ -60,9 +59,7 @@ export async function POST(req: Request) {
       throw new Error('Failed to calculate volume');
     }
 
-    const totalVolume = (volumeAgg as WorkoutSet[])?.reduce((sum: number, set: WorkoutSet) => {
-      return sum + ((set.actual_weight || 0) * (set.reps || 0));
-    }, 0) || 0;
+    const totalVolume = volumeAgg?.reduce((sum, set) => sum + ((set.actual_weight || 0) * (set.reps || 0)), 0) || 0;
 
     await supabase
       .from('workout_sessions')
@@ -100,8 +97,10 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ sessionId: session.id, total_volume: totalVolume });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Complete workout error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ 
+      error: error instanceof Error ? error.message : 'Failed to complete workout' 
+    }, { status: 500 });
   }
 } 

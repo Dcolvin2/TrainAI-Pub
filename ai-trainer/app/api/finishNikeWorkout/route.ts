@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabase } from '@/lib/supabase-server';
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 interface FinishNikeWorkoutRequest {
   userId: string;
@@ -8,7 +13,6 @@ interface FinishNikeWorkoutRequest {
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = getSupabase();
     const { userId, workoutNumber }: FinishNikeWorkoutRequest = await req.json();
 
     if (!userId) {
@@ -49,8 +53,10 @@ export async function POST(req: NextRequest) {
       newProgress: workoutNumber >= currentProgress ? workoutNumber : currentProgress
     });
 
-  } catch (error: any) {
+  } catch (error) {
     console.error('Finish Nike workout error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({
+      error: error instanceof Error ? error.message : 'Failed to finish workout'
+    }, { status: 500 });
   }
 } 

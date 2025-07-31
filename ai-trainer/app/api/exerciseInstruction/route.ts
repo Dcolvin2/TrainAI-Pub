@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { callClaude } from '@/lib/claude-server';
+import { chatWithFunctions } from '@/lib/chatService';
 
 interface ExerciseInstructionRequest {
   exerciseName: string;
@@ -18,33 +18,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
     }
 
-    // Generate exercise instruction using Claude
+    // Generate exercise instruction using GPT
     const systemPrompt = `You are a knowledgeable fitness coach. Provide clear, safe, and concise exercise form instructions. Keep responses under 100 words and focus on key form points.`;
     const userPrompt = `Provide proper form instructions for the exercise: ${exerciseName}. Include key safety tips and common mistakes to avoid.`;
 
-    try {
-      const instruction = await callClaude([
-        { role: 'user', content: userPrompt }
-      ], systemPrompt);
+    const history = [
+      { role: 'system' as const, content: systemPrompt },
+      { role: 'user' as const, content: userPrompt }
+    ];
 
-      return NextResponse.json({ 
-        success: true, 
-        instruction,
-        exerciseName
-      });
-    } catch (claudeError) {
-      console.error('Claude API error:', claudeError);
-      // Fallback instruction
-      const instruction = `For ${exerciseName}: Focus on proper form, controlled movement, and full range of motion. If you're unsure about technique, consider consulting a fitness professional.`;
-      
-      return NextResponse.json({ 
-        success: true, 
-        instruction,
-        exerciseName
-      });
-    }
-  } catch (error: any) {
+    const instruction = await chatWithFunctions(history) || 
+      `For ${exerciseName}: Focus on proper form, controlled movement, and full range of motion. If you're unsure about technique, consider consulting a fitness professional.`;
+
+    return NextResponse.json({ 
+      success: true, 
+      instruction,
+      exerciseName
+    });
+  } catch (error) {
     console.error('Exercise instruction error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({
+      error: error instanceof Error ? error.message : 'Failed to get exercise instruction'
+    }, { status: 500 });
   }
 } 

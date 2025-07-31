@@ -1,43 +1,40 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getSupabase } from '@/lib/supabase-server';
+import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 
-interface GetNikeProgressRequest {
-  userId: string;
-}
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   try {
-    const supabase = getSupabase();
-    const { userId }: GetNikeProgressRequest = await req.json();
+    const { userId } = await req.json();
 
     if (!userId) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
     }
 
-    // Get current Nike workout progress
+    // Get user's last completed Nike workout
     const { data: profile, error } = await supabase
       .from('profiles')
       .select('last_nike_workout')
-      .eq('user_id', userId)
+      .eq('id', userId)
       .single();
 
     if (error) {
-      console.error('Error fetching Nike progress:', error);
-      return NextResponse.json({ 
-        error: 'Failed to fetch workout progress' 
-      }, { status: 500 });
+      console.error('Supabase error:', error);
+      return NextResponse.json({ error: 'Failed to get Nike progress' }, { status: 500 });
     }
-
-    const currentProgress = profile?.last_nike_workout ?? 0;
 
     return NextResponse.json({ 
       success: true, 
-      currentProgress,
-      nextWorkout: currentProgress + 1
+      lastWorkout: profile?.last_nike_workout || 0,
+      nextWorkout: (profile?.last_nike_workout || 0) + 1
     });
-
-  } catch (error: any) {
+  } catch (error) {
     console.error('Get Nike progress error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({
+      error: error instanceof Error ? error.message : 'Failed to get Nike progress'
+    }, { status: 500 });
   }
 } 

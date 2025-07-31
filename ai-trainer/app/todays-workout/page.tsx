@@ -584,63 +584,35 @@ function TodaysWorkoutPageContent() {
       return;
     }
 
-    // ── 7️⃣ CATCH-ALL GPT LAST ──
+    // ── 7️⃣ CATCH-ALL CLAUDE LAST ──
     try {
-      console.log('[TRACE] catch-all GPT route fires');
-      const coachReply = await fetch('/api/workoutChat', {
+      console.log('[TRACE] catch-all Claude route fires');
+      const coachReply = await fetch('/api/claude', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          userId: user?.id || 'anonymous',
-          messages: [
-            { role: 'system', content: 'You are a concise fitness coach. Reply in ≤120 words.' },
-            ...messages.slice(-10),  // ── KEEP CHAT MEMORY ──
-            { role: 'user', content: message }
-          ]
+          message: `You are a concise fitness coach. Reply in ≤120 words. User message: ${message}`
         })
       });
 
       if (coachReply.ok) {
         const data = await coachReply.json();
-        console.log('[TRACE] coach reply OK');
+        console.log('[TRACE] Claude reply OK');
         setChatMessages(prev => [
           ...prev,
-          { sender: 'assistant', text: data.assistantMessage, timestamp: new Date().toLocaleTimeString() },
+          { sender: 'assistant', text: data.content, timestamp: new Date().toLocaleTimeString() },
         ]);
         
         // ── UPDATE CHAT MEMORY ──
-        setMessages(prev => [...prev, { role: 'assistant', content: data.assistantMessage }]);
-        
-        // ── ALWAYS EXPECT FUNCTION CALL (forced updateWorkout) ──
-        if (data.plan) {
-          console.log('[TRACE] workout data received:', data.plan);
-          const updatedWorkout: WorkoutData = {
-            planId: crypto.randomUUID(),  // ← fresh planId forces re-render
-            warmup: data.plan.warmup || [],
-            workout: data.plan.workout || [],
-            cooldown: data.plan.cooldown || [],
-            accessories: (data.plan as any).accessories || [],
-            prompt: data.plan.prompt || 'Updated workout'
-          };
-          setPendingWorkout(updatedWorkout);
-          
-          // ── UPDATE CURRENT PLAN STATE ──
-          const planRows = [
-            ...(data.plan.warmup || []).map((ex: string) => ({ name: ex, exercise_phase: 'warmup' })),
-            ...(data.plan.workout || []).map((ex: string) => ({ name: ex, exercise_phase: 'core_lift' })),
-            ...(data.plan.accessories || []).map((ex: string) => ({ name: ex, exercise_phase: 'accessory' })),
-            ...(data.plan.cooldown || []).map((ex: string) => ({ name: ex, exercise_phase: 'cooldown' }))
-          ];
-          setCurrentPlan(planRows);
-        }
+        setMessages(prev => [...prev, { role: 'assistant', content: data.content }]);
         
         return;                                  // stop; no fallback
       }
     } catch (err) {
-      console.error('[TRACE] OpenAI error ↓↓↓', err); // log full error
+      console.error('[TRACE] Claude error ↓↓↓', err); // log full error
       setChatMessages(prev => [
         ...prev,
-        { sender: 'assistant', text: '⚠️ OpenAI error — see console for details', timestamp: new Date().toLocaleTimeString() },
+        { sender: 'assistant', text: '⚠️ Claude error — see console for details', timestamp: new Date().toLocaleTimeString() },
       ]);
       return;                                  // still stop fallback
     }
