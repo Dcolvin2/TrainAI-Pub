@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     const text = content.type === 'text' ? content.text : 'No response';
 
     return NextResponse.json({ 
-      content: text,
+      assistantMessage: text,
       model: 'claude-3-5-sonnet-20241022',
       timestamp: new Date().toISOString()
     });
