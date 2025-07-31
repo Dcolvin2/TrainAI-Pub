@@ -1,15 +1,22 @@
+import Anthropic from '@anthropic-ai/sdk';
+
 export async function POST(request) {
   try {
+    const anthropic = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY,
+    });
+
     const { message } = await request.json();
 
-    // For now, return a simplified response
-    // Later we can integrate with real Claude API
-    const response = {
-      content: `Workout Plan for: ${message}\n\nThis is a placeholder response. Real Claude integration coming soon!`
-    };
+    const response = await anthropic.messages.create({
+      model: 'claude-3-5-sonnet-20241022',
+      max_tokens: 1000,
+      messages: [{ role: 'user', content: message }]
+    });
 
-    return Response.json(response);
+    return Response.json({ content: response.content[0].text });
   } catch (error) {
+    console.error('Claude API error:', error);
     return Response.json({ error: 'Claude error' }, { status: 500 });
   }
 } 
