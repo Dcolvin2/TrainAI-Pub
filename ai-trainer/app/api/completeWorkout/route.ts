@@ -14,6 +14,11 @@ interface LogSet {
   done: boolean;
 }
 
+interface WorkoutSet {
+  actual_weight?: number;
+  reps?: number;
+}
+
 export async function POST(req: Request) {
   try {
     const supabase = getSupabase();
@@ -55,7 +60,9 @@ export async function POST(req: Request) {
       throw new Error('Failed to calculate volume');
     }
 
-    const totalVolume = volumeAgg?.reduce((sum, set) => sum + ((set.actual_weight || 0) * (set.reps || 0)), 0) || 0;
+    const totalVolume = (volumeAgg as WorkoutSet[])?.reduce((sum: number, set: WorkoutSet) => {
+      return sum + ((set.actual_weight || 0) * (set.reps || 0));
+    }, 0) || 0;
 
     await supabase
       .from('workout_sessions')

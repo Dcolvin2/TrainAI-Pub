@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getSupabase } from '@/lib/supabase-server';
 
 // Day of week workout schedule
 const workoutSchedule = {
@@ -17,8 +18,14 @@ const getDayWorkoutType = (day: string) => {
   return workoutSchedule[dayKey as keyof typeof workoutSchedule] || null;
 };
 
+interface Exercise {
+  name: string;
+  category: string;
+  equipment_required?: string[];
+}
+
 // Get available exercises based on user equipment and category
-const getAvailableExercises = async (supabase: any, equipmentList: string[], category?: string) => {
+const getAvailableExercises = async (supabase: any, equipmentList: string[], category?: string): Promise<Exercise[]> => {
   let query = supabase
     .from('exercises_final')
     .select('*');
@@ -33,7 +40,7 @@ const getAvailableExercises = async (supabase: any, equipmentList: string[], cat
   if (!exercises) return [];
   
   // Filter exercises based on available equipment
-  return exercises.filter((exercise: any) => {
+  return exercises.filter((exercise: Exercise) => {
     if (!exercise.equipment_required || exercise.equipment_required.length === 0) {
       return true; // Bodyweight exercises
     }
@@ -61,18 +68,7 @@ const getUserProfile = async (supabase: any, userId: string) => {
 
 export async function POST(req: Request) {
   try {
-    // Initialize Supabase inside the function using dynamic import
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    
-    if (!supabaseUrl || !supabaseKey) {
-      console.error('Missing Supabase environment variables');
-      return NextResponse.json({ error: 'Database configuration error' }, { status: 500 });
-    }
-
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
+    const supabase = getSupabase();
     const { userId, minutes, prompt } = await req.json();
 
     if (!userId) {
@@ -105,68 +101,26 @@ export async function POST(req: Request) {
       const lastWorkout = userProfile?.last_nike_workout || 0;
       const nextWorkoutNumber = lastWorkout + 1;
 
-      // Get the next Nike workout with correct column names
-      const { data: nikeRaw } = await supabase
-        .from('nike_workouts')
-        .select('workout, exercise_name, sets, reps, weight, rest_seconds, section')
-        .eq('workout', nextWorkoutNumber);
-
-      if (nikeRaw && nikeRaw.length > 0) {
-        // Extract exercise names from Nike data
-        const nikeExercises = nikeRaw.map(row => row.exercise_name);
-
-        // Cross-reference with exercise table to get metadata
-        const { data: matchedExercises } = await supabase
-          .from('exercises_final')
-          .select('*')
-          .in('name', nikeExercises);
-
-        // Merge Nike data with exercise metadata
-        const enrichedNike = nikeRaw.map(row => {
-          const match = matchedExercises?.find(ex => ex.name === row.exercise_name);
-          return {
-            ...row,
-            category: match?.category,
-            equipment_required: match?.equipment_required,
-            primary_muscle: match?.primary_muscle,
-          };
-        });
-
-
-        // Get available exercises for Nike workout
-        const availableExercises = await getAvailableExercises(supabase, equipmentList);
-        const exerciseOptions = availableExercises.map((ex: any) => `${ex.name} (${ex.category})`).join('\n');
-        
-        systemPrompt = `You are TrainAI, an expert fitness coach. The user is following the Nike workout program.
-        
-        User profile: ${profile?.first_name || 'Unknown'}.
-        Goals: ${goals?.map(g => g.description).join(', ') || 'None'}.
-        Equipment: ${equipmentList.join(', ') || 'None'}.
-        
-        Available exercises for this user:
-        ${exerciseOptions}
-        
-        The user last completed Nike workout #${lastWorkout}. This is workout #${nextWorkoutNumber}.`;
-        
-        userPrompt = `Create a workout plan based on the Nike program workout #${nextWorkoutNumber}. 
-        Workout data: ${JSON.stringify(enrichedNike)}. 
-        Format the response as a structured workout with warm-up, main workout, and cool-down sections.
-        Total workout time should be ${minutes} minutes.
-        
-        IMPORTANT: Use the exact exercise names from the data. Do NOT add "(bodyweight)" to any exercise names unless it's explicitly part of the exercise name in the data.`;
-      } else {
-        // Fallback to regular AI generation for Nike
-        systemPrompt = `You are TrainAI, an expert fitness coach. The user wants a Nike-style workout.
-        
-        User profile: ${profile?.first_name || 'Unknown'}.
-        Goals: ${goals?.map(g => g.description).join(', ') || 'None'}.
-        Equipment: ${equipmentList.join(', ') || 'None'}.
-        
-        Create a Nike-style workout that focuses on compound movements, progressive overload, and functional fitness.
-        Total workout time should be ${minutes} minutes.
-        
-        IMPORTANT: Use exact exercise names. Do NOT add "(bodyweight)" to exercise names unless it's explicitly part of the exercise name.`;
-      }
+      // Get available exercises for Nike workout
+      const availableExercises = await getAvailableExercises(supabase, equipmentList);
+      const exerciseOptions = availableExercises.map((ex: Exercise) => `${ex.name} (${ex.category})`).join('\n');
+      
+      systemPrompt = `You are TrainAI, an expert fitness coach. The user is following the Nike workout program.
+      
+      User profile: ${profile?.first_name || 'Unknown'}.
+      Goals: ${goals?.map((g: any) => g.description).join(', ') || 'None'}.
+      Equipment: ${equipmentList.join(', ') || 'None'}.
+      
+      Available exercises for this user:
+      ${exerciseOptions}
+      
+      The user last completed Nike workout #${lastWorkout}. This is workout #${nextWorkoutNumber}.`;
+      
+      userPrompt = `Create a workout plan based on the Nike program workout #${nextWorkoutNumber}. 
+      Format the response as a structured workout with warm-up, main workout, and cool-down sections.
+      Total workout time should be ${minutes} minutes.
+      
+      IMPORTANT: Use the exact exercise names from the data. Do NOT add "(bodyweight)" to any exercise names unless it's explicitly part of the exercise name in the data.`;
     } else {
       // Check for day of week in prompt
       const dayKeywords = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
@@ -180,7 +134,7 @@ export async function POST(req: Request) {
         if (dayType && dayType.includes('Cardio')) {
           // Get cardio exercises from database
           const cardioExercises = await getAvailableExercises(supabase, equipmentList, 'endurance');
-                      const cardioOptions = cardioExercises.map((ex: any) => ex.name).join(', ');
+          const cardioOptions = cardioExercises.map((ex: Exercise) => ex.name).join(', ');
           daySpecificPrompt = `Today is ${detectedDay.charAt(0).toUpperCase() + detectedDay.slice(1)} and it's a cardio day. Available cardio exercises: ${cardioOptions}.`;
         } else if (dayType) {
           daySpecificPrompt = `Today is ${detectedDay.charAt(0).toUpperCase() + detectedDay.slice(1)} and it's a ${dayType} day. Focus the workout on ${dayType} training.`;
@@ -189,12 +143,12 @@ export async function POST(req: Request) {
 
       // Get available exercises for the user
       const availableExercises = await getAvailableExercises(supabase, equipmentList);
-              const exerciseOptions = availableExercises.map((ex: any) => `${ex.name} (${ex.category})`).join('\n');
+      const exerciseOptions = availableExercises.map((ex: Exercise) => `${ex.name} (${ex.category})`).join('\n');
       
       systemPrompt = `You are TrainAI, an expert fitness coach.
       
       User profile: ${profile?.first_name || 'Unknown'}.
-      Goals: ${goals?.map(g => g.description).join(', ') || 'None'}.
+      Goals: ${goals?.map((g: any) => g.description).join(', ') || 'None'}.
       Equipment: ${equipmentList.join(', ') || 'None'}.
       ${daySpecificPrompt}
       
@@ -206,14 +160,7 @@ export async function POST(req: Request) {
       IMPORTANT: Use exact exercise names from the available exercises list. Do NOT add "(bodyweight)" to exercise names unless it's explicitly part of the exercise name.`;
     }
 
-    // Call OpenAI
-    const history = [
-      { role: 'system' as const, content: systemPrompt },
-      { role: 'user' as const, content: userPrompt }
-    ];
-    
-    // The chatWithFunctions import was removed, so this line is commented out or removed if not needed.
-    // For now, we'll just return a placeholder plan.
+    // For now, return a placeholder plan since we removed the OpenAI integration
     const plan = {
       warmup: ['Dynamic stretching', 'Light cardio'],
       workout: ['Main exercise: 3x8', 'Accessory: 3x12'],
@@ -226,17 +173,15 @@ export async function POST(req: Request) {
       minutes: minutes,
       prompt: prompt,
       plan: plan,
-      used_model: 'gpt-3.5-turbo',
-              is_nike: isNike,
-        workout_type: isNike ? 'nike' : null,
+      used_model: 'claude-3-5-sonnet',
+      is_nike: isNike,
+      workout_type: isNike ? 'nike' : null,
       day_of_week: null
     });
 
     return NextResponse.json(plan);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Generate workout error:', error);
-    return NextResponse.json({
-      error: error instanceof Error ? error.message : 'Failed to generate workout'
-    }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 } 

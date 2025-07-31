@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getSupabase } from '@/lib/supabase-server'
+import { callClaude } from '@/lib/claude-server'
 
 interface WorkoutChatRequest {
   userId: string;
@@ -11,24 +13,7 @@ interface WorkoutChatRequest {
 
 export async function POST(req: NextRequest) {
   try {
-    // Initialize Supabase inside the function using dynamic import
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    
-    if (!supabaseUrl || !supabaseKey) {
-      console.error('Missing Supabase environment variables');
-      return NextResponse.json({ error: 'Database configuration error' }, { status: 500 });
-    }
-
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    // Same for Anthropic
-    const anthropicKey = process.env.ANTHROPIC_API_KEY;
-    if (!anthropicKey) {
-      return NextResponse.json({ error: 'AI service not configured' }, { status: 500 });
-    }
-
+    const supabase = getSupabase();
     const { userId, messages }: WorkoutChatRequest = await req.json();
 
     if (!userId || !messages || messages.length === 0) {
@@ -94,7 +79,7 @@ export async function POST(req: NextRequest) {
         goals: userProfile?.goals || [],
         currentWeight: userProfile?.current_weight || 'Unknown',
         equipment: userProfile?.equipment || [],
-        recentWorkouts: recentWorkouts?.map(w => w.workout_type) || []
+        recentWorkouts: recentWorkouts?.map((w: any) => w.workout_type) || []
       };
 
       // System prompt for Claude
@@ -115,31 +100,7 @@ export async function POST(req: NextRequest) {
       Respond in a helpful, encouraging tone.`;
       
       try {
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': anthropicKey!,
-            'anthropic-version': '2023-06-01'
-          },
-          body: JSON.stringify({
-            model: 'claude-3-5-sonnet-20241022',
-            max_tokens: 1000,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              ...messages
-            ]
-          })
-        });
-
-        if (!response.ok) {
-          const errorData = await response.text();
-          console.error('Claude API error:', response.status, errorData);
-          throw new Error(`Claude API error: ${response.status}`);
-        }
-
-        const data = await response.json();
-        return data.content[0].text;
+        return await callClaude(messages, systemPrompt);
       } catch (error) {
         console.error('Claude chat error:', error);
         throw error;
@@ -154,10 +115,10 @@ export async function POST(req: NextRequest) {
       plan: null
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('API Error:', error);
     return NextResponse.json(
-      { error: 'Server error' },
+      { error: error.message },
       { status: 500 }
     );
   }
