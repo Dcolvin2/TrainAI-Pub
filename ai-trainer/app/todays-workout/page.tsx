@@ -8,7 +8,7 @@ import TimeSelector from '../components/TimeSelector';
 import { supabase } from '@/lib/supabaseClient';
 import { useWorkoutStore, WorkoutProvider } from '@/lib/workoutStore';
 import { fetchNikeWorkout } from '@/lib/nikeWorkoutHelper';
-import { generateWorkoutByDay } from "@/lib/buildWorkoutByDay";
+import { buildWorkoutByDay, generateWorkoutByDay } from "@/lib/buildWorkoutByDay";
 import { getExerciseInstructions } from '@/lib/getExerciseInstructions';
 import { fetchInstructions } from '@/lib/fetchInstructions';
 import { isQuickEntry, parseQuickEntry } from '@/utils/parseQuickEntry';
@@ -19,10 +19,10 @@ import { getExerciseInstruction } from '@/lib/getExerciseInstruction';
 // DEV ONLY: Smoke test helper
 if (typeof window !== 'undefined') {
   (window as any).__showPlan = async (day = 'Monday') => {
-    const plan = await generateWorkoutByDay('test-user', 45);
+    const plan = await buildWorkoutByDay('test-user', day, 45);
     console.table([
-      ['Target (min)', day, plan?.duration || 'N/A'],
-      ...(plan?.main.map(a => ['main', a.name]) || [])
+      ['Target (min)', day, plan.estimatedMinutes?.toFixed(1) || 'N/A'],
+      ...plan.accessories.map(a => ['accessory', a.name])
     ]);
     return plan;
   };
@@ -185,14 +185,81 @@ function TodaysWorkoutPageContent() {
     }
   }, [user, router]);
 
-  // REMOVED: Auto-generate workout on page load - this was causing infinite loop
-  // useEffect(() => {
-  //   if (user?.id && !pendingWorkout && !activeWorkout) {
-  //     generateWorkoutByDay(user.id, timeAvailable).then(workoutPlan => {
-  //       // ... workout generation logic
-  //     });
-  //   }
-  // }, [user?.id, pendingWorkout, activeWorkout, timeAvailable, setPendingWorkout]);
+  // Auto-generate workout on page load
+  useEffect(() => {
+    // Prevent multiple simultaneous generations
+    if ((window as any).isGeneratingWorkout) {
+      console.log('Already generating workout, skipping...');
+      return;
+    }
+    
+    if (user?.id && !pendingWorkout && !activeWorkout) {
+      (window as any).isGeneratingWorkout = true;
+      
+      const generateWorkout = async () => {
+        try {
+          console.log('[WORKOUT] Auto-generating workout for user:', user.id);
+          
+          // Use the new generateWorkoutByDay function
+          const workout = await generateWorkoutByDay(user.id, timeAvailable);
+          
+          if (workout) {
+            console.log('[WORKOUT] Generated workout:', workout);
+            
+            // Convert to WorkoutData format for the store
+            const workoutData: WorkoutData = {
+              planId: crypto.randomUUID(),
+              warmup: workout.warmup.map((ex: any) => `${ex.name}: ${ex.duration}`),
+              workout: workout.main.filter((ex: any) => ex.type === 'core_lift').map((ex: any) => `${ex.name}: ${ex.sets}x${ex.reps}`),
+              cooldown: workout.cooldown.map((ex: any) => `${ex.name}: ${ex.duration}`),
+              accessories: workout.main.filter((ex: any) => ex.type === 'accessory').map((ex: any) => `${ex.name}: ${ex.sets}x${ex.reps}`),
+              prompt: `${workout.day} ${workout.type} workout (${workout.duration} min) - Focus: ${workout.focus || 'full body'}`
+            };
+            
+            setPendingWorkout(workoutData);
+            
+            // Store current plan for chat interactions
+            const planRows = [
+              ...workout.warmup.map((ex: any) => ({ ...ex, exercise_phase: 'warmup' })),
+              ...workout.main.filter((ex: any) => ex.type === 'core_lift').map((ex: any) => ({ ...ex, exercise_phase: 'core_lift' })),
+              ...workout.main.filter((ex: any) => ex.type === 'accessory').map((ex: any) => ({ ...ex, exercise_phase: 'accessory' })),
+              ...workout.cooldown.map((ex: any) => ({ ...ex, exercise_phase: 'cooldown' }))
+            ];
+            setCurrentPlan(planRows);
+            
+            // Add workout type info to chat
+            if (workout.type === 'rest') {
+              setChatMessages(prev => [
+                ...prev,
+                { sender: 'assistant', text: `Today is a rest day! Take it easy and focus on recovery.`, timestamp: new Date().toLocaleTimeString() },
+              ]);
+            } else {
+              setChatMessages(prev => [
+                ...prev,
+                { sender: 'assistant', text: `Generated your ${workout.type} workout for ${workout.day}. Focus: ${workout.focus || 'full body'}`, timestamp: new Date().toLocaleTimeString() },
+              ]);
+            }
+          } else {
+            console.error('[WORKOUT] Failed to generate workout');
+            setChatMessages(prev => [
+              ...prev,
+              { sender: 'assistant', text: `Sorry, I couldn't generate today's workout. Please try again.`, timestamp: new Date().toLocaleTimeString() },
+            ]);
+          }
+        } catch (error) {
+          console.error('[WORKOUT] Auto-workout generation error:', error);
+          setChatMessages(prev => [
+            ...prev,
+            { sender: 'assistant', text: `Sorry, I couldn't generate today's workout. Please try again.`, timestamp: new Date().toLocaleTimeString() },
+          ]);
+        } finally {
+          (window as any).isGeneratingWorkout = false;
+        }
+      };
+      
+      generateWorkout();
+    }
+  }, [user?.id, pendingWorkout, activeWorkout, timeAvailable, setPendingWorkout]);
 
   // Auto-scroll chat to bottom when new messages are added
   useEffect(() => {
@@ -355,36 +422,6 @@ function TodaysWorkoutPageContent() {
     setPendingWorkout(workoutData);
   };
 
-  // Replace your existing workout generation with this
-  const handleGenerateWorkout = async () => {
-    if (!user?.id) return;
-    
-    const workout = await generateWorkoutByDay(user.id, timeAvailable);
-    
-    if (workout) {
-      // Convert new workout plan format to WorkoutData format
-      const workoutData: WorkoutData = {
-        planId: crypto.randomUUID(),
-        warmup: workout.warmup.map(ex => `${ex.name}: ${ex.duration}`),
-        workout: workout.main.filter(ex => ex.type === 'core_lift').map(ex => `${ex.name}: ${ex.sets}x${ex.reps}`),
-        cooldown: workout.cooldown.map(ex => `${ex.name}: ${ex.duration}`),
-        accessories: workout.main.filter(ex => ex.type === 'accessory' || ex.type === 'cardio' || ex.type === 'hiit').map(ex => {
-          if (ex.type === 'hiit') {
-            return `${ex.name}: ${ex.rounds} rounds (${ex.duration}, rest ${ex.rest})`;
-          } else if (ex.type === 'cardio') {
-            return `${ex.name}: ${ex.duration}`;
-          } else {
-            return `${ex.name}: ${ex.sets}x${ex.reps}`;
-          }
-        }),
-        prompt: `${workout.day} ${workout.type} workout (${workout.duration} min) - Focus: ${workout.focus}`
-      };
-      
-      setPendingWorkout(workoutData);
-      console.log('Generated workout:', workout);
-    }
-  };
-
   const handleChatMessage = async (message: string) => {
     // ── TRACE STEP 1: Input logging ──
     console.log('[TRACE] input raw:', message);
@@ -473,57 +510,49 @@ function TodaysWorkoutPageContent() {
       const minutes = minMatch ? parseInt(minMatch[1], 10) : timeAvailable;
 
       try {
-        const workoutPlan = await generateWorkoutByDay(user.id, minutes);
+        // Use the new generateWorkoutByDay function
+        const workout = await generateWorkoutByDay(user.id, minutes);
         
-        if (workoutPlan) {
-          // Convert new workout plan format to WorkoutData format
-          const workoutData: WorkoutData = {
-            planId: crypto.randomUUID(),
-            warmup: workoutPlan.warmup.map(ex => `${ex.name}: ${ex.duration}`),
-            workout: workoutPlan.main.filter(ex => ex.type === 'core_lift').map(ex => `${ex.name}: ${ex.sets}x${ex.reps}`),
-            cooldown: workoutPlan.cooldown.map(ex => `${ex.name}: ${ex.duration}`),
-            accessories: workoutPlan.main.filter(ex => ex.type === 'accessory' || ex.type === 'cardio' || ex.type === 'hiit').map(ex => {
-              if (ex.type === 'hiit') {
-                return `${ex.name}: ${ex.rounds} rounds (${ex.duration}, rest ${ex.rest})`;
-              } else if (ex.type === 'cardio') {
-                return `${ex.name}: ${ex.duration}`;
-              } else {
-                return `${ex.name}: ${ex.sets}x${ex.reps}`;
-              }
-            }),
-            prompt: `${workoutPlan.day} ${workoutPlan.type} workout (${workoutPlan.duration} min) - Focus: ${workoutPlan.focus}`
-          };
-          
-          setPendingWorkout(workoutData);
-          
-          const workoutText = 
-            `**${workoutPlan.day} ${workoutPlan.type} Workout (${workoutPlan.duration} min)**\n\n` +
-            `*Focus: ${workoutPlan.focus}*\n\n` +
-            `*Warm-up*: ${workoutPlan.warmup.map(ex => ex.name).join(", ") || "—"}\n` +
-            (workoutPlan.main.filter(ex => ex.type === 'core_lift').length > 0 ? 
-              `*Core Lift*: ${workoutPlan.main.filter(ex => ex.type === 'core_lift').map(ex => ex.name).join(", ")}\n` : "") +
-            `*Main*: ${workoutPlan.main.filter(ex => ex.type !== 'core_lift').map(ex => ex.name).join(", ") || "—"}\n` +
-            `*Cooldown*: ${workoutPlan.cooldown.map(ex => ex.name).join(", ") || "—"}`;
-
-          setChatMessages(prev => [
-            ...prev,
-            { sender: 'assistant', text: workoutText, timestamp: new Date().toLocaleTimeString() },
-          ]);
-          
-          // ── STORE CURRENT PLAN ──
-          const planRows = [
-            ...workoutPlan.warmup.map(ex => ({ name: ex.name, exercise_phase: 'warmup' })),
-            ...workoutPlan.main.filter(ex => ex.type === 'core_lift').map(ex => ({ name: ex.name, exercise_phase: 'core_lift' })),
-            ...workoutPlan.main.filter(ex => ex.type !== 'core_lift').map(ex => ({ name: ex.name, exercise_phase: 'accessory' })),
-            ...workoutPlan.cooldown.map(ex => ({ name: ex.name, exercise_phase: 'cooldown' }))
-          ];
-          setCurrentPlan(planRows);
-          setMessages(prev => [...prev, { role: 'assistant', content: workoutText }]);
-          
-          return;
-        } else {
-          throw new Error('Failed to generate workout plan');
+        if (!workout) {
+          throw new Error('Failed to generate workout');
         }
+        
+        // Convert to WorkoutData format for the table
+        const workoutData: WorkoutData = {
+          planId: crypto.randomUUID(),
+          warmup: workout.warmup.map((ex: any) => `${ex.name}: ${ex.duration}`),
+          workout: workout.main.filter((ex: any) => ex.type === 'core_lift').map((ex: any) => `${ex.name}: ${ex.sets}x${ex.reps}`),
+          cooldown: workout.cooldown.map((ex: any) => `${ex.name}: ${ex.duration}`),
+          accessories: workout.main.filter((ex: any) => ex.type === 'accessory').map((ex: any) => `${ex.name}: ${ex.sets}x${ex.reps}`),
+          prompt: `${workout.day} ${workout.type} workout (${workout.duration} min) - Focus: ${workout.focus || 'full body'}`
+        };
+        
+        setPendingWorkout(workoutData);
+        
+        const workoutText = 
+          `**${workout.day} ${workout.type} Workout (${workout.duration} min)**\n\n` +
+          `*Focus: ${workout.focus || 'full body'}*\n\n` +
+          `*Warm-up*: ${workout.warmup.map((ex: any) => ex.name).join(", ") || "—"}\n` +
+          (workout.main.find((ex: any) => ex.type === 'core_lift') ? `*Core Lift*: ${workout.main.find((ex: any) => ex.type === 'core_lift')!.name}\n` : "") +
+          `*Accessories*: ${workout.main.filter((ex: any) => ex.type === 'accessory').map((ex: any) => ex.name).join(", ") || "—"}\n` +
+          `*Cooldown*: ${workout.cooldown.map((ex: any) => ex.name).join(", ") || "—"}`;
+
+        setChatMessages(prev => [
+          ...prev,
+          { sender: 'assistant', text: workoutText, timestamp: new Date().toLocaleTimeString() },
+        ]);
+        
+        // ── STORE CURRENT PLAN ──
+        const planRows = [
+          ...workout.warmup.map((ex: any) => ({ ...ex, exercise_phase: 'warmup' })),
+          ...workout.main.filter((ex: any) => ex.type === 'core_lift').map((ex: any) => ({ ...ex, exercise_phase: 'core_lift' })),
+          ...workout.main.filter((ex: any) => ex.type === 'accessory').map((ex: any) => ({ ...ex, exercise_phase: 'accessory' })),
+          ...workout.cooldown.map((ex: any) => ({ ...ex, exercise_phase: 'cooldown' }))
+        ];
+        setCurrentPlan(planRows);
+        setMessages(prev => [...prev, { role: 'assistant', content: workoutText }]);
+        
+        return;
       } catch (error) {
         console.error('Day workout generation error:', error);
         setChatMessages(prev => [
@@ -590,8 +619,11 @@ function TodaysWorkoutPageContent() {
       setActiveWorkout(null);
       setCurrentPlan([]);
       
-      // Use the new handleGenerateWorkout function
-      await handleGenerateWorkout();
+      // reuse today's weekday
+      const dayNames = ["sunday","monday","tuesday","wednesday",
+                        "thursday","friday","saturday"];
+      const today = dayNames[new Date().getDay()];
+      handleChatMessage(`it's ${today}`);       // triggers day-of-week builder
       return;
     }
 
@@ -771,7 +803,18 @@ function TodaysWorkoutPageContent() {
         {/* Regenerate Workout Button */}
         <section className="mb-4" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
           <button
-            onClick={handleGenerateWorkout}
+            onClick={() => {
+              // clear current state first
+              setPendingWorkout(null);
+              setActiveWorkout(null);
+              setCurrentPlan([]);
+              
+              // reuse today's weekday
+              const dayNames = ["sunday","monday","tuesday","wednesday",
+                                "thursday","friday","saturday"];
+              const today = dayNames[new Date().getDay()];
+              handleChatMessage(`it's ${today}`);       // triggers day-of-week builder
+            }}
             className="w-full bg-[#22C55E] hover:bg-[#16a34a] text-white px-6 py-3 rounded-xl font-semibold transition-colors"
             style={{ maxWidth: '100%', boxSizing: 'border-box' }}
           >
