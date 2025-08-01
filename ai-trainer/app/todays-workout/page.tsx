@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 
@@ -26,6 +26,12 @@ interface WorkoutPlan {
   cooldown: Exercise[];
 }
 
+interface ChatMessage {
+  sender: 'user' | 'assistant';
+  text: string;
+  timestamp?: string;
+}
+
 export default function TodaysWorkoutPage() {
   const router = useRouter();
   
@@ -34,6 +40,9 @@ export default function TodaysWorkoutPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [timeAvailable, setTimeAvailable] = useState(45);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [inputText, setInputText] = useState('');
+  const chatHistoryRef = useRef<HTMLDivElement>(null);
 
   // Weekly workout schedule
   const weeklySchedule = {
@@ -72,13 +81,20 @@ export default function TodaysWorkoutPage() {
     };
   }, [router]);
 
+  // Auto-scroll chat to bottom when new messages are added
+  useEffect(() => {
+    if (chatHistoryRef.current) {
+      chatHistoryRef.current.scrollTop = chatHistoryRef.current.scrollHeight;
+    }
+  }, [chatMessages]);
+
   // Generate workout function
-  const generateWorkoutByDay = async (userId: string, duration: number = 45): Promise<WorkoutPlan | null> => {
+  const generateWorkoutByDay = async (userId: string, duration: number = 45, specificDay?: string): Promise<WorkoutPlan | null> => {
     try {
-      // Get current day
+      // Get current day or use specific day
       const today = new Date().getDay();
       const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-      const currentDay = dayNames[today];
+      const currentDay = specificDay || dayNames[today];
       
       console.log('Generating workout for:', currentDay);
       
@@ -216,6 +232,106 @@ export default function TodaysWorkoutPage() {
     }
   };
 
+  // Handle chat messages
+  const handleChatMessage = async (message: string) => {
+    if (!message.trim()) return;
+
+    // Add user message to chat
+    setChatMessages(prev => [...prev, { 
+      sender: 'user', 
+      text: message, 
+      timestamp: new Date().toLocaleTimeString() 
+    }]);
+
+    const lowerMessage = message.toLowerCase();
+
+    // Check for day-specific commands
+    const dayMatch = lowerMessage.match(/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i);
+    if (dayMatch && user?.id) {
+      const requestedDay = dayMatch[1][0].toUpperCase() + dayMatch[1].slice(1).toLowerCase();
+      
+      // Look for time specification
+      const timeMatch = message.match(/(\d+)\s*minutes?/i);
+      const duration = timeMatch ? parseInt(timeMatch[1], 10) : timeAvailable;
+
+      try {
+        const workout = await generateWorkoutByDay(user.id, duration, requestedDay);
+        
+        if (workout) {
+          setCurrentWorkout(workout);
+          
+          // Add assistant response
+          setChatMessages(prev => [...prev, { 
+            sender: 'assistant', 
+            text: `Generated your ${workout.type} workout for ${workout.day}. Focus: ${workout.focus || 'full body'}. Duration: ${workout.duration} minutes.`, 
+            timestamp: new Date().toLocaleTimeString() 
+          }]);
+
+          // Save to database
+          await supabase.from('generated_workouts').insert({
+            user_id: user.id,
+            minutes: duration,
+            prompt: `Day-based workout for ${workout.day}`,
+            plan: workout,
+            used_model: 'day-based-system'
+          });
+        } else {
+          setChatMessages(prev => [...prev, { 
+            sender: 'assistant', 
+            text: `Sorry, I couldn't generate a ${requestedDay} workout. Please try again.`, 
+            timestamp: new Date().toLocaleTimeString() 
+          }]);
+        }
+      } catch (error) {
+        console.error('Error generating workout:', error);
+        setChatMessages(prev => [...prev, { 
+          sender: 'assistant', 
+          text: `Sorry, I couldn't generate a ${requestedDay} workout. Please try again.`, 
+          timestamp: new Date().toLocaleTimeString() 
+        }]);
+      }
+      return;
+    }
+
+    // Check for time adjustment
+    const timeMatch = message.match(/(?:i have|only|just)\s+(\d+)\s*minutes?/i);
+    if (timeMatch) {
+      const newTime = parseInt(timeMatch[1], 10);
+      if (newTime >= 5 && newTime <= 120) {
+        setTimeAvailable(newTime);
+        setChatMessages(prev => [...prev, { 
+          sender: 'assistant', 
+          text: `Got it! I'll adjust workouts for ${newTime} minutes.`, 
+          timestamp: new Date().toLocaleTimeString() 
+        }]);
+        return;
+      }
+    }
+
+    // Check for regenerate command
+    if (lowerMessage.includes('regenerate') || lowerMessage.includes('new workout')) {
+      if (user?.id) {
+        const workout = await generateWorkoutByDay(user.id, timeAvailable);
+        if (workout) {
+          setCurrentWorkout(workout);
+          setChatMessages(prev => [...prev, { 
+            sender: 'assistant', 
+            text: `Generated a new ${workout.type} workout for ${workout.day}.`, 
+            timestamp: new Date().toLocaleTimeString() 
+          }]);
+        }
+      }
+      return;
+    }
+
+    // Default response for unrecognized commands
+    setChatMessages(prev => [...prev, { 
+      sender: 'assistant', 
+      text: `Try saying "it's Monday" or "it's Friday" to generate a specific day's workout, or "I have 30 minutes" to adjust the duration.`, 
+      timestamp: new Date().toLocaleTimeString() 
+    }]);
+  };
+
   // Generate workout on component mount
   useEffect(() => {
     const loadWorkout = async () => {
@@ -227,6 +343,13 @@ export default function TodaysWorkoutPage() {
         
         if (workout) {
           setCurrentWorkout(workout);
+          
+          // Add initial chat message
+          setChatMessages([{ 
+            sender: 'assistant', 
+            text: `Generated your ${workout.type} workout for ${workout.day}. Focus: ${workout.focus || 'full body'}. Say "it's Monday" or "it's Friday" to generate other days!`, 
+            timestamp: new Date().toLocaleTimeString() 
+          }]);
           
           // Save to database
           await supabase.from('generated_workouts').insert({
@@ -305,6 +428,75 @@ export default function TodaysWorkoutPage() {
         <h1 className="text-3xl font-bold mb-8">
           Today's Workout - {currentWorkout?.day}
         </h1>
+        
+        {/* Chat Interface */}
+        <div className="bg-gray-800 rounded-lg mb-8">
+          <div className="p-4 border-b border-gray-700">
+            <h3 className="text-lg font-semibold">AI Workout Coach</h3>
+          </div>
+          
+          <div className="h-64 flex flex-col">
+            <div 
+              className="flex-1 overflow-y-auto p-4 space-y-3"
+              ref={chatHistoryRef}
+            >
+              {chatMessages.length === 0 ? (
+                <div className="text-center text-gray-400 py-8">
+                  <p className="text-sm">Ask your coach anything...</p>
+                  <p className="text-xs mt-1">Try: "it's Monday" or "it's Friday"</p>
+                </div>
+              ) : (
+                chatMessages.map((message, index) => (
+                  <div key={index} className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-xs lg:max-w-md px-3 py-2 rounded-lg text-sm ${
+                      message.sender === 'user'
+                        ? 'bg-green-600 text-white rounded-br-md'
+                        : 'bg-gray-700 text-white rounded-bl-md'
+                    }`}>
+                      <div className="whitespace-pre-wrap">{message.text}</div>
+                      {message.timestamp && (
+                        <div className={`text-xs text-gray-300 mt-1 ${message.sender === 'user' ? 'text-right' : 'text-left'}`}>
+                          {message.timestamp}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            
+            <div className="p-4 border-t border-gray-700">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && inputText.trim()) {
+                      const message = inputText.trim();
+                      setInputText('');
+                      handleChatMessage(message);
+                    }
+                  }}
+                  placeholder="Ask your coach anything..."
+                  className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:border-green-500 focus:outline-none"
+                />
+                <button
+                  onClick={() => {
+                    if (inputText.trim()) {
+                      const message = inputText.trim();
+                      setInputText('');
+                      handleChatMessage(message);
+                    }
+                  }}
+                  className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg font-semibold"
+                >
+                  Send
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
         
         <div className="bg-gray-800 p-6 rounded-lg mb-8">
           <div className="grid grid-cols-3 gap-4">
