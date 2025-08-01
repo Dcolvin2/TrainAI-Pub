@@ -85,6 +85,9 @@ async function getFilteredExercises(
   availableEquipment: string[]
 ): Promise<Exercise[]> {
   try {
+    console.log(`[FILTER] Getting ${category} exercises for ${exercisePhase} phase`);
+    console.log(`[FILTER] Available equipment:`, availableEquipment);
+    
     const { data: exercises, error } = await supabase
       .from('exercises')
       .select('*')
@@ -92,56 +95,83 @@ async function getFilteredExercises(
       .eq('exercise_phase', exercisePhase);
 
     if (error) {
-      console.error('Error fetching exercises:', error);
+      console.error('[FILTER] Error fetching exercises:', error);
       return [];
     }
 
+    console.log(`[FILTER] Found ${exercises?.length || 0} total exercises`);
+
     // Filter exercises by available equipment
-    return exercises?.filter(exercise => {
+    const filteredExercises = exercises?.filter(exercise => {
+      // Always include bodyweight exercises (no equipment required)
       if (!exercise.equipment_required || exercise.equipment_required.length === 0) {
-        return true; // Include bodyweight exercises
+        console.log(`[FILTER] Including bodyweight exercise: ${exercise.name}`);
+        return true;
       }
       
       // Check if user has any of the required equipment
-      return exercise.equipment_required.some((equipment: string) => 
+      const hasEquipment = exercise.equipment_required.some((equipment: string) => 
         availableEquipment.includes(equipment)
       );
+      
+      if (hasEquipment) {
+        console.log(`[FILTER] Including equipment exercise: ${exercise.name} (requires: ${exercise.equipment_required.join(', ')})`);
+      } else {
+        console.log(`[FILTER] Excluding exercise: ${exercise.name} (requires: ${exercise.equipment_required.join(', ')})`);
+      }
+      
+      return hasEquipment;
     }) || [];
+
+    console.log(`[FILTER] Filtered to ${filteredExercises.length} exercises`);
+    return filteredExercises;
   } catch (error) {
-    console.error('Error in getFilteredExercises:', error);
+    console.error('[FILTER] Error in getFilteredExercises:', error);
     return [];
   }
 }
 
 // Generate HIIT workout with multiple exercises
 async function generateHIITWorkout(availableEquipment: string[], timeAvailable: number): Promise<Exercise[]> {
-  const hiitExercises: Exercise[] = [];
+  console.log('[HIIT] Generating HIIT workout with equipment:', availableEquipment);
   
   // Get bodyweight exercises for HIIT
   const bodyweightExercises = await getFilteredExercises('cardio', 'main', availableEquipment);
+  console.log('[HIIT] Bodyweight exercises found:', bodyweightExercises.length);
   
   // Get equipment-based exercises
   const equipmentExercises = await getFilteredExercises('strength', 'main', availableEquipment);
+  console.log('[HIIT] Equipment exercises found:', equipmentExercises.length);
   
   // Combine and select 4-6 exercises
   const allExercises = [...bodyweightExercises, ...equipmentExercises];
+  console.log('[HIIT] Total exercises available:', allExercises.length);
   
   // Select exercises based on time available
   const numExercises = timeAvailable >= 45 ? 6 : 4;
-  const selectedExercises = allExercises.slice(0, numExercises);
+  let selectedExercises = allExercises.slice(0, numExercises);
+  
+  console.log('[HIIT] Selected exercises:', selectedExercises.map(e => e.name));
   
   // If we don't have enough exercises, add some defaults
   if (selectedExercises.length < numExercises) {
+    console.log(`[HIIT] Need ${numExercises - selectedExercises.length} more exercises, adding defaults`);
     const defaultHIIT = [
       { id: 9991, name: 'Burpees', category: 'cardio', exercise_phase: 'main', equipment_required: ['bodyweight'], muscle_group: 'full_body' },
       { id: 9992, name: 'Mountain Climbers', category: 'cardio', exercise_phase: 'main', equipment_required: ['bodyweight'], muscle_group: 'core' },
       { id: 9993, name: 'Jump Squats', category: 'cardio', exercise_phase: 'main', equipment_required: ['bodyweight'], muscle_group: 'legs' },
-      { id: 9994, name: 'Push-ups', category: 'strength', exercise_phase: 'main', equipment_required: ['bodyweight'], muscle_group: 'chest' }
+      { id: 9994, name: 'Push-ups', category: 'strength', exercise_phase: 'main', equipment_required: ['bodyweight'], muscle_group: 'chest' },
+      { id: 9995, name: 'High Knees', category: 'cardio', exercise_phase: 'main', equipment_required: ['bodyweight'], muscle_group: 'cardiovascular' },
+      { id: 9996, name: 'Plank', category: 'strength', exercise_phase: 'main', equipment_required: ['bodyweight'], muscle_group: 'core' }
     ];
     
-    selectedExercises.push(...defaultHIIT.slice(0, numExercises - selectedExercises.length));
+    const needed = numExercises - selectedExercises.length;
+    const defaultsToAdd = defaultHIIT.slice(0, needed);
+    selectedExercises.push(...defaultsToAdd);
+    console.log('[HIIT] Added default exercises:', defaultsToAdd.map(e => e.name));
   }
   
+  console.log('[HIIT] Final HIIT workout:', selectedExercises.map(e => e.name));
   return selectedExercises;
 }
 
@@ -194,20 +224,25 @@ async function findCoreLift(coreLiftName: string, availableEquipment: string[]):
 
 export async function buildWorkoutByDay(userId: string, dayOfWeek: string, timeAvailable: number): Promise<WorkoutPlan> {
   try {
+    console.log(`[WORKOUT] Building workout for ${dayOfWeek}, user: ${userId}, time: ${timeAvailable}min`);
+    
     // Get user's available equipment
     const availableEquipment = await getUserEquipment(userId);
-    console.log('Available equipment:', availableEquipment);
+    console.log('[WORKOUT] Available equipment:', availableEquipment);
 
     // Get weekly workout template
     const template = await getWeeklyWorkoutTemplate(dayOfWeek);
-    console.log('Weekly template for', dayOfWeek, ':', template);
+    console.log('[WORKOUT] Weekly template for', dayOfWeek, ':', template);
 
     if (!template) {
+      console.error(`[WORKOUT] No template found for ${dayOfWeek}`);
       throw new Error(`No template found for ${dayOfWeek}`);
     }
 
     const workoutType = template.workout_type;
     const focusMuscleGroup = template.focus_muscle_group;
+    
+    console.log(`[WORKOUT] Workout type: ${workoutType}, Focus: ${focusMuscleGroup}`);
 
     let warmupArr: Exercise[] = [];
     let coreLift: Exercise | null = null;
@@ -217,49 +252,62 @@ export async function buildWorkoutByDay(userId: string, dayOfWeek: string, timeA
     // Handle different workout types
     switch (workoutType) {
       case 'strength':
+        console.log('[WORKOUT] Generating strength workout');
         // Get warmup exercises
         warmupArr = await getFilteredExercises('cardio', 'warmup', availableEquipment);
+        console.log('[WORKOUT] Warmup exercises:', warmupArr.map(e => e.name));
         
         // Get core lift if specified
         if (template.core_lift_name) {
+          console.log('[WORKOUT] Looking for core lift:', template.core_lift_name);
           coreLift = await findCoreLift(template.core_lift_name, availableEquipment);
+          console.log('[WORKOUT] Core lift found:', coreLift?.name || 'none');
         }
         
         // Get accessory exercises
         accessories = await getFilteredExercises('strength', 'accessory', availableEquipment);
+        console.log('[WORKOUT] Accessory exercises:', accessories.map(e => e.name));
         
         // Get cooldown exercises
         cooldownArr = await getFilteredExercises('cardio', 'cooldown', availableEquipment);
+        console.log('[WORKOUT] Cooldown exercises:', cooldownArr.map(e => e.name));
         break;
 
       case 'hiit':
+        console.log('[WORKOUT] Generating HIIT workout');
         // HIIT workouts have different structure
         warmupArr = await getFilteredExercises('cardio', 'warmup', availableEquipment);
         accessories = await generateHIITWorkout(availableEquipment, timeAvailable);
         cooldownArr = await getFilteredExercises('cardio', 'cooldown', availableEquipment);
+        console.log('[WORKOUT] HIIT exercises:', accessories.map(e => e.name));
         break;
 
       case 'cardio':
+        console.log('[WORKOUT] Generating cardio workout');
         // Cardio workouts
         warmupArr = await getFilteredExercises('cardio', 'warmup', availableEquipment);
         accessories = await generateCardioWorkout(availableEquipment);
         cooldownArr = await getFilteredExercises('cardio', 'cooldown', availableEquipment);
+        console.log('[WORKOUT] Cardio exercises:', accessories.map(e => e.name));
         break;
 
       case 'rest':
+        console.log('[WORKOUT] Rest day - minimal exercises');
         // Rest day - minimal exercises
         warmupArr = await getFilteredExercises('cardio', 'warmup', availableEquipment);
         cooldownArr = await getFilteredExercises('cardio', 'cooldown', availableEquipment);
         break;
 
       default:
+        console.error(`[WORKOUT] Unknown workout type: ${workoutType}`);
         throw new Error(`Unknown workout type: ${workoutType}`);
     }
 
     // Calculate estimated minutes
     const estimatedMinutes = calculateEstimatedMinutes(warmupArr, coreLift, accessories, cooldownArr, workoutType);
+    console.log(`[WORKOUT] Estimated minutes: ${estimatedMinutes}`);
 
-    return {
+    const result = {
       warmupArr: warmupArr.slice(0, 3), // Limit to 3 warmup exercises
       coreLift,
       accessories: accessories.slice(0, 4), // Limit to 4 accessory exercises
@@ -268,9 +316,20 @@ export async function buildWorkoutByDay(userId: string, dayOfWeek: string, timeA
       workoutType,
       focusMuscleGroup
     };
+    
+    console.log('[WORKOUT] Final workout plan:', {
+      warmup: result.warmupArr.map(e => e.name),
+      coreLift: result.coreLift?.name,
+      accessories: result.accessories.map(e => e.name),
+      cooldown: result.cooldownArr.map(e => e.name),
+      type: result.workoutType,
+      focus: result.focusMuscleGroup
+    });
+
+    return result;
 
   } catch (error) {
-    console.error('Error in buildWorkoutByDay:', error);
+    console.error('[WORKOUT] Error in buildWorkoutByDay:', error);
     
     // Return fallback workout
     return {
