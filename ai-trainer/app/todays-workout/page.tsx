@@ -4,6 +4,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import WorkoutTable from '../components/WorkoutTable';
 import ChatBubble from '../components/ChatBubble';
+import TimeSelector from '../components/TimeSelector';
 import { supabase } from '@/lib/supabaseClient';
 import { useWorkoutStore, WorkoutProvider } from '@/lib/workoutStore';
 import { fetchNikeWorkout } from '@/lib/nikeWorkoutHelper';
@@ -81,99 +82,6 @@ function CompactTimer({ elapsedTime, running, className = '' }: {
   );
 }
 
-// Inline Editable Time Component with explicit state management
-function InlineTimeEditor({ 
-  timeAvailable, 
-  onTimeChange, 
-  className = '' 
-}: { 
-  timeAvailable: number; 
-  onTimeChange: (time: number) => void;
-  className?: string;
-}): React.JSX.Element {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editValue, setEditValue] = useState(timeAvailable.toString());
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  // Debug state changes
-  useEffect(() => {
-    console.log('TimeEditor: timeAvailable changed to', timeAvailable);
-  }, [timeAvailable]);
-
-  const handleClick = () => {
-    console.log('TimeEditor: handleClick - setting editValue to', timeAvailable);
-    setIsEditing(true);
-    setEditValue(timeAvailable.toString());
-    setTimeout(() => inputRef.current?.focus(), 0);
-  };
-
-  const handleSave = () => {
-    const newTime = parseInt(editValue, 10);
-    console.log('TimeEditor: handleSave - newTime =', newTime);
-    if (newTime >= 5 && newTime <= 120) {
-      onTimeChange(newTime);
-    }
-    setIsEditing(false);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleSave();
-    } else if (e.key === 'Escape') {
-      setIsEditing(false);
-    }
-  };
-
-  const handlePresetClick = (preset: number) => {
-    console.log('TimeEditor: handlePresetClick - preset =', preset);
-    onTimeChange(preset);
-    setIsEditing(false);
-  };
-
-  return (
-    <div className={`flex items-center gap-2 ${className}`} style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
-      <span className="text-white text-sm" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>Time Available:</span>
-      {isEditing ? (
-        <div className="flex items-center gap-2 flex-wrap" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
-          <input
-            ref={inputRef}
-            type="number"
-            min={5}
-            max={120}
-            value={editValue}
-            onChange={(e) => setEditValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onBlur={handleSave}
-            className="w-16 bg-[#1E293B] border border-[#334155] px-2 py-1 rounded text-white text-center text-sm"
-            style={{ maxWidth: '100%', boxSizing: 'border-box' }}
-          />
-          <span className="text-gray-400 text-sm" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>minutes</span>
-          <div className="flex gap-1" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
-            {[30, 45, 60].map(preset => (
-              <button
-                key={preset}
-                onClick={() => handlePresetClick(preset)}
-                className="px-2 py-1 text-xs bg-[#22C55E] text-white rounded hover:bg-[#16a34a]"
-                style={{ maxWidth: '100%', boxSizing: 'border-box' }}
-              >
-                {preset}
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <button
-          onClick={handleClick}
-          className="text-[#22C55E] underline font-medium text-sm hover:text-[#16a34a]"
-          style={{ maxWidth: '100%', boxSizing: 'border-box' }}
-        >
-          {timeAvailable} minutes
-        </button>
-      )}
-    </div>
-  );
-}
-
 function TodaysWorkoutPageContent() {
   const { user } = useAuth();
   const router = useRouter();
@@ -213,6 +121,12 @@ function TodaysWorkoutPageContent() {
   useEffect(() => {
     console.log('TodaysWorkoutPage: timeAvailable changed to', timeAvailable);
   }, [timeAvailable]);
+
+  // Handle time updates from TimeSelector
+  const handleTimeUpdate = (newTime: number) => {
+    console.log('Workout time updated to:', newTime);
+    setTimeAvailable(newTime);
+  };
 
   // ── HELPER FUNCTIONS ──
   function shortenPlan(plan: any[], minutes: number): any[] {
@@ -833,12 +747,9 @@ function TodaysWorkoutPageContent() {
           </div>
         </section>
 
-        {/* Inline Time Editor - Compact */}
+        {/* Time Selector - Using new TimeSelector component */}
         <section className="mb-4" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
-          <InlineTimeEditor 
-            timeAvailable={timeAvailable}
-            onTimeChange={setTimeAvailable}
-          />
+          <TimeSelector onTimeChange={handleTimeUpdate} />
         </section>
 
         {/* Regenerate Workout Button */}
