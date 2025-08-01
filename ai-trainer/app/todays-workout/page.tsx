@@ -768,22 +768,45 @@ function TodaysWorkoutPageContent() {
               <div 
                 className="flex-1 overflow-y-auto p-3" 
                 ref={chatHistoryRef}
-                style={{ maxHeight: '200px', maxWidth: '100%', boxSizing: 'border-box' }}
+                style={{ 
+                  maxHeight: '200px', 
+                  maxWidth: '100%', 
+                  boxSizing: 'border-box',
+                  wordWrap: 'break-word',
+                  overflowWrap: 'break-word'
+                }}
               >
                 {chatMessages.length === 0 ? (
-                  <div className="text-center text-gray-400 py-4" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
+                  <div className="text-center text-gray-400 py-4" style={{ 
+                    maxWidth: '100%', 
+                    boxSizing: 'border-box',
+                    wordWrap: 'break-word',
+                    overflowWrap: 'break-word'
+                  }}>
                     <p className="text-sm">Ask your coach anything...</p>
                     <p className="text-xs mt-1">Try: "I have 30 minutes" or "Nike"</p>
                   </div>
                 ) : (
-                  <div className="space-y-2" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
+                  <div className="space-y-2" style={{ 
+                    maxWidth: '100%', 
+                    boxSizing: 'border-box',
+                    wordWrap: 'break-word',
+                    overflowWrap: 'break-word'
+                  }}>
                     {chatMessages.map((message, index) => (
-                      <ChatBubble 
-                        key={index} 
-                        sender={message.sender} 
-                        message={message.text}
-                        timestamp={message.timestamp}
-                      />
+                      <div key={index} style={{
+                        maxWidth: '100%',
+                        boxSizing: 'border-box',
+                        wordWrap: 'break-word',
+                        overflowWrap: 'break-word',
+                        whiteSpace: 'pre-wrap'
+                      }}>
+                        <ChatBubble 
+                          sender={message.sender} 
+                          message={message.text}
+                          timestamp={message.timestamp}
+                        />
+                      </div>
                     ))}
                   </div>
                 )}
