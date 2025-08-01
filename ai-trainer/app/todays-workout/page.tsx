@@ -739,7 +739,7 @@ function TodaysWorkoutPageContent() {
                     }
                   }}
                   placeholder="Ask your coach anything..."
-                  className="w-full bg-[#0F172A] border border-[#334155] rounded-lg p-2 text-sm text-white focus:border-[#22C55E] focus:outline-none disabled:opacity-50"
+                  className="w-full bg-[#0F172A] border border-[#334155] rounded-lg p-2 text-sm text-white focus:border-[#22C55E] focus:outline-none disabled:opacity-50 chat-input"
                   style={{ maxWidth: '100%', boxSizing: 'border-box' }}
                 />
               </div>

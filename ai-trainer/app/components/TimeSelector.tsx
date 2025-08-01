@@ -28,12 +28,12 @@ const TimeSelector = ({ onTimeChange }: { onTimeChange?: (time: number) => void 
     setTimeout(() => {
       setIsEditing(false);
       setShowPresets(false);
-    }, 200); // Delay to allow preset button clicks
+    }, 200);
   };
 
   return (
     <div className="time-selector" style={{ position: 'relative' }}>
-      <span>Time Available: </span>
+      <span style={{ color: '#F7F8FA' }}>Time Available: </span>
       {isEditing ? (
         <input
           type="number"
@@ -44,9 +44,12 @@ const TimeSelector = ({ onTimeChange }: { onTimeChange?: (time: number) => void 
           style={{
             display: 'inline',
             width: '60px',
-            border: '1px solid #ccc',
-            borderRadius: '4px',
-            padding: '2px 4px'
+            border: '2px solid #19A0FF',
+            borderRadius: '0.5rem',
+            padding: '4px 8px',
+            backgroundColor: '#001F54',
+            color: '#F7F8FA',
+            fontSize: '16px' // Prevents zoom on iOS
           }}
           autoFocus
         />
@@ -62,7 +65,7 @@ const TimeSelector = ({ onTimeChange }: { onTimeChange?: (time: number) => void 
           {timeAvailable}
         </span>
       )}
-      <span> minutes</span>
+      <span style={{ color: '#F7F8FA' }}> minutes</span>
       
       {showPresets && (
         <div
@@ -71,28 +74,55 @@ const TimeSelector = ({ onTimeChange }: { onTimeChange?: (time: number) => void 
             top: '100%',
             left: '0',
             zIndex: 1000,
-            backgroundColor: 'white',
-            border: '1px solid #ccc',
-            borderRadius: '4px',
-            padding: '4px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+            backgroundColor: '#001F54',
+            border: '1px solid #19A0FF',
+            borderRadius: '0.5rem',
+            padding: '8px',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
           }}
         >
           <button
             onClick={() => handleTimeChange(30)}
-            style={{ margin: '0 2px', padding: '4px 8px', fontSize: '12px' }}
+            style={{ 
+              margin: '0 4px', 
+              padding: '6px 12px', 
+              fontSize: '14px',
+              backgroundColor: '#19A0FF',
+              color: '#001F54',
+              border: 'none',
+              borderRadius: '0.25rem',
+              cursor: 'pointer'
+            }}
           >
             30
           </button>
           <button
             onClick={() => handleTimeChange(45)}
-            style={{ margin: '0 2px', padding: '4px 8px', fontSize: '12px' }}
+            style={{ 
+              margin: '0 4px', 
+              padding: '6px 12px', 
+              fontSize: '14px',
+              backgroundColor: '#19A0FF',
+              color: '#001F54',
+              border: 'none',
+              borderRadius: '0.25rem',
+              cursor: 'pointer'
+            }}
           >
             45
           </button>
           <button
             onClick={() => handleTimeChange(60)}
-            style={{ margin: '0 2px', padding: '4px 8px', fontSize: '12px' }}
+            style={{ 
+              margin: '0 4px', 
+              padding: '6px 12px', 
+              fontSize: '14px',
+              backgroundColor: '#19A0FF',
+              color: '#001F54',
+              border: 'none',
+              borderRadius: '0.25rem',
+              cursor: 'pointer'
+            }}
           >
             60
           </button>
