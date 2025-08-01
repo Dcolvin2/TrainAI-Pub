@@ -4,19 +4,29 @@ import "./globals.css";
 import { Providers } from "./providers";
 import Nav from "./components/Nav";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+});
 
 export const metadata: Metadata = {
-  title: "TrainAI - Your Personal Fitness Coach",
-  description: "AI-powered workout planning and coaching",
-  keywords: ["fitness", "workout", "AI", "coaching", "training"],
+  title: "TrainAI - Your AI-Powered Workout Partner",
+  description: "Track progress, get stronger, and stay consistent with intelligent training guidance from TrainAI.",
+  keywords: ["fitness", "workout", "AI", "training", "exercise", "strength"],
   authors: [{ name: "TrainAI Team" }],
   creator: "TrainAI",
   publisher: "TrainAI",
-  formatDetection: {
-    email: false,
-    address: false,
-    telephone: false,
+  robots: "index, follow",
+  openGraph: {
+    title: "TrainAI - Your AI-Powered Workout Partner",
+    description: "Track progress, get stronger, and stay consistent with intelligent training guidance.",
+    type: "website",
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "TrainAI - Your AI-Powered Workout Partner",
+    description: "Track progress, get stronger, and stay consistent with intelligent training guidance.",
   },
   icons: {
     icon: "/next.svg",
@@ -34,7 +44,6 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
         <link rel="icon" href="/next.svg" type="image/svg+xml" />
         <link rel="apple-touch-icon" href="/next.svg" />
       </head>
