@@ -5,6 +5,7 @@ export default function ClaudeWorkoutPage() {
   const [workoutRequest, setWorkoutRequest] = useState('');
   const [workoutResponse, setWorkoutResponse] = useState('');
   const [loading, setLoading] = useState(false);
+  const [detailLevel, setDetailLevel] = useState('concise');
 
   const generateWorkout = async () => {
     if (!workoutRequest.trim()) return;
@@ -15,7 +16,8 @@ export default function ClaudeWorkoutPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          message: `Generate a workout plan for: ${workoutRequest}` 
+          message: `Generate a workout plan for: ${workoutRequest}`,
+          detailLevel
         })
       });
       const data = await response.json();
@@ -41,6 +43,26 @@ export default function ClaudeWorkoutPage() {
           placeholder="e.g., I want a 30-minute upper body workout for beginners with dumbbells..."
           className="w-full p-3 border rounded-lg h-32 resize-none"
         />
+      </div>
+
+      <div className="mb-6">
+        <label className="block text-sm font-medium mb-2">
+          Detail Level:
+        </label>
+        <select
+          value={detailLevel}
+          onChange={(e) => setDetailLevel(e.target.value)}
+          className="w-full p-3 border rounded-lg"
+        >
+          <option value="concise">Concise (Cost-effective)</option>
+          <option value="standard">Standard</option>
+          <option value="detailed">Detailed</option>
+        </select>
+        <p className="text-sm text-gray-600 mt-1">
+          {detailLevel === 'concise' && 'Brief, bullet-point responses (150 words max)'}
+          {detailLevel === 'standard' && 'Balanced responses (300 words max)'}
+          {detailLevel === 'detailed' && 'Comprehensive explanations when needed'}
+        </p>
       </div>
       
       <button 
