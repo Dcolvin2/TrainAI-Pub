@@ -75,13 +75,13 @@ function CompactTimer({ elapsedTime, running, className = '' }: {
   const ss = String(elapsedTime % 60).padStart(2, '0');
 
   return (
-    <div className={`text-sm font-mono text-white ${className}`}>
+    <div className={`text-sm font-mono text-white ${className}`} style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
       {running ? `${mm}:${ss}` : '00:00'}
     </div>
   );
 }
 
-// Inline Editable Time Component
+// Inline Editable Time Component with explicit state management
 function InlineTimeEditor({ 
   timeAvailable, 
   onTimeChange, 
@@ -95,7 +95,13 @@ function InlineTimeEditor({
   const [editValue, setEditValue] = useState(timeAvailable.toString());
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Debug state changes
+  useEffect(() => {
+    console.log('TimeEditor: timeAvailable changed to', timeAvailable);
+  }, [timeAvailable]);
+
   const handleClick = () => {
+    console.log('TimeEditor: handleClick - setting editValue to', timeAvailable);
     setIsEditing(true);
     setEditValue(timeAvailable.toString());
     setTimeout(() => inputRef.current?.focus(), 0);
@@ -103,6 +109,7 @@ function InlineTimeEditor({
 
   const handleSave = () => {
     const newTime = parseInt(editValue, 10);
+    console.log('TimeEditor: handleSave - newTime =', newTime);
     if (newTime >= 5 && newTime <= 120) {
       onTimeChange(newTime);
     }
@@ -118,15 +125,16 @@ function InlineTimeEditor({
   };
 
   const handlePresetClick = (preset: number) => {
+    console.log('TimeEditor: handlePresetClick - preset =', preset);
     onTimeChange(preset);
     setIsEditing(false);
   };
 
   return (
-    <div className={`flex items-center gap-2 ${className}`}>
-      <span className="text-white text-sm">Time Available:</span>
+    <div className={`flex items-center gap-2 ${className}`} style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
+      <span className="text-white text-sm" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>Time Available:</span>
       {isEditing ? (
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
           <input
             ref={inputRef}
             type="number"
@@ -137,14 +145,16 @@ function InlineTimeEditor({
             onKeyDown={handleKeyDown}
             onBlur={handleSave}
             className="w-16 bg-[#1E293B] border border-[#334155] px-2 py-1 rounded text-white text-center text-sm"
+            style={{ maxWidth: '100%', boxSizing: 'border-box' }}
           />
-          <span className="text-gray-400 text-sm">minutes</span>
-          <div className="flex gap-1">
+          <span className="text-gray-400 text-sm" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>minutes</span>
+          <div className="flex gap-1" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
             {[30, 45, 60].map(preset => (
               <button
                 key={preset}
                 onClick={() => handlePresetClick(preset)}
                 className="px-2 py-1 text-xs bg-[#22C55E] text-white rounded hover:bg-[#16a34a]"
+                style={{ maxWidth: '100%', boxSizing: 'border-box' }}
               >
                 {preset}
               </button>
@@ -155,6 +165,7 @@ function InlineTimeEditor({
         <button
           onClick={handleClick}
           className="text-[#22C55E] underline font-medium text-sm hover:text-[#16a34a]"
+          style={{ maxWidth: '100%', boxSizing: 'border-box' }}
         >
           {timeAvailable} minutes
         </button>
@@ -197,6 +208,11 @@ function TodaysWorkoutPageContent() {
   // ── CHAT MEMORY & PLAN STATE ──
   const [messages, setMessages] = useState<{role:'user'|'assistant',content:string}[]>([]);
   const [currentPlan, setCurrentPlan] = useState<any[]>([]);
+
+  // Debug timeAvailable changes
+  useEffect(() => {
+    console.log('TodaysWorkoutPage: timeAvailable changed to', timeAvailable);
+  }, [timeAvailable]);
 
   // ── HELPER FUNCTIONS ──
   function shortenPlan(plan: any[], minutes: number): any[] {
@@ -501,6 +517,7 @@ function TodaysWorkoutPageContent() {
     if (timeMatch) {
       const newTime = parseInt(timeMatch[1], 10);
       if (newTime >= 5 && newTime <= 120) {
+        console.log('Chat: Setting timeAvailable to', newTime);
         setTimeAvailable(newTime);
         setChatMessages(prev => [
           ...prev,
@@ -713,12 +730,13 @@ function TodaysWorkoutPageContent() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-[#0F172A] flex items-center justify-center w-full max-w-full overflow-x-hidden">
-        <div className="text-center px-4">
+      <div className="min-h-screen bg-[#0F172A] flex items-center justify-center w-full max-w-full overflow-x-hidden" style={{ width: '100%', maxWidth: '100vw', overflowX: 'hidden', boxSizing: 'border-box' }}>
+        <div className="text-center px-4" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
           <div className="text-white text-xl mb-4">Please log in to access your workout</div>
           <button
             onClick={() => router.push('/login')}
             className="bg-[#22C55E] px-6 py-3 rounded-xl text-white font-semibold hover:bg-[#16a34a] transition-colors"
+            style={{ maxWidth: '100%', boxSizing: 'border-box' }}
           >
             Go to Login
           </button>
@@ -728,11 +746,11 @@ function TodaysWorkoutPageContent() {
   }
 
   return (
-    <div className="w-full max-w-full overflow-x-hidden bg-[#0F172A] min-h-screen">
-      <div className="p-4 max-w-md mx-auto">
+    <div className="w-full max-w-full overflow-x-hidden bg-[#0F172A] min-h-screen workout-container" style={{ width: '100%', maxWidth: '100vw', overflowX: 'hidden', boxSizing: 'border-box' }}>
+      <div className="p-4 max-w-md mx-auto" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
         {/* Header with Title and Timer */}
-        <header className="flex justify-between items-center mb-4">
-          <h1 className="text-2xl font-bold text-white">Today's Workout</h1>
+        <header className="flex justify-between items-center mb-4" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
+          <h1 className="text-2xl font-bold text-white" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>Today's Workout</h1>
           <CompactTimer 
             elapsedTime={elapsedTime}
             running={mainTimerRunning} 
@@ -740,25 +758,25 @@ function TodaysWorkoutPageContent() {
         </header>
 
         {/* Chat Interface - Prominent with Fixed Height */}
-        <section className="mb-4">
-          <div className="bg-[#1E293B] rounded-xl shadow-md">
-            <div className="p-3 border-b border-[#334155]">
-              <h3 className="text-sm font-semibold text-white">AI Workout Coach</h3>
+        <section className="mb-4" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
+          <div className="bg-[#1E293B] rounded-xl shadow-md" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
+            <div className="p-3 border-b border-[#334155]" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
+              <h3 className="text-sm font-semibold text-white" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>AI Workout Coach</h3>
             </div>
             
-            <div className="flex flex-col h-[200px]">
+            <div className="flex flex-col h-[200px]" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
               <div 
                 className="flex-1 overflow-y-auto p-3" 
                 ref={chatHistoryRef}
-                style={{ maxHeight: '200px' }}
+                style={{ maxHeight: '200px', maxWidth: '100%', boxSizing: 'border-box' }}
               >
                 {chatMessages.length === 0 ? (
-                  <div className="text-center text-gray-400 py-4">
+                  <div className="text-center text-gray-400 py-4" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
                     <p className="text-sm">Ask your coach anything...</p>
                     <p className="text-xs mt-1">Try: "I have 30 minutes" or "Nike"</p>
                   </div>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-2" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
                     {chatMessages.map((message, index) => (
                       <ChatBubble 
                         key={index} 
@@ -771,7 +789,7 @@ function TodaysWorkoutPageContent() {
                 )}
               </div>
 
-              <div className="p-3 border-t border-[#334155] flex-shrink-0">
+              <div className="p-3 border-t border-[#334155] flex-shrink-0" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
                 <input
                   type="text"
                   value={inputText}
@@ -785,6 +803,7 @@ function TodaysWorkoutPageContent() {
                   }}
                   placeholder="Ask your coach anything..."
                   className="w-full bg-[#0F172A] border border-[#334155] rounded-lg p-2 text-sm text-white focus:border-[#22C55E] focus:outline-none disabled:opacity-50"
+                  style={{ maxWidth: '100%', boxSizing: 'border-box' }}
                 />
               </div>
             </div>
@@ -792,7 +811,7 @@ function TodaysWorkoutPageContent() {
         </section>
 
         {/* Inline Time Editor - Compact */}
-        <section className="mb-4">
+        <section className="mb-4" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
           <InlineTimeEditor 
             timeAvailable={timeAvailable}
             onTimeChange={setTimeAvailable}
@@ -800,7 +819,7 @@ function TodaysWorkoutPageContent() {
         </section>
 
         {/* Regenerate Workout Button */}
-        <section className="mb-4">
+        <section className="mb-4" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
           <button
             onClick={() => {
               // clear current state first
@@ -815,25 +834,26 @@ function TodaysWorkoutPageContent() {
               handleChatMessage(`it's ${today}`);       // triggers day-of-week builder
             }}
             className="w-full bg-[#22C55E] hover:bg-[#16a34a] text-white px-6 py-3 rounded-xl font-semibold transition-colors"
+            style={{ maxWidth: '100%', boxSizing: 'border-box' }}
           >
             Regenerate Workout
           </button>
         </section>
 
         {/* Workout Table Section */}
-        <section className="mb-6">
+        <section className="mb-6" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
           {!pendingWorkout && !activeWorkout ? (
-            <div className="text-center text-gray-400 py-8">
+            <div className="text-center text-gray-400 py-8" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
               <p className="mb-4">Loading today's workout...</p>
               <div className="animate-pulse">
-                <div className="h-4 bg-gray-600 rounded mb-2"></div>
-                <div className="h-4 bg-gray-600 rounded mb-2"></div>
-                <div className="h-4 bg-gray-600 rounded"></div>
+                <div className="h-4 bg-gray-600 rounded mb-2" style={{ maxWidth: '100%', boxSizing: 'border-box' }}></div>
+                <div className="h-4 bg-gray-600 rounded mb-2" style={{ maxWidth: '100%', boxSizing: 'border-box' }}></div>
+                <div className="h-4 bg-gray-600 rounded" style={{ maxWidth: '100%', boxSizing: 'border-box' }}></div>
               </div>
             </div>
           ) : pendingWorkout && !activeWorkout ? (
-            <div className="text-center py-8">
-              <div className="bg-[#1E293B] rounded-xl p-6 mb-4">
+            <div className="text-center py-8" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
+              <div className="bg-[#1E293B] rounded-xl p-6 mb-4" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
                 <h3 className="text-xl font-semibold text-white mb-4">Workout Ready!</h3>
                 <p className="text-gray-300 mb-6">Your workout has been generated and is ready to start.</p>
                 <button
@@ -843,6 +863,7 @@ function TodaysWorkoutPageContent() {
                     setShowPrevious(true);
                   }}
                   className="bg-[#22C55E] hover:bg-[#16a34a] text-white px-8 py-3 rounded-xl font-semibold transition-colors"
+                  style={{ maxWidth: '100%', boxSizing: 'border-box' }}
                 >
                   Start Workout
                 </button>

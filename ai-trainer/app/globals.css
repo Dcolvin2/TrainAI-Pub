@@ -1,6 +1,26 @@
 @import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
+/* CRITICAL MOBILE LAYOUT FIXES */
+body {
+  overflow-x: hidden;
+  width: 100%;
+  max-width: 100vw;
+  box-sizing: border-box;
+}
+
+.workout-container {
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+
+.workout-container * {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
 :root {
   /* Brand Colors */
   --primary: #22C55E;
