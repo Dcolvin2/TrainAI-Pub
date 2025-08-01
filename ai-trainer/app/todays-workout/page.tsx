@@ -126,7 +126,7 @@ function InlineTimeEditor({
     <div className={`flex items-center gap-2 ${className}`}>
       <span className="text-white text-sm">Time Available:</span>
       {isEditing ? (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <input
             ref={inputRef}
             type="number"
@@ -713,8 +713,8 @@ function TodaysWorkoutPageContent() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-[#0F172A] flex items-center justify-center">
-        <div className="text-center">
+      <div className="min-h-screen bg-[#0F172A] flex items-center justify-center w-full max-w-full overflow-x-hidden">
+        <div className="text-center px-4">
           <div className="text-white text-xl mb-4">Please log in to access your workout</div>
           <button
             onClick={() => router.push('/login')}
@@ -728,141 +728,147 @@ function TodaysWorkoutPageContent() {
   }
 
   return (
-    <div className="p-4 max-w-md mx-auto bg-[#0F172A] min-h-screen">
-      {/* Header with Title and Timer */}
-      <header className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold text-white">Today's Workout</h1>
-        <CompactTimer 
-          elapsedTime={elapsedTime}
-          running={mainTimerRunning} 
-        />
-      </header>
+    <div className="w-full max-w-full overflow-x-hidden bg-[#0F172A] min-h-screen">
+      <div className="p-4 max-w-md mx-auto">
+        {/* Header with Title and Timer */}
+        <header className="flex justify-between items-center mb-4">
+          <h1 className="text-2xl font-bold text-white">Today's Workout</h1>
+          <CompactTimer 
+            elapsedTime={elapsedTime}
+            running={mainTimerRunning} 
+          />
+        </header>
 
-      {/* Chat Interface - Prominent */}
-      <section className="mb-4">
-        <div className="bg-[#1E293B] rounded-xl shadow-md">
-          <div className="p-3 border-b border-[#334155]">
-            <h3 className="text-sm font-semibold text-white">AI Workout Coach</h3>
-          </div>
-          
-          <div className="chat-wrapper max-h-[250px] flex flex-col">
-            <div className="chat-history flex-1 overflow-y-auto p-3" ref={chatHistoryRef}>
-              {chatMessages.length === 0 ? (
-                <div className="text-center text-gray-400 py-4">
-                  <p className="text-sm">Ask your coach anything...</p>
-                  <p className="text-xs mt-1">Try: "I have 30 minutes" or "Nike"</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {chatMessages.map((message, index) => (
-                    <ChatBubble 
-                      key={index} 
-                      sender={message.sender} 
-                      message={message.text}
-                      timestamp={message.timestamp}
-                    />
-                  ))}
-                </div>
-              )}
+        {/* Chat Interface - Prominent with Fixed Height */}
+        <section className="mb-4">
+          <div className="bg-[#1E293B] rounded-xl shadow-md">
+            <div className="p-3 border-b border-[#334155]">
+              <h3 className="text-sm font-semibold text-white">AI Workout Coach</h3>
             </div>
-
-            <div className="p-3 border-t border-[#334155] flex-shrink-0">
-              <input
-                type="text"
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && inputText.trim()) {
-                    const message = inputText.trim();
-                    setInputText('');
-                    handleChatMessage(message);
-                  }
-                }}
-                placeholder="Ask your coach anything..."
-                className="w-full bg-[#0F172A] border border-[#334155] rounded-lg p-2 text-sm text-white focus:border-[#22C55E] focus:outline-none disabled:opacity-50"
-              />
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Inline Time Editor - Compact */}
-      <section className="mb-4">
-        <InlineTimeEditor 
-          timeAvailable={timeAvailable}
-          onTimeChange={setTimeAvailable}
-        />
-      </section>
-
-      {/* Regenerate Workout Button */}
-      <section className="mb-4">
-        <button
-          onClick={() => {
-            // clear current state first
-            setPendingWorkout(null);
-            setActiveWorkout(null);
-            setCurrentPlan([]);
             
-            // reuse today's weekday
-            const dayNames = ["sunday","monday","tuesday","wednesday",
-                              "thursday","friday","saturday"];
-            const today = dayNames[new Date().getDay()];
-            handleChatMessage(`it's ${today}`);       // triggers day-of-week builder
-          }}
-          className="w-full bg-[#22C55E] hover:bg-[#16a34a] text-white px-6 py-3 rounded-xl font-semibold transition-colors"
-        >
-          Regenerate Workout
-        </button>
-      </section>
-
-      {/* Workout Table Section */}
-      <section className="mb-6">
-        {!pendingWorkout && !activeWorkout ? (
-          <div className="text-center text-gray-400 py-8">
-            <p className="mb-4">Loading today's workout...</p>
-            <div className="animate-pulse">
-              <div className="h-4 bg-gray-600 rounded mb-2"></div>
-              <div className="h-4 bg-gray-600 rounded mb-2"></div>
-              <div className="h-4 bg-gray-600 rounded"></div>
-            </div>
-          </div>
-        ) : pendingWorkout && !activeWorkout ? (
-          <div className="text-center py-8">
-            <div className="bg-[#1E293B] rounded-xl p-6 mb-4">
-              <h3 className="text-xl font-semibold text-white mb-4">Workout Ready!</h3>
-              <p className="text-gray-300 mb-6">Your workout has been generated and is ready to start.</p>
-              <button
-                onClick={() => {
-                  setActiveWorkout(pendingWorkout);
-                  setPendingWorkout(null);
-                  setShowPrevious(true);
-                }}
-                className="bg-[#22C55E] hover:bg-[#16a34a] text-white px-8 py-3 rounded-xl font-semibold transition-colors"
+            <div className="flex flex-col h-[200px]">
+              <div 
+                className="flex-1 overflow-y-auto p-3" 
+                ref={chatHistoryRef}
+                style={{ maxHeight: '200px' }}
               >
-                Start Workout
-              </button>
+                {chatMessages.length === 0 ? (
+                  <div className="text-center text-gray-400 py-4">
+                    <p className="text-sm">Ask your coach anything...</p>
+                    <p className="text-xs mt-1">Try: "I have 30 minutes" or "Nike"</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {chatMessages.map((message, index) => (
+                      <ChatBubble 
+                        key={index} 
+                        sender={message.sender} 
+                        message={message.text}
+                        timestamp={message.timestamp}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="p-3 border-t border-[#334155] flex-shrink-0">
+                <input
+                  type="text"
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && inputText.trim()) {
+                      const message = inputText.trim();
+                      setInputText('');
+                      handleChatMessage(message);
+                    }
+                  }}
+                  placeholder="Ask your coach anything..."
+                  className="w-full bg-[#0F172A] border border-[#334155] rounded-lg p-2 text-sm text-white focus:border-[#22C55E] focus:outline-none disabled:opacity-50"
+                />
+              </div>
             </div>
           </div>
-        ) : (
-          <>
-            <WorkoutTable 
-              key={(activeWorkout as any)?.planId || 'no-plan'}  // ← use planId for guaranteed refresh
-              workout={activeWorkout!} 
-              onFinishWorkout={() => {
-                setActiveWorkout(null);
-                setShowPrevious(false);
-                clearQuickEntrySets(); // Clear quick entry sets after workout is finished
-              }}
-              onStopTimer={() => {
-                setMainTimerRunning(false);
-              }}
-              elapsedTime={elapsedTime}
-              showPrevious={showPrevious}
-              quickEntrySets={quickEntrySets}
-            />
-          </>
-        )}
-      </section>
+        </section>
+
+        {/* Inline Time Editor - Compact */}
+        <section className="mb-4">
+          <InlineTimeEditor 
+            timeAvailable={timeAvailable}
+            onTimeChange={setTimeAvailable}
+          />
+        </section>
+
+        {/* Regenerate Workout Button */}
+        <section className="mb-4">
+          <button
+            onClick={() => {
+              // clear current state first
+              setPendingWorkout(null);
+              setActiveWorkout(null);
+              setCurrentPlan([]);
+              
+              // reuse today's weekday
+              const dayNames = ["sunday","monday","tuesday","wednesday",
+                                "thursday","friday","saturday"];
+              const today = dayNames[new Date().getDay()];
+              handleChatMessage(`it's ${today}`);       // triggers day-of-week builder
+            }}
+            className="w-full bg-[#22C55E] hover:bg-[#16a34a] text-white px-6 py-3 rounded-xl font-semibold transition-colors"
+          >
+            Regenerate Workout
+          </button>
+        </section>
+
+        {/* Workout Table Section */}
+        <section className="mb-6">
+          {!pendingWorkout && !activeWorkout ? (
+            <div className="text-center text-gray-400 py-8">
+              <p className="mb-4">Loading today's workout...</p>
+              <div className="animate-pulse">
+                <div className="h-4 bg-gray-600 rounded mb-2"></div>
+                <div className="h-4 bg-gray-600 rounded mb-2"></div>
+                <div className="h-4 bg-gray-600 rounded"></div>
+              </div>
+            </div>
+          ) : pendingWorkout && !activeWorkout ? (
+            <div className="text-center py-8">
+              <div className="bg-[#1E293B] rounded-xl p-6 mb-4">
+                <h3 className="text-xl font-semibold text-white mb-4">Workout Ready!</h3>
+                <p className="text-gray-300 mb-6">Your workout has been generated and is ready to start.</p>
+                <button
+                  onClick={() => {
+                    setActiveWorkout(pendingWorkout);
+                    setPendingWorkout(null);
+                    setShowPrevious(true);
+                  }}
+                  className="bg-[#22C55E] hover:bg-[#16a34a] text-white px-8 py-3 rounded-xl font-semibold transition-colors"
+                >
+                  Start Workout
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <WorkoutTable 
+                key={(activeWorkout as any)?.planId || 'no-plan'}  // ← use planId for guaranteed refresh
+                workout={activeWorkout!} 
+                onFinishWorkout={() => {
+                  setActiveWorkout(null);
+                  setShowPrevious(false);
+                  clearQuickEntrySets(); // Clear quick entry sets after workout is finished
+                }}
+                onStopTimer={() => {
+                  setMainTimerRunning(false);
+                }}
+                elapsedTime={elapsedTime}
+                showPrevious={showPrevious}
+                quickEntrySets={quickEntrySets}
+              />
+            </>
+          )}
+        </section>
+      </div>
     </div>
   );
 } 
