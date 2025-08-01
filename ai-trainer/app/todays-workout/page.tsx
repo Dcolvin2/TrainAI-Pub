@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 
 // Type definitions
@@ -27,7 +27,6 @@ interface WorkoutPlan {
 }
 
 export default function TodaysWorkoutPage() {
-  const supabase = createClientComponentClient();
   const router = useRouter();
   
   const [user, setUser] = useState<any>(null);
@@ -71,7 +70,7 @@ export default function TodaysWorkoutPage() {
     return () => {
       authListener?.subscription.unsubscribe();
     };
-  }, [supabase, router]);
+  }, [router]);
 
   // Generate workout function
   const generateWorkoutByDay = async (userId: string, duration: number = 45): Promise<WorkoutPlan | null> => {
