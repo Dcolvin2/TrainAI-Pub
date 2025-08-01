@@ -23,6 +23,7 @@ interface WorkoutPlan {
   duration: number;
   warmup: Exercise[];
   main: Exercise[];
+  accessories: Exercise[];
   cooldown: Exercise[];
 }
 
@@ -31,6 +32,58 @@ interface ChatMessage {
   text: string;
   timestamp?: string;
 }
+
+// Core → Accessories Mapping Logic
+const accessoryMap: Record<string, Array<{ name: string; sets: number; reps: string; equipment?: string }>> = {
+  "Barbell Back Squat": [
+    { name: "Walking Lunges", sets: 3, reps: "12 each leg", equipment: "dumbbells" },
+    { name: "Glute Bridges", sets: 3, reps: "15", equipment: "bodyweight" },
+    { name: "Bulgarian Split Squats", sets: 3, reps: "10 each leg", equipment: "dumbbells" },
+    { name: "Hamstring Curls", sets: 3, reps: "12", equipment: "machine" },
+    { name: "Leg Extensions", sets: 3, reps: "12", equipment: "machine" },
+    { name: "Calf Raises", sets: 3, reps: "15", equipment: "bodyweight" }
+  ],
+  "Dumbbell Bench Press": [
+    { name: "Incline Dumbbell Press", sets: 3, reps: "10-12", equipment: "dumbbells" },
+    { name: "Chest Fly (Bands or Dumbbells)", sets: 3, reps: "12", equipment: "dumbbells" },
+    { name: "Triceps Dips", sets: 3, reps: "10", equipment: "bodyweight" },
+    { name: "Overhead Triceps Extension", sets: 3, reps: "12", equipment: "dumbbells" },
+    { name: "Push-ups", sets: 3, reps: "10-15", equipment: "bodyweight" },
+    { name: "Decline Push-ups", sets: 3, reps: "8-12", equipment: "bodyweight" }
+  ],
+  "Barbell Bench Press": [
+    { name: "Incline Dumbbell Press", sets: 3, reps: "10-12", equipment: "dumbbells" },
+    { name: "Chest Fly (Bands or Dumbbells)", sets: 3, reps: "12", equipment: "dumbbells" },
+    { name: "Triceps Dips", sets: 3, reps: "10", equipment: "bodyweight" },
+    { name: "Overhead Triceps Extension", sets: 3, reps: "12", equipment: "dumbbells" },
+    { name: "Push-ups", sets: 3, reps: "10-15", equipment: "bodyweight" },
+    { name: "Decline Push-ups", sets: 3, reps: "8-12", equipment: "bodyweight" }
+  ],
+  "Trap Bar Deadlift": [
+    { name: "Barbell Rows", sets: 3, reps: "10", equipment: "barbell" },
+    { name: "Lat Pulldowns", sets: 3, reps: "12", equipment: "machine" },
+    { name: "Face Pulls", sets: 3, reps: "15", equipment: "cable" },
+    { name: "Banded Pull-Aparts", sets: 3, reps: "20", equipment: "bands" },
+    { name: "Single-Arm Dumbbell Rows", sets: 3, reps: "10 each arm", equipment: "dumbbells" },
+    { name: "Reverse Flyes", sets: 3, reps: "12", equipment: "dumbbells" }
+  ],
+  "Conventional Deadlift": [
+    { name: "Barbell Rows", sets: 3, reps: "10", equipment: "barbell" },
+    { name: "Lat Pulldowns", sets: 3, reps: "12", equipment: "machine" },
+    { name: "Face Pulls", sets: 3, reps: "15", equipment: "cable" },
+    { name: "Banded Pull-Aparts", sets: 3, reps: "20", equipment: "bands" },
+    { name: "Single-Arm Dumbbell Rows", sets: 3, reps: "10 each arm", equipment: "dumbbells" },
+    { name: "Reverse Flyes", sets: 3, reps: "12", equipment: "dumbbells" }
+  ],
+  "Overhead Press": [
+    { name: "Lateral Raises", sets: 3, reps: "12", equipment: "dumbbells" },
+    { name: "Front Raises", sets: 3, reps: "12", equipment: "dumbbells" },
+    { name: "Rear Delt Flyes", sets: 3, reps: "12", equipment: "dumbbells" },
+    { name: "Upright Rows", sets: 3, reps: "10", equipment: "barbell" },
+    { name: "Arnold Press", sets: 3, reps: "10", equipment: "dumbbells" },
+    { name: "Pike Push-ups", sets: 3, reps: "8-12", equipment: "bodyweight" }
+  ]
+};
 
 export default function TodaysWorkoutPage() {
   const router = useRouter();
@@ -44,15 +97,57 @@ export default function TodaysWorkoutPage() {
   const [inputText, setInputText] = useState('');
   const chatHistoryRef = useRef<HTMLDivElement>(null);
 
-  // Weekly workout schedule
+  // Weekly workout schedule with core lifts
   const weeklySchedule = {
-    'Monday': { workout_type: 'strength', focus_muscle_group: 'legs', core_lift_name: 'back squat' },
-    'Tuesday': { workout_type: 'strength', focus_muscle_group: 'chest', core_lift_name: 'bench press' },
-    'Wednesday': { workout_type: 'cardio', focus_muscle_group: null, core_lift_name: null },
-    'Thursday': { workout_type: 'hiit', focus_muscle_group: 'full_body', core_lift_name: null },
-    'Friday': { workout_type: 'cardio', focus_muscle_group: null, core_lift_name: null },
-    'Saturday': { workout_type: 'strength', focus_muscle_group: 'back', core_lift_name: 'trap bar deadlift' },
-    'Sunday': { workout_type: 'rest', focus_muscle_group: null, core_lift_name: null }
+    'Monday': { 
+      workout_type: 'strength', 
+      focus_muscle_group: 'legs', 
+      core_lift_name: 'Barbell Back Squat',
+      core_lift_sets: 4,
+      core_lift_reps: '5-8'
+    },
+    'Tuesday': { 
+      workout_type: 'strength', 
+      focus_muscle_group: 'chest', 
+      core_lift_name: 'Barbell Bench Press',
+      core_lift_sets: 4,
+      core_lift_reps: '5-8'
+    },
+    'Wednesday': { 
+      workout_type: 'cardio', 
+      focus_muscle_group: null, 
+      core_lift_name: null,
+      core_lift_sets: 0,
+      core_lift_reps: ''
+    },
+    'Thursday': { 
+      workout_type: 'hiit', 
+      focus_muscle_group: 'full_body', 
+      core_lift_name: null,
+      core_lift_sets: 0,
+      core_lift_reps: ''
+    },
+    'Friday': { 
+      workout_type: 'cardio', 
+      focus_muscle_group: null, 
+      core_lift_name: null,
+      core_lift_sets: 0,
+      core_lift_reps: ''
+    },
+    'Saturday': { 
+      workout_type: 'strength', 
+      focus_muscle_group: 'back', 
+      core_lift_name: 'Trap Bar Deadlift',
+      core_lift_sets: 4,
+      core_lift_reps: '5-8'
+    },
+    'Sunday': { 
+      workout_type: 'rest', 
+      focus_muscle_group: null, 
+      core_lift_name: null,
+      core_lift_sets: 0,
+      core_lift_reps: ''
+    }
   };
 
   // Authentication check
@@ -88,6 +183,25 @@ export default function TodaysWorkoutPage() {
     }
   }, [chatMessages]);
 
+  // Helper function to get random accessories for a core lift
+  const getRandomAccessories = (coreLiftName: string, count: number = 3): Exercise[] => {
+    const accessories = accessoryMap[coreLiftName] || [];
+    
+    if (accessories.length === 0) {
+      return [];
+    }
+
+    // Shuffle and take the first 'count' items
+    const shuffled = [...accessories].sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, count).map(acc => ({
+      name: acc.name,
+      sets: acc.sets,
+      reps: acc.reps,
+      type: 'accessory',
+      rest_seconds: 90
+    }));
+  };
+
   // Generate workout function
   const generateWorkoutByDay = async (userId: string, duration: number = 45, specificDay?: string): Promise<WorkoutPlan | null> => {
     try {
@@ -120,35 +234,8 @@ export default function TodaysWorkoutPage() {
         duration: duration,
         warmup: [],
         main: [],
+        accessories: [],
         cooldown: []
-      };
-
-      // Helper function to get exercises
-      const getExercises = async (phase: string, category?: string, muscle?: string) => {
-        let query = supabase
-          .from('exercises_final')
-          .select('*')
-          .eq('exercise_phase', phase);
-        
-        if (category) query = query.eq('category', category);
-        if (muscle) query = query.eq('primary_muscle', muscle);
-        
-        const { data, error } = await query;
-        
-        if (error) {
-          console.error('Exercise query error:', error);
-          return [];
-        }
-        
-        // Filter by equipment
-        return (data || []).filter((exercise: any) => {
-          if (!exercise.equipment_required || exercise.equipment_required.length === 0) {
-            return true;
-          }
-          return exercise.equipment_required.some((req: string) => 
-            availableEquipment.includes(req)
-          );
-        });
       };
 
       // Generate workout based on type
@@ -156,33 +243,18 @@ export default function TodaysWorkoutPage() {
         case 'strength':
           // Add core lift
           if (template.core_lift_name) {
-            const coreLifts = await getExercises('core_lift');
-            const coreLift = coreLifts.find((ex: any) => 
-              ex.name.toLowerCase().includes(template.core_lift_name!.toLowerCase())
-            );
-            
-            if (coreLift) {
-              workoutPlan.main.push({
-                name: coreLift.name,
-                sets: 4,
-                reps: '5-8',
-                type: 'core_lift',
-                rest_seconds: coreLift.rest_seconds_default || 180
-              });
-            }
-          }
-          
-          // Add accessories
-          const accessories = await getExercises('accessory', 'strength', template.focus_muscle_group || undefined);
-          accessories.slice(0, 3).forEach((ex: any) => {
             workoutPlan.main.push({
-              name: ex.name,
-              sets: 3,
-              reps: '8-12',
-              type: 'accessory',
-              rest_seconds: ex.rest_seconds_default || 120
+              name: template.core_lift_name,
+              sets: template.core_lift_sets,
+              reps: template.core_lift_reps,
+              type: 'core_lift',
+              rest_seconds: 180
             });
-          });
+            
+            // Add accessories based on core lift
+            const accessories = getRandomAccessories(template.core_lift_name, 3);
+            workoutPlan.accessories = accessories;
+          }
           break;
           
         case 'cardio':
@@ -260,10 +332,25 @@ export default function TodaysWorkoutPage() {
         if (workout) {
           setCurrentWorkout(workout);
           
+          // Create detailed response based on workout type
+          let responseText = `Generated your ${workout.type} workout for ${workout.day}. `;
+          
+          if (workout.type === 'strength' && workout.main.length > 0) {
+            const coreLift = workout.main[0];
+            responseText += `Core lift: ${coreLift.name} (${coreLift.sets} sets, ${coreLift.reps}). `;
+            responseText += `Added ${workout.accessories.length} accessories targeting similar muscle groups. `;
+          } else if (workout.type === 'cardio') {
+            responseText += `Focus: cardiovascular endurance. `;
+          } else if (workout.type === 'hiit') {
+            responseText += `Focus: high-intensity intervals. `;
+          }
+          
+          responseText += `Duration: ${workout.duration} minutes.`;
+          
           // Add assistant response
           setChatMessages(prev => [...prev, { 
             sender: 'assistant', 
-            text: `Generated your ${workout.type} workout for ${workout.day}. Focus: ${workout.focus || 'full body'}. Duration: ${workout.duration} minutes.`, 
+            text: responseText, 
             timestamp: new Date().toLocaleTimeString() 
           }]);
 
@@ -345,9 +432,18 @@ export default function TodaysWorkoutPage() {
           setCurrentWorkout(workout);
           
           // Add initial chat message
+          let welcomeMessage = `Generated your ${workout.type} workout for ${workout.day}. `;
+          
+          if (workout.type === 'strength' && workout.main.length > 0) {
+            const coreLift = workout.main[0];
+            welcomeMessage += `Core lift: ${coreLift.name}. `;
+          }
+          
+          welcomeMessage += `Say "it's Monday" or "it's Friday" to generate other days!`;
+          
           setChatMessages([{ 
             sender: 'assistant', 
-            text: `Generated your ${workout.type} workout for ${workout.day}. Focus: ${workout.focus || 'full body'}. Say "it's Monday" or "it's Friday" to generate other days!`, 
+            text: welcomeMessage, 
             timestamp: new Date().toLocaleTimeString() 
           }]);
           
@@ -519,6 +615,7 @@ export default function TodaysWorkoutPage() {
           <>
             {renderExercises(currentWorkout.warmup, 'Warm-up')}
             {renderExercises(currentWorkout.main, 'Main Workout')}
+            {renderExercises(currentWorkout.accessories, 'Accessories')}
             {renderExercises(currentWorkout.cooldown, 'Cool-down')}
           </>
         )}
