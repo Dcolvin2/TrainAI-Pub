@@ -28,7 +28,6 @@ if (typeof window !== 'undefined') {
   console.info('👋  call  __showPlan("Monday")  in DevTools');
 }
 
-
 interface WorkoutData {
   planId: string;
   warmup: string[];
@@ -66,52 +65,110 @@ interface EnrichedNikeExercise extends NikeExercise {
   previousSets?: PreviousExerciseData;
 }
 
-// Simple Timer Component - Counts UP from 0
-function WorkoutTimer({ elapsedTime, running, onToggle, className = '' }: { 
+// Compact Timer Component - MM:SS format
+function CompactTimer({ elapsedTime, running, className = '' }: { 
   elapsedTime: number; 
   running: boolean; 
-  onToggle: () => void;
   className?: string;
 }): React.JSX.Element {
-  const hh = String(Math.floor(elapsedTime / 3600)).padStart(2, '0');
-  const mm = String(Math.floor((elapsedTime % 3600) / 60)).padStart(2, '0');
+  const mm = String(Math.floor(elapsedTime / 60)).padStart(2, '0');
   const ss = String(elapsedTime % 60).padStart(2, '0');
 
   return (
-    <div className={`bg-[#1E293B] rounded-xl p-6 shadow-md ${className}`}>
-      <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold text-white">Workout Timer</h2>
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={onToggle}
-            className="p-2 text-white bg-green-500 rounded-full hover:bg-green-600 transition-colors"
-          >
-            {running ? (
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <rect x="6" y="4" width="4" height="16" />
-                <rect x="14" y="4" width="4" height="16" />
-              </svg>
-            ) : (
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <polygon points="5,3 19,12 5,21" />
-              </svg>
-            )}
-          </button>
-          <span className="font-mono text-2xl text-white">{`${hh}:${mm}:${ss}`}</span>
-        </div>
-      </div>
+    <div className={`text-sm font-mono text-white ${className}`}>
+      {running ? `${mm}:${ss}` : '00:00'}
     </div>
   );
 }
 
+// Inline Editable Time Component
+function InlineTimeEditor({ 
+  timeAvailable, 
+  onTimeChange, 
+  className = '' 
+}: { 
+  timeAvailable: number; 
+  onTimeChange: (time: number) => void;
+  className?: string;
+}): React.JSX.Element {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(timeAvailable.toString());
+  const inputRef = useRef<HTMLInputElement>(null);
 
+  const handleClick = () => {
+    setIsEditing(true);
+    setEditValue(timeAvailable.toString());
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const handleSave = () => {
+    const newTime = parseInt(editValue, 10);
+    if (newTime >= 5 && newTime <= 120) {
+      onTimeChange(newTime);
+    }
+    setIsEditing(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSave();
+    } else if (e.key === 'Escape') {
+      setIsEditing(false);
+    }
+  };
+
+  const handlePresetClick = (preset: number) => {
+    onTimeChange(preset);
+    setIsEditing(false);
+  };
+
+  return (
+    <div className={`flex items-center gap-2 ${className}`}>
+      <span className="text-white text-sm">Time Available:</span>
+      {isEditing ? (
+        <div className="flex items-center gap-2">
+          <input
+            ref={inputRef}
+            type="number"
+            min={5}
+            max={120}
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onBlur={handleSave}
+            className="w-16 bg-[#1E293B] border border-[#334155] px-2 py-1 rounded text-white text-center text-sm"
+          />
+          <span className="text-gray-400 text-sm">minutes</span>
+          <div className="flex gap-1">
+            {[30, 45, 60].map(preset => (
+              <button
+                key={preset}
+                onClick={() => handlePresetClick(preset)}
+                className="px-2 py-1 text-xs bg-[#22C55E] text-white rounded hover:bg-[#16a34a]"
+              >
+                {preset}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={handleClick}
+          className="text-[#22C55E] underline font-medium text-sm hover:text-[#16a34a]"
+        >
+          {timeAvailable} minutes
+        </button>
+      )}
+    </div>
+  );
+}
 
 function TodaysWorkoutPageContent() {
   const { user } = useAuth();
   const router = useRouter();
   
   // Timer state - counts UP from 0
-  const [elapsedTime, setElapsedTime] = useState(0); // seconds
+  const [elapsedTime, setElapsedTime] = useState(0);
   const [mainTimerRunning, setMainTimerRunning] = useState(false);
 
   // Workout store
@@ -172,7 +229,6 @@ function TodaysWorkoutPageContent() {
            `*Cooldown*: ${cooldown.map((c: any) => c.name || c.exercise).join(", ") || "—"}`;
   }
 
-
   // Timer effect - counts up when running
   useEffect(() => {
     if (!mainTimerRunning) return;
@@ -199,45 +255,39 @@ function TodaysWorkoutPageContent() {
     }
   }, [user, router]);
 
-  // Load Nike workout data
+  // Auto-generate workout on page load
   useEffect(() => {
-    const loadNikeWorkout = async () => {
-      const { data, error } = await fetchNikeWorkout(1);
-
-      console.log('Nike Workout 1:', data);
-
-      if (error) {
-        console.error('❌ Error querying nike_workouts:', error);
-      } else {
-        console.log('✅ Nike Workout 1:', data);
-        // Convert to NikeWorkout format and set as workout data
-        if (data && data.length > 0) {
-          const nikeWorkout: NikeWorkout = {
-            exercises: data as NikeExercise[],
-            workoutNumber: 1
-          };
-          
-          // Explicitly pick phases for proper warm-up/cool-down recognition
-          const warmups = data.filter(r => r.exercise_phase === 'warmup');
-          const cooldowns = data.filter(r => r.exercise_phase === 'cooldown');
-          const mains = data.filter(r => r.exercise_phase === 'main');
-          
-          // Convert NikeWorkout to WorkoutData format for the store
-          const workoutData: WorkoutData = {
-            planId: crypto.randomUUID(),
-            warmup: warmups.map(ex => `${ex.exercise}: ${ex.sets}x${ex.reps}`),
-            workout: mains.map(ex => `${ex.exercise}: ${ex.sets}x${ex.reps}`),
-            cooldown: cooldowns.map(ex => `${ex.exercise}: ${ex.sets}x${ex.reps}`),
-            prompt: `Nike Workout ${nikeWorkout.workoutNumber}`
-          };
-          setPendingWorkout(workoutData);
-        }
-      }
-    };
-
-    loadNikeWorkout();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (user?.id && !pendingWorkout && !activeWorkout) {
+      const dayNames = ["sunday","monday","tuesday","wednesday",
+                        "thursday","friday","saturday"];
+      const today = dayNames[new Date().getDay()];
+      
+      // Auto-generate today's workout
+      buildWorkoutByDay(user.id, today, timeAvailable).then(plan => {
+        const workoutData: WorkoutData = {
+          planId: crypto.randomUUID(),
+          warmup: plan.warmupArr.map(ex => `${ex.name}: 1x5`),
+          workout: plan.coreLift ? [`${plan.coreLift.name}: 3x8`] : [],
+          cooldown: plan.cooldownArr.map(ex => `${ex.name}: 1x5`),
+          accessories: plan.accessories.map(a => `${a.name}: 3x10`),
+          prompt: `${today} Workout (${timeAvailable} min)`
+        };
+        
+        setPendingWorkout(workoutData);
+        
+        // Store current plan for chat interactions
+        const planRows = [
+          ...plan.warmupArr.map(ex => ({ ...ex, exercise_phase: 'warmup' })),
+          ...(plan.coreLift ? [{ ...plan.coreLift, exercise_phase: 'core_lift' }] : []),
+          ...plan.accessories.map(ex => ({ ...ex, exercise_phase: 'accessory' })),
+          ...plan.cooldownArr.map(ex => ({ ...ex, exercise_phase: 'cooldown' }))
+        ];
+        setCurrentPlan(planRows);
+      }).catch(error => {
+        console.error('Auto-workout generation error:', error);
+      });
+    }
+  }, [user?.id, pendingWorkout, activeWorkout, timeAvailable, setPendingWorkout]);
 
   // Auto-scroll chat to bottom when new messages are added
   useEffect(() => {
@@ -446,6 +496,20 @@ function TodaysWorkoutPageContent() {
     // ── UPDATE CHAT MEMORY ──
     setMessages(prev => [...prev, { role: 'user', content: message }]);
 
+    // ── TIME ADJUSTMENT VIA CHAT ──
+    const timeMatch = message.match(/(?:i have|only|just)\s+(\d+)\s*minutes?/i);
+    if (timeMatch) {
+      const newTime = parseInt(timeMatch[1], 10);
+      if (newTime >= 5 && newTime <= 120) {
+        setTimeAvailable(newTime);
+        setChatMessages(prev => [
+          ...prev,
+          { sender: 'assistant', text: `Got it! Adjusting workout for ${newTime} minutes.`, timestamp: new Date().toLocaleTimeString() },
+        ]);
+        return; // Don't regenerate workout unless explicitly requested
+      }
+    }
+
     // ── 3️⃣ HANDLE "I ONLY HAVE X MINUTES" LOCALLY ──
     if (/(\d+)\s*minutes?/i.test(message) && currentPlan.length) {
       const mins = parseInt(RegExp.$1, 10);
@@ -647,18 +711,6 @@ function TodaysWorkoutPageContent() {
     // ─────────────────────────────────────────────────────────────
   };
 
-
-
-
-
-
-
-
-
-
-
-
-
   if (!user) {
     return (
       <div className="min-h-screen bg-[#0F172A] flex items-center justify-center">
@@ -676,63 +728,29 @@ function TodaysWorkoutPageContent() {
   }
 
   return (
-    <div className="p-6 max-w-md mx-auto bg-[#0F172A] min-h-screen">
-      {/* Header */}
-      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 space-y-2 sm:space-y-0">
-        <h1 className="text-3xl font-bold text-white">Today&apos;s Workout</h1>
-        <div className="flex items-center space-x-4">
-          <span className="text-white">Time Available: {timeAvailable} min</span>
-          <button
-            onClick={() => setMainTimerRunning((prev) => !prev)}
-            className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg"
-          >
-            {mainTimerRunning ? 'Pause' : 'Start'}
-          </button>
-        </div>
+    <div className="p-4 max-w-md mx-auto bg-[#0F172A] min-h-screen">
+      {/* Header with Title and Timer */}
+      <header className="flex justify-between items-center mb-4">
+        <h1 className="text-2xl font-bold text-white">Today's Workout</h1>
+        <CompactTimer 
+          elapsedTime={elapsedTime}
+          running={mainTimerRunning} 
+        />
       </header>
 
-      {/* Main Workout Timer */}
-      <WorkoutTimer 
-        elapsedTime={elapsedTime}
-        running={mainTimerRunning} 
-        onToggle={() => setMainTimerRunning(!mainTimerRunning)} 
-        className="mb-6" 
-      />
-
-
-
-      {/* AI Chat Agent Section */}
-      <section className="mb-6">
-        <h2 className="text-xl font-semibold text-white mb-4">AI Workout Builder</h2>
-        
-        {/* Time Selection */}
-        <div className="flex items-center gap-4 mb-4">
-          <label className="text-white text-sm">Time Available:</label>
-          <input
-            type="number"
-            min={5}
-            max={120}
-            value={timeAvailable}
-            onChange={(e) => setTimeAvailable(Number(e.target.value))}
-            className="w-20 bg-[#1E293B] border border-[#334155] px-3 py-2 rounded-lg text-white text-center"
-          />
-          <span className="text-gray-400 text-sm">minutes</span>
-        </div>
-
-
-
-        {/* Integrated Chat Container */}
-        <div className="bg-[#1E293B] rounded-xl shadow-md mb-4">
+      {/* Chat Interface - Prominent */}
+      <section className="mb-4">
+        <div className="bg-[#1E293B] rounded-xl shadow-md">
           <div className="p-3 border-b border-[#334155]">
             <h3 className="text-sm font-semibold text-white">AI Workout Coach</h3>
           </div>
           
-          <div className="chat-wrapper max-h-[300px] flex flex-col">
+          <div className="chat-wrapper max-h-[250px] flex flex-col">
             <div className="chat-history flex-1 overflow-y-auto p-3" ref={chatHistoryRef}>
               {chatMessages.length === 0 ? (
                 <div className="text-center text-gray-400 py-4">
                   <p className="text-sm">Ask your coach anything...</p>
-                  <p className="text-xs mt-1">Try: &quot;I only have 30 minutes&quot; or &quot;Nike&quot;</p>
+                  <p className="text-xs mt-1">Try: "I have 30 minutes" or "Nike"</p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -766,8 +784,14 @@ function TodaysWorkoutPageContent() {
             </div>
           </div>
         </div>
+      </section>
 
-
+      {/* Inline Time Editor - Compact */}
+      <section className="mb-4">
+        <InlineTimeEditor 
+          timeAvailable={timeAvailable}
+          onTimeChange={setTimeAvailable}
+        />
       </section>
 
       {/* Regenerate Workout Button */}
@@ -795,8 +819,12 @@ function TodaysWorkoutPageContent() {
       <section className="mb-6">
         {!pendingWorkout && !activeWorkout ? (
           <div className="text-center text-gray-400 py-8">
-            <p className="mb-4">No workout found for today.</p>
-            <p className="text-sm">Use the AI builder above to create your first workout!</p>
+            <p className="mb-4">Loading today's workout...</p>
+            <div className="animate-pulse">
+              <div className="h-4 bg-gray-600 rounded mb-2"></div>
+              <div className="h-4 bg-gray-600 rounded mb-2"></div>
+              <div className="h-4 bg-gray-600 rounded"></div>
+            </div>
           </div>
         ) : pendingWorkout && !activeWorkout ? (
           <div className="text-center py-8">
@@ -832,17 +860,9 @@ function TodaysWorkoutPageContent() {
               showPrevious={showPrevious}
               quickEntrySets={quickEntrySets}
             />
-            <button
-              onClick={resetWorkout}
-              className="mt-4 bg-yellow-600 hover:bg-yellow-700 text-white px-6 py-2 rounded-xl font-semibold transition-colors"
-            >
-              Reset Workout
-            </button>
           </>
         )}
       </section>
-
-
     </div>
   );
 } 
