@@ -200,7 +200,7 @@ function TodaysWorkoutPageContent() {
           workout: plan.coreLift ? [`${plan.coreLift.name}: 3x8`] : [],
           cooldown: plan.cooldownArr.map(ex => `${ex.name}: 1x5`),
           accessories: plan.accessories.map(a => `${a.name}: 3x10`),
-          prompt: `${today} Workout (${timeAvailable} min)`
+          prompt: `${today.charAt(0).toUpperCase() + today.slice(1)} ${plan.workoutType} workout (${plan.estimatedMinutes} min) - Focus: ${plan.focusMuscleGroup}`
         };
         
         setPendingWorkout(workoutData);
@@ -213,8 +213,25 @@ function TodaysWorkoutPageContent() {
           ...plan.cooldownArr.map(ex => ({ ...ex, exercise_phase: 'cooldown' }))
         ];
         setCurrentPlan(planRows);
+        
+        // Add workout type info to chat
+        if (plan.workoutType === 'rest') {
+          setChatMessages(prev => [
+            ...prev,
+            { sender: 'assistant', text: `Today is a rest day! Take it easy and focus on recovery.`, timestamp: new Date().toLocaleTimeString() },
+          ]);
+        } else {
+          setChatMessages(prev => [
+            ...prev,
+            { sender: 'assistant', text: `Generated your ${plan.workoutType} workout for ${today.charAt(0).toUpperCase() + today.slice(1)}. Focus: ${plan.focusMuscleGroup}`, timestamp: new Date().toLocaleTimeString() },
+          ]);
+        }
       }).catch(error => {
         console.error('Auto-workout generation error:', error);
+        setChatMessages(prev => [
+          ...prev,
+          { sender: 'assistant', text: `Sorry, I couldn't generate today's workout. Please try again.`, timestamp: new Date().toLocaleTimeString() },
+        ]);
       });
     }
   }, [user?.id, pendingWorkout, activeWorkout, timeAvailable, setPendingWorkout]);
@@ -477,13 +494,14 @@ function TodaysWorkoutPageContent() {
           workout: plan.coreLift ? [`${plan.coreLift.name}: 3x8`] : [],
           cooldown: plan.cooldownArr.map(ex => `${ex.name}: 1x5`),
           accessories: plan.accessories.map(a => `${a.name}: 3x10`),
-          prompt: `${day} Workout (${minutes} min)`
+          prompt: `${day} ${plan.workoutType} workout (${plan.estimatedMinutes} min) - Focus: ${plan.focusMuscleGroup}`
         };
         
         setPendingWorkout(workoutData);
         
         const workoutText = 
-          `**${day} Workout (${minutes} min)**\n\n` +
+          `**${day} ${plan.workoutType} Workout (${plan.estimatedMinutes} min)**\n\n` +
+          `*Focus: ${plan.focusMuscleGroup}*\n\n` +
           `*Warm-up*: ${plan.warmupArr.map(ex => ex.name).join(", ") || "—"}\n` +
           (plan.coreLift ? `*Core Lift*: ${plan.coreLift.name}\n` : "") +
           `*Accessories*: ${plan.accessories.map(a => a.name).join(", ") || "—"}\n` +
