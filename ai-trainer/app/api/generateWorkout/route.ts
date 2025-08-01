@@ -31,10 +31,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No core exercise for this day' }, { status: 400 });
     }
 
-    /* 👉 use the real `exercises_final` table */
+    /* 👉 use the real `exercises` table */
     const { data: coreEx, error: coreErr } = await supabase
-      .from("exercises_final")
-      .select("id, name, muscle_group")     /* column names in exercises_final */
+      .from("exercises")
+      .select("id, name, muscle_group")     /* column names in exercises */
       .ilike("name", coreName)
       .maybeSingle();
 
@@ -44,11 +44,11 @@ export async function POST(request: NextRequest) {
 
     // Get accessory pool based on muscle group
     const { data: accPool, error: accErr } = await supabase
-      .from("exercises_final")
+      .from("exercises")
       .select("id, name")
       .eq("muscle_group", coreEx.muscle_group)          /* match by muscle_group */
       .not("name", "ilike", coreEx.name)
-      .filter("required_equipment", "cs", `{${userEq.join(",")}}`);  /* column in exercises_final */
+      .filter("required_equipment", "cs", `{${userEq.join(",")}}`);  /* column in exercises */
 
     if (accErr) {
       return NextResponse.json({ error: 'Failed to fetch accessories' }, { status: 500 });

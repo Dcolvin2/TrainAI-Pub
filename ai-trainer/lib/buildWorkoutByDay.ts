@@ -55,7 +55,7 @@ export async function buildWorkoutByDay(
   }
 
   const coreMuscles = coreLift
-    ? parseMuscles(coreLift.primary_muscle)
+    ? parseMuscles(coreLift.muscle_group)
     : t.muscles;
 
   console.log("[TRACE] core muscles", coreMuscles);
@@ -64,19 +64,19 @@ export async function buildWorkoutByDay(
   function logPool(label: string, pool: any[]) {
     console.log(
       `[TRACE] ${label} (${pool.length}) →`,
-      pool.map(e => `${e.name} [${e.primary_muscle}]`)
+      pool.map(e => `${e.name} [${e.muscle_group}]`)
     );
   }
 
   function pickPhase(phase: "warmup" | "cooldown", target: number): Exercise[] {
     const strict = exercises.filter(
       e => e.exercise_phase === phase &&
-           parseMuscles(e.primary_muscle).some(m => coreMuscles.includes(m))
+           parseMuscles(e.muscle_group).some(m => coreMuscles.includes(m))
     );
     logPool(`${phase}-STRICT`, strict);
 
     const bodyWeight = exercises.filter(
-      e => e.exercise_phase === phase && (!e.equipment_required?.length)
+      e => e.exercise_phase === phase && (!e.required_equipment?.length)
     );
     logPool(`${phase}-BW`, bodyWeight);
 
@@ -134,8 +134,8 @@ export async function buildWorkoutByDay(
       id: pick.name, // Use name as ID for now
       name: pick.name,
       category: 'accessory',
-      primary_muscle: '', // Will be filled by the pool data
-      equipment_required: [], // Simplified for now
+      muscle_group: '', // Will be filled by the pool data
+      required_equipment: [], // Simplified for now
       exercise_phase: 'accessory',
       instruction: '',
       rest_seconds_default: pick.rest ?? 60,

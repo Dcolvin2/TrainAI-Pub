@@ -1,13 +1,13 @@
 export interface Database {
   public: {
     Tables: {
-      exercises_final: {
+      exercises: {
         Row: {
           id: string;
           name: string;
           category: string;
-          primary_muscle: string;
-          equipment_required: string[];
+          muscle_group: string;
+          required_equipment: string[];
           instruction: string;
           exercise_phase: 'core_lift' | 'accessory' | 'warmup' | 'mobility' | 'cooldown';
           rest_seconds_default: number;
@@ -17,8 +17,8 @@ export interface Database {
           id?: string;
           name: string;
           category: string;
-          primary_muscle: string;
-          equipment_required: string[];
+          muscle_group: string;
+          required_equipment: string[];
           instruction: string;
           exercise_phase: 'core_lift' | 'accessory' | 'warmup' | 'mobility' | 'cooldown';
           rest_seconds_default: number;
@@ -28,8 +28,8 @@ export interface Database {
           id?: string;
           name?: string;
           category?: string;
-          primary_muscle?: string;
-          equipment_required?: string[];
+          muscle_group?: string;
+          required_equipment?: string[];
           instruction?: string;
           exercise_phase?: 'core_lift' | 'accessory' | 'warmup' | 'mobility' | 'cooldown';
           rest_seconds_default?: number;

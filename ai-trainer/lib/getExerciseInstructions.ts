@@ -7,7 +7,7 @@ const supabase = createClient(
 
 export async function getExerciseInstructions(rawName: string): Promise<string | null> {
   const { data, error } = await supabase
-    .from("exercises_final")
+    .from("exercises")
     .select("name, instruction")
     .ilike("name", `%${rawName}%`)
     .limit(1);
