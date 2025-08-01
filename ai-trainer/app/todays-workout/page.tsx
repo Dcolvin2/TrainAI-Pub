@@ -463,40 +463,31 @@ function TodaysWorkoutPageContent() {
       console.log('[TRACE] matched day route:', dayMatch[1]);
       const day = dayMatch[1][0].toUpperCase() + dayMatch[1].slice(1).toLowerCase();
 
-      try {
-        const res = await fetch("/api/generateWorkout", { 
-          headers: { "x-user-id": user.id } 
-        });
-        if (!res.ok) throw new Error("Generation failed");
-        const plan = await res.json();
-        
-        if ("rest" in plan) {
-          setChatMessages(prev => [
-            ...prev,
-            { sender: 'assistant', text: "It's a rest day! Take it easy and recover.", timestamp: new Date().toLocaleTimeString() },
-          ]);
-          return;
-        }
+      // look for explicit minutes: "i have 25 minutes"
+      const minMatch = message.match(/(\d{2})\s*minutes?/i);
+      const minutes = minMatch ? parseInt(minMatch[1], 10) : timeAvailable;
 
+      try {
+        const plan = await buildWorkoutByDay(user.id, day, minutes);
+        
         // Convert to WorkoutData format for the table
         const workoutData: WorkoutData = {
           planId: crypto.randomUUID(),
-          warmup: plan.warmup.map((w: any) => `${w.name}: ${w.duration}`),
-          workout: plan.main.map((m: any) => `${m.name}: ${m.sets}x${m.reps}`),
-          cooldown: plan.cooldown.map((c: any) => `${c.name}: ${c.duration}`),
-          accessories: plan.accessories.map((a: any) => `${a.name}: ${a.sets}x${a.reps}`),
-          prompt: `${day} Workout (${plan.duration} min)`
+          warmup: plan.warmupArr.map(ex => `${ex.name}: 1x5`),
+          workout: plan.coreLift ? [`${plan.coreLift.name}: 3x8`] : [],
+          cooldown: plan.cooldownArr.map(ex => `${ex.name}: 1x5`),
+          accessories: plan.accessories.map(a => `${a.name}: 3x10`),
+          prompt: `${day} Workout (${minutes} min)`
         };
         
         setPendingWorkout(workoutData);
         
         const workoutText = 
-          `**${day} Workout (${plan.duration} min)**\n\n` +
-          `*Focus*: ${plan.focus}\n` +
-          `*Warm-up*: ${plan.warmup.map((w: any) => w.name).join(", ") || "—"}\n` +
-          `*Main*: ${plan.main.map((m: any) => m.name).join(", ") || "—"}\n` +
-          `*Accessories*: ${plan.accessories.map((a: any) => a.name).join(", ") || "—"}\n` +
-          `*Cooldown*: ${plan.cooldown.map((c: any) => c.name).join(", ") || "—"}`;
+          `**${day} Workout (${minutes} min)**\n\n` +
+          `*Warm-up*: ${plan.warmupArr.map(ex => ex.name).join(", ") || "—"}\n` +
+          (plan.coreLift ? `*Core Lift*: ${plan.coreLift.name}\n` : "") +
+          `*Accessories*: ${plan.accessories.map(a => a.name).join(", ") || "—"}\n` +
+          `*Cooldown*: ${plan.cooldownArr.map(ex => ex.name).join(", ") || "—"}`;
 
         setChatMessages(prev => [
           ...prev,
@@ -505,10 +496,10 @@ function TodaysWorkoutPageContent() {
         
         // ── STORE CURRENT PLAN ──
         const planRows = [
-          ...plan.warmup.map((w: any) => ({ ...w, exercise_phase: 'warmup' })),
-          ...plan.main.map((m: any) => ({ ...m, exercise_phase: 'core_lift' })),
-          ...plan.accessories.map((a: any) => ({ ...a, exercise_phase: 'accessory' })),
-          ...plan.cooldown.map((c: any) => ({ ...c, exercise_phase: 'cooldown' }))
+          ...plan.warmupArr.map(ex => ({ ...ex, exercise_phase: 'warmup' })),
+          ...(plan.coreLift ? [{ ...plan.coreLift, exercise_phase: 'core_lift' }] : []),
+          ...plan.accessories.map(ex => ({ ...ex, exercise_phase: 'accessory' })),
+          ...plan.cooldownArr.map(ex => ({ ...ex, exercise_phase: 'cooldown' }))
         ];
         setCurrentPlan(planRows);
         setMessages(prev => [...prev, { role: 'assistant', content: workoutText }]);
