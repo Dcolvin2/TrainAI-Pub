@@ -185,71 +185,14 @@ function TodaysWorkoutPageContent() {
     }
   }, [user, router]);
 
-  // Auto-generate workout on page load using new system
-  useEffect(() => {
-    if (user?.id && !pendingWorkout && !activeWorkout) {
-      // Use the new generateWorkoutByDay function
-      generateWorkoutByDay(user.id, timeAvailable).then(workoutPlan => {
-        if (workoutPlan) {
-          console.log('Generated workout plan:', workoutPlan);
-          
-          // Convert new workout plan format to WorkoutData format
-          const workoutData: WorkoutData = {
-            planId: crypto.randomUUID(),
-            warmup: workoutPlan.warmup.map(ex => `${ex.name}: ${ex.duration}`),
-            workout: workoutPlan.main.filter(ex => ex.type === 'core_lift').map(ex => `${ex.name}: ${ex.sets}x${ex.reps}`),
-            cooldown: workoutPlan.cooldown.map(ex => `${ex.name}: ${ex.duration}`),
-            accessories: workoutPlan.main.filter(ex => ex.type === 'accessory' || ex.type === 'cardio' || ex.type === 'hiit').map(ex => {
-              if (ex.type === 'hiit') {
-                return `${ex.name}: ${ex.rounds} rounds (${ex.duration}, rest ${ex.rest})`;
-              } else if (ex.type === 'cardio') {
-                return `${ex.name}: ${ex.duration}`;
-              } else {
-                return `${ex.name}: ${ex.sets}x${ex.reps}`;
-              }
-            }),
-            prompt: `${workoutPlan.day} ${workoutPlan.type} workout (${workoutPlan.duration} min) - Focus: ${workoutPlan.focus}`
-          };
-          
-          setPendingWorkout(workoutData);
-          
-          // Store current plan for chat interactions
-          const planRows = [
-            ...workoutPlan.warmup.map(ex => ({ name: ex.name, exercise_phase: 'warmup' })),
-            ...workoutPlan.main.filter(ex => ex.type === 'core_lift').map(ex => ({ name: ex.name, exercise_phase: 'core_lift' })),
-            ...workoutPlan.main.filter(ex => ex.type === 'accessory' || ex.type === 'cardio' || ex.type === 'hiit').map(ex => ({ name: ex.name, exercise_phase: 'accessory' })),
-            ...workoutPlan.cooldown.map(ex => ({ name: ex.name, exercise_phase: 'cooldown' }))
-          ];
-          setCurrentPlan(planRows);
-          
-          // Add workout type info to chat
-          if (workoutPlan.type === 'rest') {
-            setChatMessages(prev => [
-              ...prev,
-              { sender: 'assistant', text: `Today is a rest day! Take it easy and focus on recovery.`, timestamp: new Date().toLocaleTimeString() },
-            ]);
-          } else {
-            setChatMessages(prev => [
-              ...prev,
-              { sender: 'assistant', text: `Generated your ${workoutPlan.type} workout for ${workoutPlan.day}. Focus: ${workoutPlan.focus}`, timestamp: new Date().toLocaleTimeString() },
-            ]);
-          }
-        } else {
-          console.error('Failed to generate workout plan');
-          setChatMessages(prev => [
-            ...prev,
-            { sender: 'assistant', text: `Sorry, I couldn't generate today's workout. Please try again.`, timestamp: new Date().toLocaleTimeString() },
-          ]);
-        }
-      }).catch(error => {
-        console.error('Auto-workout generation error:', error);
-        setChatMessages(prev => [
-          ...prev,
-          { sender: 'assistant', text: `Sorry, I couldn't generate today's workout. Please try again.`, timestamp: new Date().toLocaleTimeString() },
-        ]);
-      });
-    }
-  }, [user?.id, pendingWorkout, activeWorkout, timeAvailable, setPendingWorkout]);
+  // REMOVED: Auto-generate workout on page load - this was causing infinite loop
+  // useEffect(() => {
+  //   if (user?.id && !pendingWorkout && !activeWorkout) {
+  //     generateWorkoutByDay(user.id, timeAvailable).then(workoutPlan => {
+  //       // ... workout generation logic
+  //     });
+  //   }
+  // }, [user?.id, pendingWorkout, activeWorkout, timeAvailable, setPendingWorkout]);
 
   // Auto-scroll chat to bottom when new messages are added
   useEffect(() => {
