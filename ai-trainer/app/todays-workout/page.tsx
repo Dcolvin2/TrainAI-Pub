@@ -1,885 +1,344 @@
-'use client'
-import React, { useState, useEffect, useRef } from 'react';
-import { useAuth } from '@/context/AuthContext';
+'use client';
+
+import { useEffect, useState } from 'react';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter } from 'next/navigation';
-import WorkoutTable from '../components/WorkoutTable';
-import ChatBubble from '../components/ChatBubble';
-import TimeSelector from '../components/TimeSelector';
-import { supabase } from '@/lib/supabaseClient';
-import { useWorkoutStore, WorkoutProvider } from '@/lib/workoutStore';
-import { fetchNikeWorkout } from '@/lib/nikeWorkoutHelper';
-import { buildWorkoutByDay, generateWorkoutByDay } from "@/lib/buildWorkoutByDay";
-import { getExerciseInstructions } from '@/lib/getExerciseInstructions';
-import { fetchInstructions } from '@/lib/fetchInstructions';
-import { isQuickEntry, parseQuickEntry } from '@/utils/parseQuickEntry';
-import { quickEntryHandler } from '@/lib/quickEntryHandler';
-import { getInstructionRequest } from '@/utils/detectInstructionRequest';
-import { getExerciseInstruction } from '@/lib/getExerciseInstruction';
 
-// DEV ONLY: Smoke test helper
-if (typeof window !== 'undefined') {
-  (window as any).__showPlan = async (day = 'Monday') => {
-    const plan = await buildWorkoutByDay('test-user', day, 45);
-    console.table([
-      ['Target (min)', day, plan.estimatedMinutes?.toFixed(1) || 'N/A'],
-      ...plan.accessories.map(a => ['accessory', a.name])
-    ]);
-    return plan;
-  };
-  console.info('👋  call  __showPlan("Monday")  in DevTools');
+// Type definitions
+interface Exercise {
+  name: string;
+  sets?: number;
+  reps?: string;
+  duration?: string;
+  rounds?: number;
+  rest?: string;
+  type: string;
+  rest_seconds?: number;
 }
 
-interface WorkoutData {
-  planId: string;
-  warmup: string[];
-  workout: string[];
-  cooldown: string[];
-  accessories?: string[];
-  prompt?: string;
+interface WorkoutPlan {
+  day: string;
+  type: string;
+  focus: string | null;
+  duration: number;
+  warmup: Exercise[];
+  main: Exercise[];
+  cooldown: Exercise[];
 }
 
-interface NikeExercise {
-  workout: number;
-  workout_type: string;
-  sets: number;
-  reps: string;
-  exercise: string;
-  exercise_type: string;
-  instructions?: string;
-}
-
-interface NikeWorkout {
-  exercises: NikeExercise[];
-  workoutNumber: number;
-}
-
-interface PreviousSetData {
-  weight: number;
-  reps: number;
-}
-
-interface PreviousExerciseData {
-  [setNumber: number]: PreviousSetData;
-}
-
-interface EnrichedNikeExercise extends NikeExercise {
-  previousSets?: PreviousExerciseData;
-}
-
-// Compact Timer Component - MM:SS format
-function CompactTimer({ elapsedTime, running, className = '' }: { 
-  elapsedTime: number; 
-  running: boolean; 
-  className?: string;
-}): React.JSX.Element {
-  const mm = String(Math.floor(elapsedTime / 60)).padStart(2, '0');
-  const ss = String(elapsedTime % 60).padStart(2, '0');
-
-  return (
-    <div className={`text-sm font-mono text-white ${className}`} style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
-      {running ? `${mm}:${ss}` : '00:00'}
-    </div>
-  );
-}
-
-function TodaysWorkoutPageContent() {
-  const { user } = useAuth();
+export default function TodaysWorkoutPage() {
+  const supabase = createClientComponentClient();
   const router = useRouter();
   
-  // Timer state - counts UP from 0
-  const [elapsedTime, setElapsedTime] = useState(0);
-  const [mainTimerRunning, setMainTimerRunning] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const [currentWorkout, setCurrentWorkout] = useState<WorkoutPlan | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [timeAvailable, setTimeAvailable] = useState(45);
 
-  // Workout store
-  const {
-    active: activeWorkout,
-    pending: pendingWorkout,
-    timeAvailable,
-    lastInit,
-    setActive: setActiveWorkout,
-    setPending: setPendingWorkout,
-    setTimeAvailable,
-    reset: resetWorkout,
-    setQuickEntrySets,
-    quickEntrySets,
-    clearQuickEntrySets,
-    addOrUpdateSet,
-    addLocalSet,
-    setFirstPostWarmupExercise
-  } = useWorkoutStore();
-
-  const [chatMessages, setChatMessages] = useState<Array<{sender: 'user' | 'assistant', text: string, timestamp?: string}>>([]);
-  const [showPrevious, setShowPrevious] = useState(false);
-  const [inputText, setInputText] = useState('');
-  const chatHistoryRef = useRef<HTMLDivElement>(null);
-
-  // ── CHAT MEMORY & PLAN STATE ──
-  const [messages, setMessages] = useState<{role:'user'|'assistant',content:string}[]>([]);
-  const [currentPlan, setCurrentPlan] = useState<any[]>([]);
-
-  // Debug timeAvailable changes
-  useEffect(() => {
-    console.log('TodaysWorkoutPage: timeAvailable changed to', timeAvailable);
-  }, [timeAvailable]);
-
-  // Handle time updates from TimeSelector
-  const handleTimeUpdate = (newTime: number) => {
-    console.log('Workout time updated to:', newTime);
-    setTimeAvailable(newTime);
+  // Weekly workout schedule
+  const weeklySchedule = {
+    'Monday': { workout_type: 'strength', focus_muscle_group: 'legs', core_lift_name: 'back squat' },
+    'Tuesday': { workout_type: 'strength', focus_muscle_group: 'chest', core_lift_name: 'bench press' },
+    'Wednesday': { workout_type: 'cardio', focus_muscle_group: null, core_lift_name: null },
+    'Thursday': { workout_type: 'hiit', focus_muscle_group: 'full_body', core_lift_name: null },
+    'Friday': { workout_type: 'cardio', focus_muscle_group: null, core_lift_name: null },
+    'Saturday': { workout_type: 'strength', focus_muscle_group: 'back', core_lift_name: 'trap bar deadlift' },
+    'Sunday': { workout_type: 'rest', focus_muscle_group: null, core_lift_name: null }
   };
 
-  // ── HELPER FUNCTIONS ──
-  function shortenPlan(plan: any[], minutes: number): any[] {
-    const coreLift = plan.find((p: any) => p.exercise_phase === 'core_lift');
-    const warmups = plan.filter((p: any) => p.exercise_phase === 'warmup');
-    const cooldown = plan.filter((p: any) => p.exercise_phase === 'cooldown');
-    const accessories = plan.filter(
-      (p: any) => p.exercise_phase === 'accessory'
-    );
-
-    const slots = Math.max(0, Math.floor((minutes - 10) / 5));
-    return [
-      ...warmups.slice(0, 2),
-      coreLift,
-      ...accessories.slice(0, slots),
-      ...cooldown.slice(0, 1),
-    ].filter(Boolean) as any[];
-  }
-
-  function formatPlanChat(plan: any[], minutes: number): string {
-    const warmups = plan.filter((p: any) => p.exercise_phase === 'warmup');
-    const coreLift = plan.find((p: any) => p.exercise_phase === 'core_lift');
-    const accessories = plan.filter((p: any) => p.exercise_phase === 'accessory');
-    const cooldown = plan.filter((p: any) => p.exercise_phase === 'cooldown');
-
-    return `**${minutes}-Minute Workout**\n\n` +
-           `*Warm-up*: ${warmups.map((w: any) => w.name || w.exercise).join(", ") || "—"}\n` +
-           (coreLift ? `*Core Lift*: ${coreLift.name || coreLift.exercise}\n` : "") +
-           `*Accessories*: ${accessories.map((a: any) => a.name || a.exercise).join(", ") || "—"}\n` +
-           `*Cooldown*: ${cooldown.map((c: any) => c.name || c.exercise).join(", ") || "—"}`;
-  }
-
-  // Timer effect - counts up when running
+  // Authentication check
   useEffect(() => {
-    if (!mainTimerRunning) return;
-    
-    const interval = setInterval(() => {
-      setElapsedTime((prev) => prev + 1);
-    }, 1000);
-    
-    return () => clearInterval(interval);
-  }, [mainTimerRunning]);
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        setUser(session.user);
+      } else {
+        router.push('/login');
+      }
+    };
+    checkUser();
 
-  // Start timer when workout data is generated
-  useEffect(() => {
-    if (activeWorkout && !mainTimerRunning) {
-      setMainTimerRunning(true);
-    }
-  }, [activeWorkout, mainTimerRunning]);
-
-  // Redirect if not authenticated
-  useEffect(() => {
-    if (!user) {
-      router.push('/login');
-      return;
-    }
-  }, [user, router]);
-
-  // Auto-generate workout on page load
-  useEffect(() => {
-    // Prevent multiple simultaneous generations
-    if ((window as any).isGeneratingWorkout) {
-      console.log('Already generating workout, skipping...');
-      return;
-    }
-    
-    if (user?.id && !pendingWorkout && !activeWorkout) {
-      (window as any).isGeneratingWorkout = true;
-      
-      const generateWorkout = async () => {
-        try {
-          console.log('[WORKOUT] Auto-generating workout for user:', user.id);
-          
-          // Use the new generateWorkoutByDay function
-          const workout = await generateWorkoutByDay(user.id, timeAvailable);
-          
-          if (workout) {
-            console.log('[WORKOUT] Generated workout:', workout);
-            
-            // Convert to WorkoutData format for the store
-            const workoutData: WorkoutData = {
-              planId: crypto.randomUUID(),
-              warmup: workout.warmup.map((ex: any) => `${ex.name}: ${ex.duration}`),
-              workout: workout.main.filter((ex: any) => ex.type === 'core_lift').map((ex: any) => `${ex.name}: ${ex.sets}x${ex.reps}`),
-              cooldown: workout.cooldown.map((ex: any) => `${ex.name}: ${ex.duration}`),
-              accessories: workout.main.filter((ex: any) => ex.type === 'accessory').map((ex: any) => `${ex.name}: ${ex.sets}x${ex.reps}`),
-              prompt: `${workout.day} ${workout.type} workout (${workout.duration} min) - Focus: ${workout.focus || 'full body'}`
-            };
-            
-            setPendingWorkout(workoutData);
-            
-            // Store current plan for chat interactions
-            const planRows = [
-              ...workout.warmup.map((ex: any) => ({ ...ex, exercise_phase: 'warmup' })),
-              ...workout.main.filter((ex: any) => ex.type === 'core_lift').map((ex: any) => ({ ...ex, exercise_phase: 'core_lift' })),
-              ...workout.main.filter((ex: any) => ex.type === 'accessory').map((ex: any) => ({ ...ex, exercise_phase: 'accessory' })),
-              ...workout.cooldown.map((ex: any) => ({ ...ex, exercise_phase: 'cooldown' }))
-            ];
-            setCurrentPlan(planRows);
-            
-            // Add workout type info to chat
-            if (workout.type === 'rest') {
-              setChatMessages(prev => [
-                ...prev,
-                { sender: 'assistant', text: `Today is a rest day! Take it easy and focus on recovery.`, timestamp: new Date().toLocaleTimeString() },
-              ]);
-            } else {
-              setChatMessages(prev => [
-                ...prev,
-                { sender: 'assistant', text: `Generated your ${workout.type} workout for ${workout.day}. Focus: ${workout.focus || 'full body'}`, timestamp: new Date().toLocaleTimeString() },
-              ]);
-            }
-          } else {
-            console.error('[WORKOUT] Failed to generate workout');
-            setChatMessages(prev => [
-              ...prev,
-              { sender: 'assistant', text: `Sorry, I couldn't generate today's workout. Please try again.`, timestamp: new Date().toLocaleTimeString() },
-            ]);
-          }
-        } catch (error) {
-          console.error('[WORKOUT] Auto-workout generation error:', error);
-          setChatMessages(prev => [
-            ...prev,
-            { sender: 'assistant', text: `Sorry, I couldn't generate today's workout. Please try again.`, timestamp: new Date().toLocaleTimeString() },
-          ]);
-        } finally {
-          (window as any).isGeneratingWorkout = false;
-        }
-      };
-      
-      generateWorkout();
-    }
-  }, [user?.id, pendingWorkout, activeWorkout, timeAvailable, setPendingWorkout]);
-
-  // Auto-scroll chat to bottom when new messages are added
-  useEffect(() => {
-    if (chatHistoryRef.current) {
-      chatHistoryRef.current.scrollTop = chatHistoryRef.current.scrollHeight;
-    }
-  }, [chatMessages]);
-
-  // Auto-reset on day change
-  useEffect(() => {
-    const today = new Date().toISOString().split('T')[0];
-    if (lastInit !== today) {
-      resetWorkout();
-    }
-  }, [lastInit, resetWorkout]);
-
-  // Clear state on auth change
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) {
-        resetWorkout();
-        setShowPrevious(false);
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session) {
+        setUser(session.user);
+      } else {
+        setUser(null);
+        router.push('/login');
       }
     });
 
-    return () => subscription.unsubscribe();
-  }, [resetWorkout]);
-
-  // Helper to fetch previous sets data from most recent workout
-  const fetchPrevSets = async (userId: string, exerciseNames: string[]) => {
-    try {
-      // Get the most recent workout session before today
-      const today = new Date().toISOString().split('T')[0];
-      const { data: recentSession } = await supabase
-        .from('workout_sessions')
-        .select('id, date')
-        .eq('user_id', userId)
-        .lt('date', today)
-        .order('date', { ascending: false })
-        .limit(1)
-        .single();
-
-      if (!recentSession) {
-        return {};
-      }
-
-      // Get sets from that session
-      const { data: prevSets } = await supabase
-        .from('workout_log_entries')
-        .select('exercise_name, set_number, weight, reps')
-        .eq('session_id', recentSession.id)
-        .in('exercise_name', exerciseNames);
-
-      // Group by exercise name and set number
-      const prevMap: Record<string, Record<number, { weight: number; reps: number }>> = {};
-      prevSets?.forEach(set => {
-        if (!prevMap[set.exercise_name]) {
-          prevMap[set.exercise_name] = {};
-        }
-        prevMap[set.exercise_name][set.set_number] = {
-          weight: set.weight,
-          reps: set.reps
-        };
-      });
-
-      return prevMap;
-    } catch (error) {
-      console.error('Error fetching previous sets:', error);
-      return {};
-    }
-  };
-
-  // NEW helper - Parse explicit Nike workout number
-  const parseNikeRequest = (msg: string) => {
-    const m = msg.match(/nike(?:\s+workout)?\s*[#]?(\d+)/i);
-    return m ? parseInt(m[1], 10) : null;
-  };
-
-  // Enhanced Nike workout handler
-  const handleNike = async (message: string, userId: string) => {
-    const explicit = parseNikeRequest(message);
-    let workoutNo: number;
-
-    if (!explicit) {
-      const { data: p } = await supabase
-        .from('profiles')
-        .select('last_nike_workout')
-        .eq('id', userId)
-        .single();
-      workoutNo = (p?.last_nike_workout ?? 0) + 1;
-    } else {
-      workoutNo = explicit;
-    }
-
-    const { data: rows } = await fetchNikeWorkout(workoutNo);
-
-    if (!rows?.length) {
-      setChatMessages(prev => [
-        ...prev,
-        { sender: 'assistant', text: `I couldn't find Nike workout ${workoutNo}.`, timestamp: new Date().toLocaleTimeString() },
-      ]);
-      return;
-    }
-
-    if (!explicit) {
-      await supabase
-        .from('profiles')
-        .update({ last_nike_workout: workoutNo })
-        .eq('id', userId);
-    }
-
-    // Explicitly pick phases for proper warm-up/cool-down recognition
-    const warmups = rows.filter(r => r.exercise_phase === 'warmup');
-    const cooldowns = rows.filter(r => r.exercise_phase === 'cooldown');
-    const mains = rows.filter(r => r.exercise_phase === 'main');
-
-    // Build chat reply
-    const heading = explicit
-      ? `Here's Nike workout ${workoutNo} as requested:`
-      : `You're on the next one—Nike #${workoutNo}:`;
-
-    const summary = rows
-      .map(r => `• ${r.exercise} (${r.sets}x${r.reps})`)
-      .join('\n');
-
-    setChatMessages(prev => [
-      ...prev,
-      { sender: 'assistant', text: `${heading}\n${summary}`, timestamp: new Date().toLocaleTimeString() },
-    ]);
-
-    // Set workout data for the table
-    const nikeWorkout: NikeWorkout = {
-      exercises: rows as NikeExercise[],
-      workoutNumber: workoutNo
+    return () => {
+      authListener?.subscription.unsubscribe();
     };
-    
-    // Fetch previous sets data and enrich the workout
-    if (user?.id) {
-      const exerciseNames = rows.map(row => row.exercise);
-      const prevMap = await fetchPrevSets(user.id, exerciseNames);
-      
-      // Enrich the workout with previous data
-      nikeWorkout.exercises.forEach(exercise => {
-        const prevData = prevMap[exercise.exercise];
-        if (prevData) {
-          // Add previous data to the exercise (this will be used by WorkoutTable)
-          (exercise as EnrichedNikeExercise).previousSets = prevData;
-        }
-      });
-    }
-    
-    // Convert NikeWorkout to WorkoutData format for the store
-    const workoutData: WorkoutData = {
-      planId: crypto.randomUUID(),
-      warmup: warmups.map(ex => `${ex.exercise}: ${ex.sets}x${ex.reps}`),
-      workout: mains.map(ex => `${ex.exercise}: ${ex.sets}x${ex.reps}`),
-      cooldown: cooldowns.map(ex => `${ex.exercise}: ${ex.sets}x${ex.reps}`),
-      prompt: `Nike Workout ${nikeWorkout.workoutNumber}`
-    };
-    setPendingWorkout(workoutData);
-  };
+  }, [supabase, router]);
 
-  const handleChatMessage = async (message: string) => {
-    // ── TRACE STEP 1: Input logging ──
-    console.log('[TRACE] input raw:', message);
-    
-    // ── TRACE STEP 2: Normalized input ──
-    const input = (message ?? '').trim().toLowerCase();
-    console.log('[TRACE] input:', input);
-    
-    // ── TRACE STEP 3: Early debug exit ──
-    if (input === '/debug') {
-      console.log('[TRACE] matched /debug early-exit');
-      setChatMessages(prev => [
-        ...prev,
-        { sender: 'assistant', text: 'Model: gpt-4o-mini', timestamp: new Date().toLocaleTimeString() },
-      ]);
-      return;
-    }
-
-    // ── INSTRUCTION LOOKUP (EARLY RETURN) ──
-    const maybe = await getExerciseInstruction(message);
-    if (maybe) {
-      console.log('[TRACE] instruction found, early return');
-      const response = `**Exercise Instructions**\n\n${maybe}`;
-      setChatMessages(prev => [
-        ...prev,
-        { sender: 'assistant', text: response, timestamp: new Date().toLocaleTimeString() },
-      ]);
-      setMessages(prev => [...prev, { role: 'assistant', content: response }]);
-      return;                      // early return stops other branches
-    }
-
-    // ── CLEAR STALE PLAN WHEN USER EXPLICITLY ASKS FOR NEW WORKOUT ──
-    if (/generate workout/i.test(input) ||
-        /(it's|its)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i.test(input) ||
-        /nike\s*\d*/i.test(input)) {
-      setPendingWorkout(null);  // clear table immediately
-    }
-
-    const lower = message.toLowerCase();
-
-    // 1. Append user message to chat history
-    setChatMessages(prev => [...prev, { sender: 'user', text: message, timestamp: new Date().toLocaleTimeString() }]);
-    
-    // ── UPDATE CHAT MEMORY ──
-    setMessages(prev => [...prev, { role: 'user', content: message }]);
-
-    // ── TIME ADJUSTMENT VIA CHAT ──
-    const timeMatch = message.match(/(?:i have|only|just)\s+(\d+)\s*minutes?/i);
-    if (timeMatch) {
-      const newTime = parseInt(timeMatch[1], 10);
-      if (newTime >= 5 && newTime <= 120) {
-        console.log('Chat: Setting timeAvailable to', newTime);
-        setTimeAvailable(newTime);
-        setChatMessages(prev => [
-          ...prev,
-          { sender: 'assistant', text: `Got it! Adjusting workout for ${newTime} minutes.`, timestamp: new Date().toLocaleTimeString() },
-        ]);
-        return; // Don't regenerate workout unless explicitly requested
-      }
-    }
-
-    // ── 3️⃣ HANDLE "I ONLY HAVE X MINUTES" LOCALLY ──
-    if (/(\d+)\s*minutes?/i.test(message) && currentPlan.length) {
-      const mins = parseInt(RegExp.$1, 10);
-      const newPlan = shortenPlan(currentPlan, mins);
-      setCurrentPlan(newPlan);
-      
-      const formattedResponse = formatPlanChat(newPlan, mins);
-      setChatMessages(prev => [
-        ...prev,
-        { sender: 'assistant', text: formattedResponse, timestamp: new Date().toLocaleTimeString() },
-      ]);
-      setMessages(prev => [...prev, { role: 'assistant', content: formattedResponse }]);
-      return; // skip OpenAI
-    }
-
-    // ── 1️⃣ DAY-OF-WEEK FIRST ──
-    console.log('[TRACE] hit day-of-week branch');
-    const dayMatch = lower.match(/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i);
-    if (dayMatch && user?.id) {
-      console.log('[TRACE] matched day route:', dayMatch[1]);
-      const day = dayMatch[1][0].toUpperCase() + dayMatch[1].slice(1).toLowerCase();
-
-      // look for explicit minutes: "i have 25 minutes"
-      const minMatch = message.match(/(\d{2})\s*minutes?/i);
-      const minutes = minMatch ? parseInt(minMatch[1], 10) : timeAvailable;
-
-      try {
-        // Use the new generateWorkoutByDay function
-        const workout = await generateWorkoutByDay(user.id, minutes);
-        
-        if (!workout) {
-          throw new Error('Failed to generate workout');
-        }
-        
-        // Convert to WorkoutData format for the table
-        const workoutData: WorkoutData = {
-          planId: crypto.randomUUID(),
-          warmup: workout.warmup.map((ex: any) => `${ex.name}: ${ex.duration}`),
-          workout: workout.main.filter((ex: any) => ex.type === 'core_lift').map((ex: any) => `${ex.name}: ${ex.sets}x${ex.reps}`),
-          cooldown: workout.cooldown.map((ex: any) => `${ex.name}: ${ex.duration}`),
-          accessories: workout.main.filter((ex: any) => ex.type === 'accessory').map((ex: any) => `${ex.name}: ${ex.sets}x${ex.reps}`),
-          prompt: `${workout.day} ${workout.type} workout (${workout.duration} min) - Focus: ${workout.focus || 'full body'}`
-        };
-        
-        setPendingWorkout(workoutData);
-        
-        const workoutText = 
-          `**${workout.day} ${workout.type} Workout (${workout.duration} min)**\n\n` +
-          `*Focus: ${workout.focus || 'full body'}*\n\n` +
-          `*Warm-up*: ${workout.warmup.map((ex: any) => ex.name).join(", ") || "—"}\n` +
-          (workout.main.find((ex: any) => ex.type === 'core_lift') ? `*Core Lift*: ${workout.main.find((ex: any) => ex.type === 'core_lift')!.name}\n` : "") +
-          `*Accessories*: ${workout.main.filter((ex: any) => ex.type === 'accessory').map((ex: any) => ex.name).join(", ") || "—"}\n` +
-          `*Cooldown*: ${workout.cooldown.map((ex: any) => ex.name).join(", ") || "—"}`;
-
-        setChatMessages(prev => [
-          ...prev,
-          { sender: 'assistant', text: workoutText, timestamp: new Date().toLocaleTimeString() },
-        ]);
-        
-        // ── STORE CURRENT PLAN ──
-        const planRows = [
-          ...workout.warmup.map((ex: any) => ({ ...ex, exercise_phase: 'warmup' })),
-          ...workout.main.filter((ex: any) => ex.type === 'core_lift').map((ex: any) => ({ ...ex, exercise_phase: 'core_lift' })),
-          ...workout.main.filter((ex: any) => ex.type === 'accessory').map((ex: any) => ({ ...ex, exercise_phase: 'accessory' })),
-          ...workout.cooldown.map((ex: any) => ({ ...ex, exercise_phase: 'cooldown' }))
-        ];
-        setCurrentPlan(planRows);
-        setMessages(prev => [...prev, { role: 'assistant', content: workoutText }]);
-        
-        return;
-      } catch (error) {
-        console.error('Day workout generation error:', error);
-        setChatMessages(prev => [
-          ...prev,
-          { sender: 'assistant', text: `Sorry, I couldn't generate a ${day} workout. Please try again.`, timestamp: new Date().toLocaleTimeString() },
-        ]);
-        return;
-      }
-    }
-
-    // ── 2️⃣ NIKE SECOND ──
-    console.log('[TRACE] hit Nike branch');
-    if (lower.includes('nike')) {
-      console.log('[TRACE] matched Nike branch');
-      if (!user?.id) {
-        setChatMessages(prev => [
-          ...prev,
-          { sender: 'assistant', text: "Please log in to access your Nike workout.", timestamp: new Date().toLocaleTimeString() },
-        ]);
-        return;
-      }
-
-      await handleNike(message, user.id);
-      return;
-    }
-
-    // ── 3️⃣ QUICK-ENTRY SETS THIRD ──
-    console.log('[TRACE] hit quick-entry sets branch');
-    if (isQuickEntry(input)) {
-      console.log('[TRACE] matched quick-entry sets:', input);
-      
-      const setEntries = parseQuickEntry(input);
-
-      if (setEntries.length > 0) {
-        // Find the first post-warm-up exercise
-        const firstMainExercise = currentPlan.find(ex => ex.exercise_phase === 'main');
-        
-        if (firstMainExercise) {
-          // Set the first post-warmup exercise for future quick entries
-          setFirstPostWarmupExercise(firstMainExercise.name);
-          
-          // Create helper function to add chat messages
-          const addChatMessage = (message: { id: string; role: 'assistant'; content: string; createdAt: string }) => {
-            setChatMessages(prev => [
-              ...prev,
-              { sender: 'assistant', text: message.content, timestamp: new Date().toLocaleTimeString() },
-            ]);
-            setMessages(prev => [...prev, { role: 'assistant', content: message.content }]);
-          };
-          
-          // Use the new quick entry handler with chat confirmation
-          quickEntryHandler(setEntries, firstMainExercise.name, addLocalSet, addChatMessage);
-          
-          return;
-        }
-      }
-    }
-
-    // ── 6️⃣ REGENERATE WORKOUT SIXTH ──
-    if (/regenerate workout/i.test(input)) {
-      console.log('[TRACE] matched regenerate workout');
-      // clear current state first
-      setPendingWorkout(null);
-      setActiveWorkout(null);
-      setCurrentPlan([]);
-      
-      // reuse today's weekday
-      const dayNames = ["sunday","monday","tuesday","wednesday",
-                        "thursday","friday","saturday"];
-      const today = dayNames[new Date().getDay()];
-      handleChatMessage(`it's ${today}`);       // triggers day-of-week builder
-      return;
-    }
-
-    // ── 7️⃣ CATCH-ALL GPT LAST ──
+  // Generate workout function
+  const generateWorkoutByDay = async (userId: string, duration: number = 45): Promise<WorkoutPlan | null> => {
     try {
-      console.log('[TRACE] catch-all GPT route fires');
-      const coachReply = await fetch('/api/workoutChat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user?.id || 'anonymous',
-          messages: [
-            { role: 'system', content: 'You are a concise fitness coach. Reply in ≤120 words.' },
-            ...messages.slice(-10),  // ── KEEP CHAT MEMORY ──
-            { role: 'user', content: message }
-          ]
-        })
-      });
+      // Get current day
+      const today = new Date().getDay();
+      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const currentDay = dayNames[today];
+      
+      console.log('Generating workout for:', currentDay);
+      
+      const template = weeklySchedule[currentDay as keyof typeof weeklySchedule];
+      
+      if (!template) {
+        throw new Error(`No template found for ${currentDay}`);
+      }
 
-      if (coachReply.ok) {
-        const data = await coachReply.json();
-        console.log('[TRACE] coach reply OK');
-        setChatMessages(prev => [
-          ...prev,
-          { sender: 'assistant', text: data.assistantMessage, timestamp: new Date().toLocaleTimeString() },
-        ]);
+      // Get user's equipment
+      const { data: userEquipment } = await supabase
+        .from('user_equipment')
+        .select('custom_name')
+        .eq('user_id', userId);
+      
+      const availableEquipment = userEquipment?.map(item => item.custom_name) || [];
+      
+      // Initialize workout plan
+      const workoutPlan: WorkoutPlan = {
+        day: currentDay,
+        type: template.workout_type,
+        focus: template.focus_muscle_group,
+        duration: duration,
+        warmup: [],
+        main: [],
+        cooldown: []
+      };
+
+      // Helper function to get exercises
+      const getExercises = async (phase: string, category?: string, muscle?: string) => {
+        let query = supabase
+          .from('exercises_final')
+          .select('*')
+          .eq('exercise_phase', phase);
         
-        // ── UPDATE CHAT MEMORY ──
-        setMessages(prev => [...prev, { role: 'assistant', content: data.assistantMessage }]);
+        if (category) query = query.eq('category', category);
+        if (muscle) query = query.eq('primary_muscle', muscle);
         
-        // ── ALWAYS EXPECT FUNCTION CALL (forced updateWorkout) ──
-        if (data.plan) {
-          console.log('[TRACE] workout data received:', data.plan);
-          const updatedWorkout: WorkoutData = {
-            planId: crypto.randomUUID(),  // ← fresh planId forces re-render
-            warmup: data.plan.warmup || [],
-            workout: data.plan.workout || [],
-            cooldown: data.plan.cooldown || [],
-            accessories: (data.plan as any).accessories || [],
-            prompt: data.plan.prompt || 'Updated workout'
-          };
-          setPendingWorkout(updatedWorkout);
+        const { data, error } = await query;
+        
+        if (error) {
+          console.error('Exercise query error:', error);
+          return [];
+        }
+        
+        // Filter by equipment
+        return (data || []).filter((exercise: any) => {
+          if (!exercise.equipment_required || exercise.equipment_required.length === 0) {
+            return true;
+          }
+          return exercise.equipment_required.some((req: string) => 
+            availableEquipment.includes(req)
+          );
+        });
+      };
+
+      // Generate workout based on type
+      switch (template.workout_type) {
+        case 'strength':
+          // Add core lift
+          if (template.core_lift_name) {
+            const coreLifts = await getExercises('core_lift');
+            const coreLift = coreLifts.find((ex: any) => 
+              ex.name.toLowerCase().includes(template.core_lift_name!.toLowerCase())
+            );
+            
+            if (coreLift) {
+              workoutPlan.main.push({
+                name: coreLift.name,
+                sets: 4,
+                reps: '5-8',
+                type: 'core_lift',
+                rest_seconds: coreLift.rest_seconds_default || 180
+              });
+            }
+          }
           
-          // ── UPDATE CURRENT PLAN STATE ──
-          const planRows = [
-            ...(data.plan.warmup || []).map((ex: string) => ({ name: ex, exercise_phase: 'warmup' })),
-            ...(data.plan.workout || []).map((ex: string) => ({ name: ex, exercise_phase: 'core_lift' })),
-            ...(data.plan.accessories || []).map((ex: string) => ({ name: ex, exercise_phase: 'accessory' })),
-            ...(data.plan.cooldown || []).map((ex: string) => ({ name: ex, exercise_phase: 'cooldown' }))
+          // Add accessories
+          const accessories = await getExercises('accessory', 'strength', template.focus_muscle_group || undefined);
+          accessories.slice(0, 3).forEach((ex: any) => {
+            workoutPlan.main.push({
+              name: ex.name,
+              sets: 3,
+              reps: '8-12',
+              type: 'accessory',
+              rest_seconds: ex.rest_seconds_default || 120
+            });
+          });
+          break;
+          
+        case 'cardio':
+          workoutPlan.main = [
+            { name: 'Treadmill Run', duration: '20 min', type: 'cardio' },
+            { name: 'Rowing Machine', duration: '15 min', type: 'cardio' },
+            { name: 'Cool Down Walk', duration: '10 min', type: 'cardio' }
           ];
-          setCurrentPlan(planRows);
-        }
-        
-        return;                                  // stop; no fallback
+          break;
+          
+        case 'hiit':
+          workoutPlan.main = [
+            { name: 'Burpees', rounds: 4, duration: '45 sec', rest: '15 sec', type: 'hiit' },
+            { name: 'Mountain Climbers', rounds: 4, duration: '45 sec', rest: '15 sec', type: 'hiit' },
+            { name: 'Jump Squats', rounds: 4, duration: '45 sec', rest: '15 sec', type: 'hiit' },
+            { name: 'Push-ups', rounds: 4, duration: '45 sec', rest: '15 sec', type: 'hiit' }
+          ];
+          break;
+          
+        case 'rest':
+          workoutPlan.main = [{
+            name: 'Rest Day',
+            duration: 'All day',
+            type: 'rest'
+          }];
+          return workoutPlan; // Skip warmup/cooldown for rest days
       }
-    } catch (err) {
-      console.error('[TRACE] OpenAI error ↓↓↓', err); // log full error
-      setChatMessages(prev => [
-        ...prev,
-        { sender: 'assistant', text: '⚠️ OpenAI error — see console for details', timestamp: new Date().toLocaleTimeString() },
-      ]);
-      return;                                  // still stop fallback
+
+      // Add warmup and cooldown
+      workoutPlan.warmup = [
+        { name: 'Arm Circles', duration: '30 sec', type: 'warmup' },
+        { name: 'Leg Swings', duration: '30 sec', type: 'warmup' },
+        { name: 'Light Cardio', duration: '2 min', type: 'warmup' }
+      ];
+      
+      workoutPlan.cooldown = [
+        { name: 'Hamstring Stretch', duration: '30 sec', type: 'cooldown' },
+        { name: 'Quad Stretch', duration: '30 sec', type: 'cooldown' },
+        { name: 'Shoulder Stretch', duration: '30 sec', type: 'cooldown' }
+      ];
+
+      return workoutPlan;
+      
+    } catch (error) {
+      console.error('Error generating workout:', error);
+      return null;
     }
-    // ─────────────────────────────────────────────────────────────
   };
 
-  if (!user) {
+  // Generate workout on component mount
+  useEffect(() => {
+    const loadWorkout = async () => {
+      if (user && !currentWorkout) {
+        setIsLoading(true);
+        setError(null);
+        
+        const workout = await generateWorkoutByDay(user.id, timeAvailable);
+        
+        if (workout) {
+          setCurrentWorkout(workout);
+          
+          // Save to database
+          await supabase.from('generated_workouts').insert({
+            user_id: user.id,
+            minutes: timeAvailable,
+            prompt: `Day-based workout for ${workout.day}`,
+            plan: workout,
+            used_model: 'day-based-system'
+          });
+        } else {
+          setError('Failed to generate workout. Please try again.');
+        }
+        
+        setIsLoading(false);
+      }
+    };
+    
+    loadWorkout();
+  }, [user]); // Only depend on user
+
+  // Render workout section
+  const renderExercises = (exercises: Exercise[], title: string) => {
+    if (exercises.length === 0) return null;
+    
     return (
-      <div className="min-h-screen bg-[#0F172A] flex items-center justify-center w-full max-w-full overflow-x-hidden" style={{ width: '100%', maxWidth: '100vw', overflowX: 'hidden', boxSizing: 'border-box' }}>
-        <div className="text-center px-4" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
-          <div className="text-white text-xl mb-4">Please log in to access your workout</div>
-          <button
-            onClick={() => router.push('/login')}
-            className="bg-[#22C55E] px-6 py-3 rounded-xl text-white font-semibold hover:bg-[#16a34a] transition-colors"
-            style={{ maxWidth: '100%', boxSizing: 'border-box' }}
-          >
-            Go to Login
-          </button>
+      <div className="mb-8">
+        <h2 className="text-2xl font-bold mb-4">{title}</h2>
+        <div className="space-y-4">
+          {exercises.map((exercise, index) => (
+            <div key={index} className="bg-gray-800 p-4 rounded-lg">
+              <h3 className="text-lg font-semibold">{exercise.name}</h3>
+              <div className="mt-2 text-gray-400">
+                {exercise.sets && <span>Sets: {exercise.sets} | </span>}
+                {exercise.reps && <span>Reps: {exercise.reps} | </span>}
+                {exercise.duration && <span>Duration: {exercise.duration} | </span>}
+                {exercise.rounds && <span>Rounds: {exercise.rounds} | </span>}
+                {exercise.rest && <span>Rest: {exercise.rest}</span>}
+              </div>
+            </div>
+          ))}
         </div>
+      </div>
+    );
+  };
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
+        <div className="text-xl">Generating your workout...</div>
       </div>
     );
   }
 
+  // Error state
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-900 text-white p-8">
+        <div className="bg-red-900 border border-red-700 text-red-100 px-4 py-3 rounded">
+          {error}
+        </div>
+        <button 
+          onClick={() => window.location.reload()}
+          className="mt-4 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded"
+        >
+          Try Again
+        </button>
+      </div>
+    );
+  }
+
+  // Main render
   return (
-    <div className="w-full max-w-full overflow-x-hidden bg-[#0F172A] min-h-screen workout-container" style={{ width: '100%', maxWidth: '100vw', overflowX: 'hidden', boxSizing: 'border-box' }}>
-      <div className="p-4 max-w-md mx-auto" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
-        {/* Header with Title and Timer */}
-        <header className="flex justify-between items-center mb-4" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
-          <h1 className="text-2xl font-bold text-white" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>Today's Workout</h1>
-          <CompactTimer 
-            elapsedTime={elapsedTime}
-            running={mainTimerRunning} 
-          />
-        </header>
-
-        {/* Chat Interface - Prominent with Fixed Height */}
-        <section className="mb-4" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
-          <div className="bg-[#1E293B] rounded-xl shadow-md" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
-            <div className="p-3 border-b border-[#334155]" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
-              <h3 className="text-sm font-semibold text-white" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>AI Workout Coach</h3>
+    <div className="min-h-screen bg-gray-900 text-white p-8">
+      <div className="max-w-4xl mx-auto">
+        <h1 className="text-3xl font-bold mb-8">
+          Today's Workout - {currentWorkout?.day}
+        </h1>
+        
+        <div className="bg-gray-800 p-6 rounded-lg mb-8">
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <p className="text-gray-400">Type</p>
+              <p className="text-xl font-semibold capitalize">{currentWorkout?.type}</p>
             </div>
-            
-            <div className="flex flex-col h-[200px]" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
-              <div 
-                className="flex-1 overflow-y-auto p-3" 
-                ref={chatHistoryRef}
-                style={{ 
-                  maxHeight: '200px', 
-                  maxWidth: '100%', 
-                  boxSizing: 'border-box',
-                  wordWrap: 'break-word',
-                  overflowWrap: 'break-word'
-                }}
-              >
-                {chatMessages.length === 0 ? (
-                  <div className="text-center text-gray-400 py-4" style={{ 
-                    maxWidth: '100%', 
-                    boxSizing: 'border-box',
-                    wordWrap: 'break-word',
-                    overflowWrap: 'break-word'
-                  }}>
-                    <p className="text-sm">Ask your coach anything...</p>
-                    <p className="text-xs mt-1">Try: "I have 30 minutes" or "Nike"</p>
-                  </div>
-                ) : (
-                  <div className="space-y-2" style={{ 
-                    maxWidth: '100%', 
-                    boxSizing: 'border-box',
-                    wordWrap: 'break-word',
-                    overflowWrap: 'break-word'
-                  }}>
-                    {chatMessages.map((message, index) => (
-                      <div key={index} style={{
-                        maxWidth: '100%',
-                        boxSizing: 'border-box',
-                        wordWrap: 'break-word',
-                        overflowWrap: 'break-word',
-                        whiteSpace: 'pre-wrap'
-                      }}>
-                        <ChatBubble 
-                          sender={message.sender} 
-                          message={message.text}
-                          timestamp={message.timestamp}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="p-3 border-t border-[#334155] flex-shrink-0" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
-                <input
-                  type="text"
-                  value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && inputText.trim()) {
-                      const message = inputText.trim();
-                      setInputText('');
-                      handleChatMessage(message);
-                    }
-                  }}
-                  placeholder="Ask your coach anything..."
-                  className="w-full bg-[#0F172A] border border-[#334155] rounded-lg p-2 text-sm text-white focus:border-[#22C55E] focus:outline-none disabled:opacity-50 chat-input-field"
-                  style={{ maxWidth: '100%', boxSizing: 'border-box' }}
-                />
-              </div>
+            <div>
+              <p className="text-gray-400">Focus</p>
+              <p className="text-xl font-semibold capitalize">{currentWorkout?.focus || 'Full Body'}</p>
+            </div>
+            <div>
+              <p className="text-gray-400">Duration</p>
+              <p className="text-xl font-semibold">{currentWorkout?.duration} min</p>
             </div>
           </div>
-        </section>
+        </div>
 
-        {/* Time Selector - Using new TimeSelector component */}
-        <section className="mb-4" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
-          <TimeSelector onTimeChange={handleTimeUpdate} />
-        </section>
+        {currentWorkout && (
+          <>
+            {renderExercises(currentWorkout.warmup, 'Warm-up')}
+            {renderExercises(currentWorkout.main, 'Main Workout')}
+            {renderExercises(currentWorkout.cooldown, 'Cool-down')}
+          </>
+        )}
 
-        {/* Regenerate Workout Button */}
-        <section className="mb-4" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
-          <button
-            onClick={() => {
-              // clear current state first
-              setPendingWorkout(null);
-              setActiveWorkout(null);
-              setCurrentPlan([]);
-              
-              // reuse today's weekday
-              const dayNames = ["sunday","monday","tuesday","wednesday",
-                                "thursday","friday","saturday"];
-              const today = dayNames[new Date().getDay()];
-              handleChatMessage(`it's ${today}`);       // triggers day-of-week builder
-            }}
-            className="w-full bg-[#22C55E] hover:bg-[#16a34a] text-white px-6 py-3 rounded-xl font-semibold transition-colors"
-            style={{ maxWidth: '100%', boxSizing: 'border-box' }}
-          >
-            Regenerate Workout
-          </button>
-        </section>
-
-        {/* Workout Table Section */}
-        <section className="mb-6" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
-          {!pendingWorkout && !activeWorkout ? (
-            <div className="text-center text-gray-400 py-8" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
-              <p className="mb-4">Loading today's workout...</p>
-              <div className="animate-pulse">
-                <div className="h-4 bg-gray-600 rounded mb-2" style={{ maxWidth: '100%', boxSizing: 'border-box' }}></div>
-                <div className="h-4 bg-gray-600 rounded mb-2" style={{ maxWidth: '100%', boxSizing: 'border-box' }}></div>
-                <div className="h-4 bg-gray-600 rounded" style={{ maxWidth: '100%', boxSizing: 'border-box' }}></div>
-              </div>
-            </div>
-          ) : pendingWorkout && !activeWorkout ? (
-            <div className="text-center py-8" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
-              <div className="bg-[#1E293B] rounded-xl p-6 mb-4" style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
-                <h3 className="text-xl font-semibold text-white mb-4">Workout Ready!</h3>
-                <p className="text-gray-300 mb-6">Your workout has been generated and is ready to start.</p>
-                <button
-                  onClick={() => {
-                    setActiveWorkout(pendingWorkout);
-                    setPendingWorkout(null);
-                    setShowPrevious(true);
-                  }}
-                  className="bg-[#22C55E] hover:bg-[#16a34a] text-white px-8 py-3 rounded-xl font-semibold transition-colors"
-                  style={{ maxWidth: '100%', boxSizing: 'border-box' }}
-                >
-                  Start Workout
-                </button>
-              </div>
-            </div>
-          ) : (
-            <>
-              <WorkoutTable 
-                key={(activeWorkout as any)?.planId || 'no-plan'}  // ← use planId for guaranteed refresh
-                workout={activeWorkout!} 
-                onFinishWorkout={() => {
-                  setActiveWorkout(null);
-                  setShowPrevious(false);
-                  clearQuickEntrySets(); // Clear quick entry sets after workout is finished
-                }}
-                onStopTimer={() => {
-                  setMainTimerRunning(false);
-                }}
-                elapsedTime={elapsedTime}
-                showPrevious={showPrevious}
-                quickEntrySets={quickEntrySets}
-              />
-            </>
-          )}
-        </section>
+        <button 
+          onClick={() => setCurrentWorkout(null)}
+          className="mt-8 bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg font-semibold"
+        >
+          Start Workout
+        </button>
       </div>
     </div>
-  );
-} 
-
-export default function TodaysWorkoutPage() {
-  return (
-    <WorkoutProvider>
-      <TodaysWorkoutPageContent />
-    </WorkoutProvider>
   );
 } 
