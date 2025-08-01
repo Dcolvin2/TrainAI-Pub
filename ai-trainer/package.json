@@ -31,7 +31,9 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.57.0",
     "@supabase/supabase-js": "^2.50.3",
+    "@types/lodash": "^4.17.20",
     "chart.js": "^4.4.0",
+    "lodash": "^4.17.21",
     "next": "15.3.5",
     "openai": "^4.28.0",
     "react": "^19.0.0",

@@ -7,7 +7,7 @@ export async function POST(request: Request) {
       apiKey: process.env.ANTHROPIC_API_KEY,
     });
 
-    const { userId, messages, detailLevel = 'concise' } = await request.json();
+    const { messages, detailLevel = 'concise' } = await request.json();
 
     const userMessage = messages[messages.length - 1]?.content || 'Help me with my workout';
 

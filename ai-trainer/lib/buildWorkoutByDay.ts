@@ -1,325 +1,161 @@
-import { supabase } from './supabaseClient';
+import { fetchEquipmentAndExercises } from "./fetchEquipmentAndExercises";
+import { pickAccessories } from "./rotateAccessories";
+import { Exercise } from "@/types/Exercise";
+import { getAccessoryPool } from "@/lib/getExercisePool";
+import { calcExerciseMinutes } from "@/utils/calcExerciseMinutes";
 
-interface WorkoutPlan {
-  day: string;
-  type: string;
-  focus: string | null;
-  duration: number;
-  warmup: Array<{
-    name: string;
-    duration: string;
-    type: string;
-  }>;
-  main: Array<{
-    name: string;
-    sets?: number;
-    reps?: string;
-    duration?: string;
-    rounds?: number;
-    rest?: string;
-    rest_seconds?: number;
-    type: string;
-    description?: string;
-  }>;
-  cooldown: Array<{
-    name: string;
-    duration: string;
-    type: string;
-  }>;
-}
-
-// Day-Based Workout Generation Code (Refactored to prevent infinite loops)
-export const generateWorkoutByDay = async (userId: string, timeAvailable: number = 45): Promise<WorkoutPlan | null> => {
-  try {
-    // Get current day of week (0 = Sunday, 1 = Monday, etc.)
-    const today = new Date().getDay();
-    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const currentDay = dayNames[today];
-    
-    console.log('Current day:', currentDay, 'Day number:', today);
-    
-    // Define weekly workout structure (since weekly_workout_template doesn't exist)
-    const weeklySchedule = {
-      'Monday': { workout_type: 'strength', focus_muscle_group: 'legs', core_lift_name: 'back squat' },
-      'Tuesday': { workout_type: 'strength', focus_muscle_group: 'chest', core_lift_name: 'bench press' },
-      'Wednesday': { workout_type: 'cardio', focus_muscle_group: null, core_lift_name: null },
-      'Thursday': { workout_type: 'hiit', focus_muscle_group: 'full_body', core_lift_name: null },
-      'Friday': { workout_type: 'cardio', focus_muscle_group: null, core_lift_name: null },
-      'Saturday': { workout_type: 'strength', focus_muscle_group: 'back', core_lift_name: 'trap bar deadlift' },
-      'Sunday': { workout_type: 'rest', focus_muscle_group: null, core_lift_name: null }
-    };
-    
-    const template = weeklySchedule[currentDay as keyof typeof weeklySchedule];
-    
-    if (!template) {
-      console.error('No template found for', currentDay);
-      return null;
-    }
-    
-    console.log('Workout template for', currentDay, ':', template);
-    
-    // Get user's equipment
-    const { data: userEquipment, error: equipError } = await supabase
-      .from('user_equipment')
-      .select('custom_name')
-      .eq('user_id', userId);
-      
-    if (equipError) {
-      console.error('Equipment error:', equipError);
-      // Continue without equipment filtering rather than failing
-    }
-    
-    const availableEquipment = userEquipment ? userEquipment.map((item: any) => item.custom_name) : [];
-    console.log('User equipment:', availableEquipment);
-    
-    // Initialize workout plan
-    let workoutPlan: WorkoutPlan = {
-      day: currentDay,
-      type: template.workout_type,
-      focus: template.focus_muscle_group,
-      duration: timeAvailable,
-      warmup: [],
-      main: [],
-      cooldown: []
-    };
-    
-    // Helper function to get filtered exercises with error handling
-    const getFilteredExercises = async (phase: string, category: string | null = null, primaryMuscle: string | null = null) => {
-      try {
-        let query = supabase
-          .from('exercises_final') // Use exercises_final table
-          .select('*')
-          .eq('exercise_phase', phase);
-          
-        if (category) query = query.eq('category', category);
-        if (primaryMuscle) query = query.eq('primary_muscle', primaryMuscle);
-        
-        const { data: exercises, error } = await query;
-        
-        if (error) {
-          console.error('Exercise query error:', error);
-          return [];
-        }
-        
-        // Filter by available equipment
-        return exercises.filter((exercise: any) => {
-          if (!exercise.equipment_required || exercise.equipment_required.length === 0) {
-            return true; // Bodyweight exercises
-          }
-          // Check if user has at least one required equipment
-          return exercise.equipment_required.some((req: string) => 
-            availableEquipment.some((equip: string) => 
-              equip.toLowerCase().includes(req.toLowerCase())
-            )
-          );
-        });
-      } catch (error) {
-        console.error('Error in getFilteredExercises:', error);
-        return [];
-      }
-    };
-    
-    // Generate workout based on type
-    try {
-      switch (template.workout_type) {
-        case 'strength':
-          // Add core lift if specified
-          if (template.core_lift_name) {
-            const coreLifts = await getFilteredExercises('core_lift');
-            const coreLift = coreLifts.find((ex: any) => 
-              ex.name.toLowerCase().includes(template.core_lift_name!.toLowerCase())
-            );
-            
-            if (coreLift) {
-              workoutPlan.main.push({
-                name: coreLift.name,
-                sets: 4,
-                reps: '5-8',
-                type: 'core_lift',
-                rest_seconds: coreLift.rest_seconds_default || 180
-              });
-            }
-          }
-          
-          // Add accessory exercises
-          const accessories = await getFilteredExercises('accessory', 'strength', template.focus_muscle_group);
-          const selectedAccessories = accessories.slice(0, 3);
-          
-          selectedAccessories.forEach((ex: any) => {
-            workoutPlan.main.push({
-              name: ex.name,
-              sets: 3,
-              reps: '8-12',
-              type: 'accessory',
-              rest_seconds: ex.rest_seconds_default || 120
-            });
-          });
-          break;
-          
-        case 'cardio':
-          const cardioExercises = await getFilteredExercises('main', 'cardio');
-          const selectedCardio = cardioExercises.length > 0 ? cardioExercises.slice(0, 2) : [
-            { name: 'Treadmill Run', set_duration_seconds: 900 },
-            { name: 'Stationary Bike', set_duration_seconds: 900 }
-          ];
-          
-          selectedCardio.forEach((ex: any) => {
-            workoutPlan.main.push({
-              name: ex.name,
-              duration: `${Math.round((ex.set_duration_seconds || 900) / 60)} min`,
-              type: 'cardio'
-            });
-          });
-          break;
-          
-        case 'hiit':
-          const hiitExercises = await getFilteredExercises('main');
-          let hiitSelection = hiitExercises
-            .filter((ex: any) => ex.category === 'conditioning' || ex.primary_muscle === 'full_body')
-            .slice(0, 5);
-            
-          // Always provide HIIT exercises even if no equipment
-          if (hiitSelection.length < 4) {
-            workoutPlan.main = [
-              { name: 'Burpees', rounds: 4, duration: '45 sec', rest: '15 sec', type: 'hiit' },
-              { name: 'Mountain Climbers', rounds: 4, duration: '45 sec', rest: '15 sec', type: 'hiit' },
-              { name: 'Jump Squats', rounds: 4, duration: '45 sec', rest: '15 sec', type: 'hiit' },
-              { name: 'Push-ups', rounds: 4, duration: '45 sec', rest: '15 sec', type: 'hiit' }
-            ];
-          } else {
-            hiitSelection.forEach((ex: any) => {
-              workoutPlan.main.push({
-                name: ex.name,
-                rounds: 4,
-                duration: '45 sec',
-                rest: '15 sec',
-                type: 'hiit'
-              });
-            });
-          }
-          break;
-          
-        case 'rest':
-          workoutPlan.main.push({
-            name: 'Rest Day',
-            description: 'Take a well-deserved rest or do light stretching',
-            type: 'rest'
-          });
-          break;
-          
-        default:
-          console.error('Unknown workout type:', template.workout_type);
-          return null;
-      }
-      
-      // Add warmup and cooldown (don't fail if these don't exist)
-      if (template.workout_type !== 'rest') {
-        const warmupExercises = await getFilteredExercises('warmup');
-        const cooldownExercises = await getFilteredExercises('cooldown');
-        
-        workoutPlan.warmup = warmupExercises.slice(0, 3).map((ex: any) => ({
-          name: ex.name,
-          duration: '30 sec',
-          type: 'warmup'
-        }));
-        
-        // If no warmup exercises found, add defaults
-        if (workoutPlan.warmup.length === 0) {
-          workoutPlan.warmup = [
-            { name: 'Arm Circles', duration: '30 sec', type: 'warmup' },
-            { name: 'Leg Swings', duration: '30 sec', type: 'warmup' },
-            { name: 'Light Cardio', duration: '2 min', type: 'warmup' }
-          ];
-        }
-        
-        workoutPlan.cooldown = cooldownExercises.slice(0, 3).map((ex: any) => ({
-          name: ex.name,
-          duration: '30 sec',
-          type: 'cooldown'
-        }));
-        
-        // If no cooldown exercises found, add defaults
-        if (workoutPlan.cooldown.length === 0) {
-          workoutPlan.cooldown = [
-            { name: 'Hamstring Stretch', duration: '30 sec', type: 'cooldown' },
-            { name: 'Quad Stretch', duration: '30 sec', type: 'cooldown' },
-            { name: 'Shoulder Stretch', duration: '30 sec', type: 'cooldown' }
-          ];
-        }
-      }
-      
-      return workoutPlan;
-      
-    } catch (error) {
-      console.error('Error generating workout:', error);
-      return null;
-    }
-    
-  } catch (error) {
-    console.error('Fatal error in generateWorkoutByDay:', error);
-    return null;
-  }
+const FIXED_CORE_LIFTS: Record<string, string> = {
+  monday:   'Barbell Back Squat',
+  saturday: 'Trap Bar Deadlift',
 };
 
-// Legacy function for backward compatibility
-export async function buildWorkoutByDay(userId: string, dayOfWeek: string, timeAvailable: number): Promise<any> {
-  console.log('[LEGACY] Using legacy buildWorkoutByDay function');
-  
-  // Convert day name to proper format
-  const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-  const dayIndex = dayNames.indexOf(dayOfWeek.toLowerCase());
-  
-  if (dayIndex === -1) {
-    console.error('[LEGACY] Invalid day:', dayOfWeek);
-    return null;
+const TEMPLATE = {
+  Monday:   { core: "Back Squat",   muscles: ["Quadriceps","Glutes","Hamstrings"] },
+  Tuesday:  { core: "Bench Press",  muscles: ["Chest","Triceps","Shoulders"] },
+  Wednesday:{ core: null,          muscles: ["Cardio"] },   // cardio day
+  Thursday: { core: null,          muscles: ["HIIT"] },     // HIIT WOD
+  Friday:   { core: null,          muscles: ["Cardio"] },
+  Saturday: { core: "Deadlift",     muscles: ["Hamstrings","Back"] },
+  Sunday:   { core: null,          muscles: ["Cardio"] },
+};
+
+interface WorkoutByDayResult {
+  warmupArr: Exercise[];
+  coreLift: Exercise | null;
+  accessories: Exercise[];
+  cooldownArr: Exercise[];
+  estimatedMinutes?: number;
+}
+
+export async function buildWorkoutByDay(
+  userId: string,
+  day: string,               // e.g. "Saturday"
+  minutes = 45
+): Promise<WorkoutByDayResult> {
+  const { exercises } = await fetchEquipmentAndExercises(userId);
+
+  // 1️⃣ choose template
+  const t = TEMPLATE[day as keyof typeof TEMPLATE];
+  if (!t) throw new Error("Unknown day");
+
+  // 2️⃣ core lift (if any) - Monday & Saturday override
+  const dayKey = day.toLowerCase(); // e.g. "monday"
+  const fixedCoreLiftName = FIXED_CORE_LIFTS[dayKey];
+  const coreLift: Exercise | null = fixedCoreLiftName
+    ? exercises.find(e => e.name.toLowerCase().includes(fixedCoreLiftName.toLowerCase())) || null
+    : t.core
+    ? exercises.find(e => e.name.toLowerCase().includes(t.core!.toLowerCase())) || null
+    : null;
+
+  // 3️⃣ Robust coreMuscles extraction
+  function parseMuscles(str: string | string[] | null): string[] {
+    if (!str) return [];
+    if (Array.isArray(str)) return str;
+    return str.split(/[,/]/).map(s => s.trim());  // "Chest, Triceps" → ["Chest","Triceps"]
   }
-  
-  const properDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const currentDay = properDayNames[dayIndex];
-  
-  const workout = await generateWorkoutByDay(userId, timeAvailable);
-  
-  if (!workout) {
-    return null;
+
+  const coreMuscles = coreLift
+    ? parseMuscles(coreLift.primary_muscle)
+    : t.muscles;
+
+  console.log("[TRACE] core muscles", coreMuscles);
+
+  // 4️⃣ Rewrite pickPhase for strict match (+ fallback)
+  function logPool(label: string, pool: any[]) {
+    console.log(
+      `[TRACE] ${label} (${pool.length}) →`,
+      pool.map(e => `${e.name} [${e.primary_muscle}]`)
+    );
   }
-  
-  // Convert to legacy format
-  return {
-    warmupArr: workout.warmup.map((ex: any) => ({
-      id: Math.random(),
-      name: ex.name,
-      category: 'cardio',
-      exercise_phase: 'warmup',
-      equipment_required: ['bodyweight'],
-      muscle_group: 'cardiovascular'
-    })),
-    coreLift: workout.main.find((ex: any) => ex.type === 'core_lift') ? {
-      id: Math.random(),
-      name: workout.main.find((ex: any) => ex.type === 'core_lift')!.name,
-      category: 'strength',
-      exercise_phase: 'core_lift',
-      equipment_required: ['barbell'],
-      muscle_group: workout.focus || 'full_body'
-    } : null,
-    accessories: workout.main.filter((ex: any) => ex.type === 'accessory').map((ex: any) => ({
-      id: Math.random(),
-      name: ex.name,
-      category: 'strength',
+
+  function pickPhase(phase: "warmup" | "cooldown", target: number): Exercise[] {
+    const strict = exercises.filter(
+      e => e.exercise_phase === phase &&
+           parseMuscles(e.primary_muscle).some(m => coreMuscles.includes(m))
+    );
+    logPool(`${phase}-STRICT`, strict);
+
+    const bodyWeight = exercises.filter(
+      e => e.exercise_phase === phase && (!e.equipment_required?.length)
+    );
+    logPool(`${phase}-BW`, bodyWeight);
+
+    const any = exercises.filter(e => e.exercise_phase === phase);
+    logPool(`${phase}-ANY`, any);
+
+    const pool =
+      strict.length >= target ? strict :
+      strict.concat(bodyWeight).slice(0, target);
+
+    return pool.sort(() => 0.5 - Math.random()).slice(0, target);
+  }
+
+  const warmupArr = pickPhase("warmup", minutes <= 30 ? 2 : 3);
+  const cooldownArr = pickPhase("cooldown", minutes <= 30 ? 2 : 3);
+
+  console.log("[TRACE] warmup picked", warmupArr.map(e => e.name));
+  console.log("[TRACE] cooldown picked", cooldownArr.map(e => e.name));
+
+  // 5️⃣ Time-aware accessory filling
+  const warmupNames = warmupArr.map(e => e.name);
+  const cooldownNames = cooldownArr.map(e => e.name);
+  const excludeNames = [...warmupNames, ...cooldownNames, coreLift?.name].filter((name): name is string => Boolean(name));
+
+  // 1️⃣ Figure baseline minutes
+  const warmupMin = warmupNames.length * calcExerciseMinutes(30, 30, 1);
+  const coreMin = coreLift ? 5 * calcExerciseMinutes(30, 180, 1) : 0; // 5x5 for core lifts
+  const cooldownMin = cooldownNames.length * calcExerciseMinutes(30, 30, 1);
+  let runningMin = warmupMin + coreMin + cooldownMin;
+
+  // 2️⃣ Pull accessory pool (already filtered for warm-up/etc.)
+  const pool = await getAccessoryPool(excludeNames);
+
+  const accessories: Exercise[] = [];
+  const accessorySets = 3;                      // default per accessory
+  const overshootGrace = 3;                     // allow +3 min max
+
+  while (pool.length && runningMin < minutes) {
+    const idx = Math.floor(Math.random() * pool.length);
+    const pick = pool.splice(idx, 1)[0];
+
+    const addMin = calcExerciseMinutes(
+      pick.setSec ?? 30,
+      pick.rest ?? 60,
+      accessorySets
+    );
+
+    // If adding would blow past budget+grace, skip it and break
+    if (runningMin + addMin > minutes + overshootGrace) {
+      break;
+    }
+
+    // Convert pool item to Exercise format
+    const accessoryExercise: Exercise = {
+      id: pick.name, // Use name as ID for now
+      name: pick.name,
+      category: 'accessory',
+      primary_muscle: '', // Will be filled by the pool data
+      equipment_required: [], // Simplified for now
       exercise_phase: 'accessory',
-      equipment_required: ['bodyweight'],
-      muscle_group: workout.focus || 'full_body'
-    })),
-    cooldownArr: workout.cooldown.map((ex: any) => ({
-      id: Math.random(),
-      name: ex.name,
-      category: 'cardio',
-      exercise_phase: 'cooldown',
-      equipment_required: ['bodyweight'],
-      muscle_group: 'flexibility'
-    })),
-    estimatedMinutes: workout.duration,
-    workoutType: workout.type,
-    focusMuscleGroup: workout.focus || 'full_body'
+      instruction: '',
+      rest_seconds_default: pick.rest ?? 60,
+      set_duration_seconds: pick.setSec ?? 30
+    };
+
+    accessories.push(accessoryExercise);
+    runningMin += addMin;
+  }
+
+  console.log('[filler] accessories:', accessories.map(a => a.name),
+              'base', warmupMin + coreMin + cooldownMin,
+              '→ total', runningMin.toFixed(1), 'min');
+
+  return { 
+    warmupArr, 
+    coreLift, 
+    accessories, 
+    cooldownArr,
+    estimatedMinutes: runningMin
   };
 }
 
