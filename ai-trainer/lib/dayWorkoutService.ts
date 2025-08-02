@@ -22,6 +22,46 @@ const muscleGroupMap: Record<string, string[]> = {
   "Parallel Bar Dips": ["triceps", "chest", "shoulders"]
 };
 
+// Intelligent exercise selection configuration
+const coreLiftMuscleMap: Record<string, {
+  primary: string[];
+  secondary: string[];
+  avoidCategories: string[];
+  preferEquipment: string[];
+}> = {
+  "Barbell Back Squat": {
+    primary: ["quads", "glutes"],
+    secondary: ["hamstrings", "core"],
+    avoidCategories: ["hiit", "endurance"], // for main accessories
+    preferEquipment: ["Barbell", "Dumbbells", "Kettlebells"]
+  },
+  "Barbell Deadlift": {
+    primary: ["back", "hamstrings"],
+    secondary: ["glutes", "traps", "grip"],
+    avoidCategories: ["hiit", "mobility"],
+    preferEquipment: ["Barbell", "Dumbbells", "Trap Bar"]
+  },
+  "Barbell Bench Press": {
+    primary: ["chest", "triceps"],
+    secondary: ["shoulders"],
+    avoidCategories: ["hiit", "endurance"],
+    preferEquipment: ["Dumbbells", "Cables", "Barbell"]
+  },
+  "Trap Bar Deadlift": {
+    primary: ["back", "hamstrings"],
+    secondary: ["glutes", "traps", "grip"],
+    avoidCategories: ["hiit", "mobility"],
+    preferEquipment: ["Trap Bar", "Dumbbells", "Barbell"]
+  },
+  "Bench Press": {
+    primary: ["chest", "triceps"],
+    secondary: ["shoulders"],
+    avoidCategories: ["hiit", "endurance"],
+    preferEquipment: ["Dumbbells", "Cables", "Barbell"]
+  }
+  // ... etc for other lifts
+};
+
 export { coreByDay };
 
 // Helper function to build set data for database insertion
@@ -89,45 +129,72 @@ export async function generateDayPlan(
   const targetMuscles = muscleGroupMap[coreName] || [coreEx.primary_muscle];
   console.log('Target muscles for', coreName, ':', targetMuscles);
 
-  // Get accessories that match muscle groups AND are strength/hypertrophy focused
-  const { data: accPool } = await db
-    .from("exercises")
-    .select("id, name, primary_muscle, category, required_equipment")
-    .in("primary_muscle", targetMuscles)
-    .in("category", ["strength", "hypertrophy"])  // ALWAYS prioritize these
-    .eq("exercise_phase", "accessory")
-    .neq("name", coreEx.name)
-    .or(`required_equipment.is.null,required_equipment&&{${userEq.join(",")}}`);
+  // Get exercise pool with better filtering
+  const liftConfig = coreLiftMuscleMap[coreName];
+  if (!liftConfig) {
+    console.warn(`No lift configuration found for ${coreName}, using fallback`);
+    // Fallback to original logic
+    const { data: accPool } = await db
+      .from("exercises")
+      .select("id, name, primary_muscle, category, required_equipment")
+      .in("primary_muscle", targetMuscles)
+      .in("category", ["strength", "hypertrophy"])
+      .eq("exercise_phase", "accessory")
+      .neq("name", coreEx.name)
+      .or(`required_equipment.is.null,required_equipment&&{${userEq.join(",")}}`);
 
-  console.log(`Found ${accPool?.length} strength/hypertrophy accessories for ${coreName}`);
+    const minutesLeft = targetMinutes - 7 - 12;
+    const accCount = Math.max(0, Math.floor(minutesLeft / 5));
+    const accessories = _.sampleSize(accPool || [], Math.min(accCount, accPool?.length || 0))
+      .map((ex: any) => ({ ...ex, sets: 3, reps: "10-12" }));
+
+    return {
+      core: {
+        name: coreEx.name,
+        sets: 4,
+        reps: "5",
+        focus: coreEx.primary_muscle,
+      },
+      accessories: accessories
+    };
+  }
+
+  const { data: strengthAccessories } = await db
+    .from("exercises")
+    .select("*")
+    .in("primary_muscle", liftConfig.primary)
+    .in("category", ["strength", "hypertrophy"])
+    .eq("exercise_phase", "accessory")
+    .not("category", "in", `(${liftConfig.avoidCategories.join(",")})`)
+    .neq("name", coreName);
+
+  console.log(`Found ${strengthAccessories?.length} strength/hypertrophy accessories for ${coreName}`);
+
+  // If user has equipment preferences, prioritize those
+  const scoredAccessories = strengthAccessories?.map((ex: any) => ({
+    ...ex,
+    score: (
+      (liftConfig.primary.includes(ex.primary_muscle) ? 3 : 0) +
+      (liftConfig.preferEquipment.some((eq: string) => ex.required_equipment?.includes(eq)) ? 2 : 0) +
+      (ex.category === "hypertrophy" ? 1 : 0)
+    )
+  })).sort((a: any, b: any) => b.score - a.score);
+
+  console.log('Scored accessories:', scoredAccessories?.slice(0, 5).map((ex: any) => ({
+    name: ex.name,
+    score: ex.score,
+    primary_muscle: ex.primary_muscle,
+    category: ex.category
+  })));
 
   // Calculate accessories based on time
   const minutesLeft = targetMinutes - 7 - 12;
   const accCount = Math.max(0, Math.floor(minutesLeft / 5));
 
-  // If not enough strength/hypertrophy accessories, add some endurance as backup
-  if (!accPool || accPool.length < accCount) {
-    const { data: additionalPool } = await db
-      .from("exercises")
-      .select("id, name, primary_muscle, category, required_equipment")
-      .in("primary_muscle", targetMuscles)
-      .eq("category", "endurance")  // Only add endurance if needed
-      .eq("exercise_phase", "accessory")
-      .neq("name", coreEx.name)
-      .or(`required_equipment.is.null,required_equipment&&{${userEq.join(",")}}`);
-    
-    if (additionalPool) {
-      accPool.push(...additionalPool);
-      console.log(`Added ${additionalPool.length} endurance accessories as backup`);
-    }
-  }
-
-  console.log(`Total accessories available: ${accPool?.length || 0}`);
-  console.log('Sample accessories:', accPool?.slice(0, 3));
-
-  // Select accessories
-  const accessories = _.sampleSize(accPool || [], Math.min(accCount, accPool?.length || 0))
-    .map(ex => ({ ...ex, sets: 3, reps: "10-12" }));
+  // Take top scored exercises based on time
+  const accessories = scoredAccessories
+    ?.slice(0, accCount)
+    .map((ex: any) => ({ ...ex, sets: 3, reps: "10-12" }));
 
   console.log('Selected accessories:', accessories);
 
