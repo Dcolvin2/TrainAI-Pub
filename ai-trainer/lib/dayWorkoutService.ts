@@ -22,44 +22,63 @@ const muscleGroupMap: Record<string, string[]> = {
   "Parallel Bar Dips": ["triceps", "chest", "shoulders"]
 };
 
-// Intelligent exercise selection configuration
-const coreLiftMuscleMap: Record<string, {
-  primary: string[];
-  secondary: string[];
-  avoidCategories: string[];
-  preferEquipment: string[];
-}> = {
-  "Barbell Back Squat": {
-    primary: ["quads", "glutes"],
-    secondary: ["hamstrings", "core"],
-    avoidCategories: ["hiit", "endurance"], // for main accessories
-    preferEquipment: ["Barbell", "Dumbbells", "Kettlebells"]
-  },
-  "Barbell Deadlift": {
-    primary: ["back", "hamstrings"],
-    secondary: ["glutes", "traps", "grip"],
-    avoidCategories: ["hiit", "mobility"],
-    preferEquipment: ["Barbell", "Dumbbells", "Trap Bar"]
-  },
-  "Barbell Bench Press": {
-    primary: ["chest", "triceps"],
-    secondary: ["shoulders"],
-    avoidCategories: ["hiit", "endurance"],
-    preferEquipment: ["Dumbbells", "Cables", "Barbell"]
-  },
-  "Trap Bar Deadlift": {
-    primary: ["back", "hamstrings"],
-    secondary: ["glutes", "traps", "grip"],
-    avoidCategories: ["hiit", "mobility"],
-    preferEquipment: ["Trap Bar", "Dumbbells", "Barbell"]
-  },
-  "Bench Press": {
-    primary: ["chest", "triceps"],
-    secondary: ["shoulders"],
-    avoidCategories: ["hiit", "endurance"],
-    preferEquipment: ["Dumbbells", "Cables", "Barbell"]
-  }
-  // ... etc for other lifts
+// Define what accessories should actually be selected for each core lift
+const accessoryMap: Record<string, string[]> = {
+  "Barbell Back Squat": [
+    "Barbell Romanian Deadlift",
+    "Dumbbell Bulgarian Split Squat", 
+    "Dumbbell Lunges",
+    "Leg Raises",
+    "Barbell Hip Thrust",
+    "Dumbbell Goblet Squat",
+    "Lunge",
+    "Single Leg Glute Bridge",
+    "Dumbbell Step-Ups",
+    "Calf Raises"
+  ],
+  "Barbell Deadlift": [
+    "Barbell Romanian Deadlift",
+    "Barbell Good Morning",
+    "Barbell Shrug",
+    "Pull-Up",
+    "Barbell Bent-Over Row",
+    "Dumbbell Single-Arm Row",
+    "Barbell Hip Thrust",
+    "Hanging Knee Raise",
+    "Cable Row"
+  ],
+  "Barbell Bench Press": [
+    "Dumbbell Bench Press",
+    "Dumbbell Incline Press",
+    "Dumbbell Flyes",
+    "Dips",
+    "Cable Tricep Pushdown",
+    "Dumbbell Shoulder Press",
+    "Push-Up",
+    "Close-Grip Bench Press"
+  ],
+  "Trap Bar Deadlift": [
+    "Barbell Romanian Deadlift",
+    "Barbell Good Morning",
+    "Barbell Shrug",
+    "Pull-Up",
+    "Barbell Bent-Over Row",
+    "Dumbbell Single-Arm Row",
+    "Barbell Hip Thrust",
+    "Hanging Knee Raise",
+    "Cable Row"
+  ],
+  "Bench Press": [
+    "Dumbbell Bench Press",
+    "Dumbbell Incline Press",
+    "Dumbbell Flyes",
+    "Dips",
+    "Cable Tricep Pushdown",
+    "Dumbbell Shoulder Press",
+    "Push-Up",
+    "Close-Grip Bench Press"
+  ]
+  // Add more for other core lifts...
 };
 
 export { coreByDay };
@@ -129,71 +148,24 @@ export async function generateDayPlan(
   const targetMuscles = muscleGroupMap[coreName] || [coreEx.primary_muscle];
   console.log('Target muscles for', coreName, ':', targetMuscles);
 
-  // Get exercise pool with better filtering
-  const liftConfig = coreLiftMuscleMap[coreName];
-  if (!liftConfig) {
-    console.warn(`No lift configuration found for ${coreName}, using fallback`);
-    // Fallback to original logic
-    const { data: accPool } = await db
-      .from("exercises")
-      .select("id, name, primary_muscle, category, required_equipment")
-      .in("primary_muscle", targetMuscles)
-      .in("category", ["strength", "hypertrophy"])
-      .eq("exercise_phase", "accessory")
-      .neq("name", coreEx.name)
-      .or(`required_equipment.is.null,required_equipment&&{${userEq.join(",")}}`);
+  // Get the predefined accessories for this core lift
+  const validAccessoryNames = accessoryMap[coreName] || [];
 
-    const minutesLeft = targetMinutes - 7 - 12;
-    const accCount = Math.max(0, Math.floor(minutesLeft / 5));
-    const accessories = _.sampleSize(accPool || [], Math.min(accCount, accPool?.length || 0))
-      .map((ex: any) => ({ ...ex, sets: 3, reps: "10-12" }));
-
-    return {
-      core: {
-        name: coreEx.name,
-        sets: 4,
-        reps: "5",
-        focus: coreEx.primary_muscle,
-      },
-      accessories: accessories
-    };
-  }
-
-  const { data: strengthAccessories } = await db
+  // Query only these specific exercises
+  const { data: accPool } = await db
     .from("exercises")
     .select("*")
-    .in("primary_muscle", liftConfig.primary)
-    .in("category", ["strength", "hypertrophy"])
-    .eq("exercise_phase", "accessory")
-    .not("category", "in", `(${liftConfig.avoidCategories.join(",")})`)
-    .neq("name", coreName);
+    .in("name", validAccessoryNames)
+    .eq("exercise_phase", "accessory");
 
-  console.log(`Found ${strengthAccessories?.length} strength/hypertrophy accessories for ${coreName}`);
+  console.log(`Found ${accPool?.length} valid accessories for ${coreName}:`, 
+    accPool?.map((a: any) => a.name));
 
-  // If user has equipment preferences, prioritize those
-  const scoredAccessories = strengthAccessories?.map((ex: any) => ({
-    ...ex,
-    score: (
-      (liftConfig.primary.includes(ex.primary_muscle) ? 3 : 0) +
-      (liftConfig.preferEquipment.some((eq: string) => ex.required_equipment?.includes(eq)) ? 2 : 0) +
-      (ex.category === "hypertrophy" ? 1 : 0)
-    )
-  })).sort((a: any, b: any) => b.score - a.score);
-
-  console.log('Scored accessories:', scoredAccessories?.slice(0, 5).map((ex: any) => ({
-    name: ex.name,
-    score: ex.score,
-    primary_muscle: ex.primary_muscle,
-    category: ex.category
-  })));
-
-  // Calculate accessories based on time
+  // Select based on available time
   const minutesLeft = targetMinutes - 7 - 12;
   const accCount = Math.max(0, Math.floor(minutesLeft / 5));
 
-  // Take top scored exercises based on time
-  const accessories = scoredAccessories
-    ?.slice(0, accCount)
+  const accessories = _.sampleSize(accPool || [], Math.min(accCount, accPool?.length || 0))
     .map((ex: any) => ({ ...ex, sets: 3, reps: "10-12" }));
 
   console.log('Selected accessories:', accessories);
