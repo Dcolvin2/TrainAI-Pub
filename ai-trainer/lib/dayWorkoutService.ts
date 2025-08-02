@@ -51,40 +51,44 @@ export async function generateDayPlan(
     throw new Error('No core exercise for this day');
   }
 
-  /* 👉 use the real `exercises` table */
+  // In the core exercise fetch:
   const { data: coreEx, error: coreErr } = await db
     .from("exercises")
-    .select("id, name, muscle_group, exercise_phase")     /* column names in exercises */
-    .ilike("name", coreName)
-    .maybeSingle();
+    .select("*")
+    .eq("name", coreName)
+    .eq("exercise_phase", "core_lift")
+    .single();
 
   console.log('Core exercise details:', {
     name: coreEx?.name,
-    muscle_group: coreEx?.muscle_group,
+    primary_muscle: coreEx?.primary_muscle,
     exercise_phase: coreEx?.exercise_phase
   });
+
+  console.log('Core exercise primary_muscle:', coreEx?.primary_muscle);
 
   if (coreErr || !coreEx) {
     throw new Error('Core exercise not found');
   }
 
-  // First, check if coreEx.muscle_group exists
-  if (!coreEx.muscle_group) {
-    console.error('Core exercise has no muscle_group!', coreEx);
+  // First, check if coreEx.primary_muscle exists
+  if (!coreEx.primary_muscle) {
+    console.error('Core exercise has no primary_muscle!', coreEx);
     // Set a default based on the exercise name
-    if (coreName.includes('Squat')) coreEx.muscle_group = 'Legs';
-    else if (coreName.includes('Bench')) coreEx.muscle_group = 'Chest';
-    else if (coreName.includes('Deadlift')) coreEx.muscle_group = 'Back';
+    if (coreName.includes('Squat')) coreEx.primary_muscle = 'Legs';
+    else if (coreName.includes('Bench')) coreEx.primary_muscle = 'Chest';
+    else if (coreName.includes('Deadlift')) coreEx.primary_muscle = 'Back';
   }
 
   const { data: accPool, error: accErr } = await db
     .from("exercises")
-    .select("id, name, muscle_group, exercise_phase")
-    .eq("muscle_group", coreEx.muscle_group)
+    .select("id, name, primary_muscle, exercise_phase")
+    .eq("primary_muscle", coreEx.primary_muscle)  // Changed from muscle_group
     .neq("name", coreEx.name)
-    .in("exercise_phase", ["accessory", "main"]);
+    .in("exercise_phase", ["accessory", "main"])
+    .or(`required_equipment.is.null,required_equipment&&{${userEq.join(",")}}`);
 
-  console.log(`Found ${accPool?.length} accessories for muscle group "${coreEx.muscle_group}"`);
+  console.log(`Found ${accPool?.length} accessories for primary_muscle "${coreEx.primary_muscle}"`);
   console.log('Sample accessories:', accPool?.slice(0, 3));
 
   if (accErr) {
@@ -112,7 +116,7 @@ export async function generateDayPlan(
       name: coreEx.name,
       sets: 4,
       reps: "5",
-      focus: coreEx.muscle_group,
+      focus: coreEx.primary_muscle,
     },
     accessories: accessories
   };
