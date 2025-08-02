@@ -298,6 +298,25 @@ const convertWorkoutToSets = (workout: EnrichedGeneratedWorkout | NikeWorkout): 
       }
     });
     
+    // Process accessories
+    if (generatedWorkout.accessories) {
+      generatedWorkout.accessories.forEach((item: string) => {
+        const baseSet = parseWorkoutString(item, 'accessories');
+        const setCount = getDefaultSetCount('accessories', baseSet.exerciseName);
+        const exercisePrevData = previousData[baseSet.exerciseName] || {};
+        
+        for (let i = 0; i < setCount; i++) {
+          const set = { ...baseSet };
+          set.id = `${baseSet.exerciseName}-accessories-${Date.now()}-${Math.random()}-${i}`;
+          set.setNumber = i + 1;
+          const prevSet = exercisePrevData[i + 1];
+          set.previousWeight = prevSet?.weight || null;
+          set.previousReps = prevSet?.reps || null;
+          sets.push(set);
+        }
+      });
+    }
+    
     // Process cooldown
     generatedWorkout.cooldown.forEach((item: string) => {
       const baseSet = parseWorkoutString(item, 'cooldown');
@@ -630,6 +649,7 @@ export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer, el
   const sections = [
     { key: 'warmup', title: 'Warm-up', sets: Object.entries(groupedSets).filter(([key]) => key.startsWith('warmup-')) },
     { key: 'workout', title: 'Main Workout', sets: Object.entries(groupedSets).filter(([key]) => key.startsWith('workout-')) },
+    { key: 'accessories', title: 'Accessories', sets: Object.entries(groupedSets).filter(([key]) => key.startsWith('accessories-')) },
     { key: 'cooldown', title: 'Cool-down', sets: Object.entries(groupedSets).filter(([key]) => key.startsWith('cooldown-')) }
   ];
 
