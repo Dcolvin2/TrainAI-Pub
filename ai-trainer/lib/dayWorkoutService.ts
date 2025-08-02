@@ -89,34 +89,45 @@ export async function generateDayPlan(
   const targetMuscles = muscleGroupMap[coreName] || [coreEx.primary_muscle];
   console.log('Target muscles for', coreName, ':', targetMuscles);
 
-  // Use lowercase muscle groups in the query
-  const { data: accPool, error: accErr } = await db
+  // Get accessories that match muscle groups AND are strength/hypertrophy focused
+  const { data: accPool } = await db
     .from("exercises")
-    .select("id, name, primary_muscle")
+    .select("id, name, primary_muscle, category, required_equipment")
     .in("primary_muscle", targetMuscles)
+    .in("category", ["strength", "hypertrophy"])  // ALWAYS prioritize these
     .eq("exercise_phase", "accessory")
     .neq("name", coreEx.name)
     .or(`required_equipment.is.null,required_equipment&&{${userEq.join(",")}}`);
 
-  console.log(`Found ${accPool?.length} accessories for target muscles "${targetMuscles.join(', ')}"`);
-  console.log('Sample accessories:', accPool?.slice(0, 3));
+  console.log(`Found ${accPool?.length} strength/hypertrophy accessories for ${coreName}`);
 
-  if (accErr) {
-    throw new Error('Failed to fetch accessories');
-  }
-
-  // === choose accessories ===
-  /* Decide how many accessories fit the time budget */
-  const minutesLeft =
-    targetMinutes                       /* full session */
-    - 7                                 /* 5′ warm-up + 2′ cooldown */
-    - 4 * 3;                            /* main lift: 4 sets × (1′ set + 2′ rest) */
-
-  /* assume each accessory block ≈ 5′ (3 sets × 1′ set + 1′ rest) */
+  // Calculate accessories based on time
+  const minutesLeft = targetMinutes - 7 - 12;
   const accCount = Math.max(0, Math.floor(minutesLeft / 5));
 
-  const accessories = _.sampleSize(accPool ?? [], Math.min(accCount, (accPool ?? []).length))
-    .map((ex) => ({ ...ex, sets: 3, reps: "10-12" }));
+  // If not enough strength/hypertrophy accessories, add some endurance as backup
+  if (!accPool || accPool.length < accCount) {
+    const { data: additionalPool } = await db
+      .from("exercises")
+      .select("id, name, primary_muscle, category, required_equipment")
+      .in("primary_muscle", targetMuscles)
+      .eq("category", "endurance")  // Only add endurance if needed
+      .eq("exercise_phase", "accessory")
+      .neq("name", coreEx.name)
+      .or(`required_equipment.is.null,required_equipment&&{${userEq.join(",")}}`);
+    
+    if (additionalPool) {
+      accPool.push(...additionalPool);
+      console.log(`Added ${additionalPool.length} endurance accessories as backup`);
+    }
+  }
+
+  console.log(`Total accessories available: ${accPool?.length || 0}`);
+  console.log('Sample accessories:', accPool?.slice(0, 3));
+
+  // Select accessories
+  const accessories = _.sampleSize(accPool || [], Math.min(accCount, accPool?.length || 0))
+    .map(ex => ({ ...ex, sets: 3, reps: "10-12" }));
 
   console.log('Selected accessories:', accessories);
 
