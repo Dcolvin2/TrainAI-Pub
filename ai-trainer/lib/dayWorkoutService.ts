@@ -8,6 +8,20 @@ const coreByDay: Record<number, string> = {
   6: "Trap Bar Deadlift"
 };
 
+// Muscle group map to match your database
+const muscleGroupMap: Record<string, string[]> = {
+  "Barbell Back Squat": ["quads", "glutes", "hamstrings"],
+  "Barbell Front Squat": ["quads", "glutes"],
+  "Barbell Bench Press": ["chest", "triceps", "shoulders"],
+  "Barbell Deadlift": ["back", "hamstrings", "glutes"],
+  "Barbell Sumo Deadlift": ["back", "hamstrings", "glutes"],
+  "Trap Bar Deadlift": ["back", "hamstrings", "glutes"],
+  "Barbell Overhead Press": ["shoulders", "triceps", "chest"],
+  "Barbell Bent-Over Row": ["back", "biceps", "rear delts"],
+  "Pull-Up": ["back", "biceps"],
+  "Parallel Bar Dips": ["triceps", "chest", "shoulders"]
+};
+
 export { coreByDay };
 
 // Helper function to build set data for database insertion
@@ -71,24 +85,20 @@ export async function generateDayPlan(
     throw new Error('Core exercise not found');
   }
 
-  // First, check if coreEx.primary_muscle exists
-  if (!coreEx.primary_muscle) {
-    console.error('Core exercise has no primary_muscle!', coreEx);
-    // Set a default based on the exercise name
-    if (coreName.includes('Squat')) coreEx.primary_muscle = 'Legs';
-    else if (coreName.includes('Bench')) coreEx.primary_muscle = 'Chest';
-    else if (coreName.includes('Deadlift')) coreEx.primary_muscle = 'Back';
-  }
+  // Get target muscles for this core exercise
+  const targetMuscles = muscleGroupMap[coreName] || [coreEx.primary_muscle];
+  console.log('Target muscles for', coreName, ':', targetMuscles);
 
+  // Use lowercase muscle groups in the query
   const { data: accPool, error: accErr } = await db
     .from("exercises")
-    .select("id, name, primary_muscle, exercise_phase")
-    .eq("primary_muscle", coreEx.primary_muscle)  // Changed from muscle_group
+    .select("id, name, primary_muscle")
+    .in("primary_muscle", targetMuscles)
+    .eq("exercise_phase", "accessory")
     .neq("name", coreEx.name)
-    .in("exercise_phase", ["accessory", "main"])
     .or(`required_equipment.is.null,required_equipment&&{${userEq.join(",")}}`);
 
-  console.log(`Found ${accPool?.length} accessories for primary_muscle "${coreEx.primary_muscle}"`);
+  console.log(`Found ${accPool?.length} accessories for target muscles "${targetMuscles.join(', ')}"`);
   console.log('Sample accessories:', accPool?.slice(0, 3));
 
   if (accErr) {
