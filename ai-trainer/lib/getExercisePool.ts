@@ -13,7 +13,7 @@ const BAD_CATEGORIES = ['warmup', 'mobility', 'cooldown'];
 export async function getAccessoryPool(exclude: string[] = []) {
   // Fetch the global list of core-lifts
   const { data: coreLiftRows = [], error: coreLiftErr } = await supabase
-    .from('exercises_final')
+    .from('exercises')
     .select('name')
     .eq('exercise_phase', 'core_lift');
   
@@ -24,7 +24,7 @@ export async function getAccessoryPool(exclude: string[] = []) {
   const coreLiftNames = (coreLiftRows || []).map(r => r.name.toLowerCase());
 
   const { data, error } = await supabase
-    .from('exercises_final')
+    .from('exercises')
     .select('name, category, rest_seconds_default, set_duration_seconds, exercise_phase')
     .not('category', 'in', `(${BAD_CATEGORIES.map(c => `'${c}'`).join(',')})`);
 

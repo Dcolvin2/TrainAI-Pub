@@ -12,7 +12,7 @@ export async function getExerciseInstruction(msg: string) {
 
   // 2. query the new table
   const { data, error } = await supabase
-    .from('exercises_final')
+    .from('exercises')
     .select('instruction')
     .ilike('name', `%${cleaned}%`)
     .limit(1)
