@@ -350,6 +350,8 @@ export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer, el
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
+  console.log('Workout data received:', workout);
+
   // TEMPORARY LOGGING
   console.log('🔍 WORKOUT TABLE RENDER:', { 
     workout, 

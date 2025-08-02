@@ -19,6 +19,8 @@ export async function POST(request: NextRequest) {
     const mins = Number(request.nextUrl.searchParams.get("durationMin") || "45");
     const plan = await generateDayPlan(supabase, userId, day, mins);
 
+    console.log('Generated workout plan:', JSON.stringify(plan, null, 2));
+
     return NextResponse.json(plan);
 
   } catch (error) {

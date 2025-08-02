@@ -58,6 +58,8 @@ export async function generateDayPlan(
     .ilike("name", coreName)
     .maybeSingle();
 
+  console.log('Core exercise:', coreEx);
+
   if (coreErr || !coreEx) {
     throw new Error('Core exercise not found');
   }
@@ -72,6 +74,8 @@ export async function generateDayPlan(
     .or(
       `required_equipment.is.null,required_equipment&&{${userEq.join(",")}}`
     );
+
+  console.log('Accessory pool:', accPool);
 
   if (accErr) {
     throw new Error('Failed to fetch accessories');
@@ -89,6 +93,8 @@ export async function generateDayPlan(
 
   const accessories = _.sampleSize(accPool ?? [], Math.min(accCount, (accPool ?? []).length))
     .map((ex) => ({ ...ex, sets: 3, reps: "10-12" }));
+
+  console.log('Selected accessories:', accessories);
 
   // Build workout response
   return {
