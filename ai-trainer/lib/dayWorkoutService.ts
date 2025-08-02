@@ -54,28 +54,38 @@ export async function generateDayPlan(
   /* 👉 use the real `exercises` table */
   const { data: coreEx, error: coreErr } = await db
     .from("exercises")
-    .select("id, name, muscle_group")     /* column names in exercises */
+    .select("id, name, muscle_group, exercise_phase")     /* column names in exercises */
     .ilike("name", coreName)
     .maybeSingle();
 
-  console.log('Core exercise:', coreEx);
+  console.log('Core exercise details:', {
+    name: coreEx?.name,
+    muscle_group: coreEx?.muscle_group,
+    exercise_phase: coreEx?.exercise_phase
+  });
 
   if (coreErr || !coreEx) {
     throw new Error('Core exercise not found');
   }
 
-  // === accessory pool query ===
+  // First, check if coreEx.muscle_group exists
+  if (!coreEx.muscle_group) {
+    console.error('Core exercise has no muscle_group!', coreEx);
+    // Set a default based on the exercise name
+    if (coreName.includes('Squat')) coreEx.muscle_group = 'Legs';
+    else if (coreName.includes('Bench')) coreEx.muscle_group = 'Chest';
+    else if (coreName.includes('Deadlift')) coreEx.muscle_group = 'Back';
+  }
+
   const { data: accPool, error: accErr } = await db
     .from("exercises")
-    .select("id, name")
+    .select("id, name, muscle_group, exercise_phase")
     .eq("muscle_group", coreEx.muscle_group)
-    .not("name", "ilike", coreEx.name)
-    /* 👇 allow either body-weight (NULL) or matching equipment */
-    .or(
-      `required_equipment.is.null,required_equipment&&{${userEq.join(",")}}`
-    );
+    .neq("name", coreEx.name)
+    .in("exercise_phase", ["accessory", "main"]);
 
-  console.log('Accessory pool:', accPool);
+  console.log(`Found ${accPool?.length} accessories for muscle group "${coreEx.muscle_group}"`);
+  console.log('Sample accessories:', accPool?.slice(0, 3));
 
   if (accErr) {
     throw new Error('Failed to fetch accessories');
