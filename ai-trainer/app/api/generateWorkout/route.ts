@@ -7,24 +7,18 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-export async function POST(request: NextRequest) {
-  try {
-    const { userId, day } = await request.json();
-    
-    if (!userId || !day) {
-      return NextResponse.json({ error: 'Missing userId or day' }, { status: 400 });
-    }
+export async function GET(req: NextRequest) {
+  const userId = req.headers.get("x-user-id");
+  if (!userId) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
 
-    /* allow ?durationMin=30, default 45 */
-    const mins = Number(request.nextUrl.searchParams.get("durationMin") || "45");
-    const plan = await generateDayPlan(supabase, userId, day, mins);
+  const mins = Number(req.nextUrl.searchParams.get("durationMin") ?? "45");
+  const override = Number(req.nextUrl.searchParams.get("debugDay") ?? NaN);
+  const plan = await generateDayPlan(
+    supabase,
+    userId,
+    Number.isNaN(override) ? undefined : override,
+    mins
+  );
 
-    console.log('Generated workout plan:', JSON.stringify(plan, null, 2));
-
-    return NextResponse.json(plan);
-
-  } catch (error) {
-    console.error('Generate workout error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-  }
+  return NextResponse.json(plan);
 } 
