@@ -72,6 +72,70 @@ const staticCoolDown: Block[] = [
   { name: "Shoulder Stretch",  duration: "30 sec" }
 ];
 
+/* =========================================================
+ *  NEW  accessorySelector()  — zero "random" muscles, no mobility
+ * =======================================================*/
+async function accessorySelector(
+  db: SupabaseClient<Database>,
+  coreLiftRow: { id: string; name: string; muscle_group: string },
+  userEq: string[],
+  maxBlocks: number
+): Promise<ExerciseBlock[]> {
+  if (maxBlocks <= 0) return [];
+
+  /* ─── 1. Derive target muscles from the main lift ─── */
+  const targetMuscles = (() => {
+    switch (coreLiftRow.muscle_group) {
+      case "quads":
+      case "hamstrings":
+      case "glutes":
+        return ["quads", "hamstrings", "glutes"];
+      case "chest":
+        return ["chest", "triceps", "shoulders"];
+      case "back":
+        return ["back", "lats", "hamstrings", "glutes"];
+      default:
+        return [coreLiftRow.muscle_group];
+    }
+  })();
+
+  /* ─── 2. Query for accessory-eligible moves only ─── */
+  const { data: pool } = await db
+    .from("exercises")
+    .select("id, name, muscle_group, required_equipment, category")
+    .in("muscle_group", targetMuscles)
+    .in("category", ["strength", "hypertrophy"])          // no HIIT / mobility
+    .not("name", "ilike", "%stretch%")
+    .not("name", "ilike", "%burpee%")
+    .not("name", "ilike", "%jump%")
+    .neq("name", coreLiftRow.name)
+    .or(`required_equipment.is.null,required_equipment&&{${userEq.join(",")}}`);
+
+  if (!pool || pool.length === 0) return [];
+
+  /* ─── 3. Basic scoring: favour matching muscle & equipment ─── */
+  const scored = pool.map((ex) => {
+    let score = targetMuscles.includes(ex.muscle_group as string) ? 5 : 0;
+    if (
+      ex.required_equipment?.length &&
+      ex.required_equipment.some((eq: string) => userEq.includes(eq))
+    )
+      score += 2;
+    return { ex, score };
+  });
+
+  /* ─── 4. Pick the top N and attach set/rep prescriptions ─── */
+  return scored
+    .sort((a, b) => b.score - a.score)
+    .slice(0, maxBlocks)
+    .map(({ ex }) => ({
+      ...ex,
+      sets: 3,
+      reps: "8-12",
+      duration: "–"
+    }));
+}
+
 /* ───────────────────────────── API ───────────────────────────── */
 export async function generateDayPlan(
   db: SupabaseClient<Database>,
@@ -79,7 +143,7 @@ export async function generateDayPlan(
   today = new Date().getDay(),
   targetMinutes = 45
 ): Promise<WorkoutPlan | { rest: true }> {
-  const token = coreByDay[today];
+  const token = coreByDay[today] ?? "Rest";
 
   /* rest / cardio / hiit quick exits */
   if (token === "Rest")  return { rest: true };
@@ -103,7 +167,7 @@ export async function generateDayPlan(
   /* 2️⃣ accessories */
   const minutesLeft = targetMinutes - 7 /*warm+cool*/ - 12 /*main lift */;
   const accCount    = Math.max(0, Math.floor(minutesLeft / 6));
-  const accessories = await pickAccessories(db, coreRow.name, userEq, accCount);
+  const accessories = await accessorySelector(db, coreRow, userEq, accCount);
 
   /* 3️⃣ compose */
   return {
@@ -114,56 +178,6 @@ export async function generateDayPlan(
     accessories,
     cooldown: staticCoolDown
   };
-}
-
-/* ===== accessory selector (coaching logic) ======================== */
-async function pickAccessories(
-  db: SupabaseClient<Database>,
-  coreLift: string,
-  userEq: string[],
-  count: number
-): Promise<ExerciseBlock[]> {
-  const tp = trainingPrinciples[coreLift];
-  if (!tp || count === 0) return [];
-
-  const { data: pool } = await db
-    .from("exercises")
-    .select("id, name, muscle_group, required_equipment")
-    .in("muscle_group", tp.primaryTargets)
-    .not("name", "ilike", coreLift)
-    .or(`required_equipment.is.null,required_equipment&&{${userEq.join(",")}}`);
-
-  const scored = (pool ?? []).map((ex) => {
-    let score = tp.primaryTargets.includes(ex.muscle_group as string) ? 5 : 0;
-    Object.entries(tp.movementPatterns).forEach(([k, list]) => {
-      if (list.includes(ex.name)) score += k === "isolation" ? 5 : 10;
-    });
-    if (tp.avoid.namePatterns.some((p) => ex.name.toLowerCase().includes(p)))
-      score -= 10;
-    if (tp.avoid.muscleGroups.includes(ex.muscle_group as string)) score -= 10;
-    if (
-      ex.required_equipment?.length &&
-      !ex.required_equipment.some((eq: string) => userEq.includes(eq))
-    )
-      score -= 8;
-    return { ex, score };
-  });
-
-  return scored
-    .filter(({ score }) => score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, count)
-    .map(({ ex }) => {
-      const pattern =
-        (Object.entries(tp.movementPatterns).find(([_, arr]) => arr.includes(ex.name))?.[0] ??
-          "bilateral") as keyof typeof tp.repSchemes;
-      return {
-        ...ex,
-        sets: 3,
-        reps: tp.repSchemes[pattern],
-        duration: "–"
-      };
-    });
 }
 
 /* ===== simple cardio / HIIT filler ================================ */
