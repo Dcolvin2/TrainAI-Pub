@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { buildClaudePrompt } from "@/lib/claudeWorkoutPrompt";
 import { chatClaude } from "@/lib/claudeClient";
-import { coreByDay, muscleMap } from "@/lib/coreMap";
+import { coreByDay, muscleMap, dayStringMap } from "@/lib/coreMap";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,8 +14,26 @@ export async function GET(req: NextRequest) {
   if (!userId) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
 
   const mins = Number(req.nextUrl.searchParams.get("durationMin") ?? "45");
-  const overrideDay = Number(req.nextUrl.searchParams.get("debugDay") ?? NaN);
-  const weekday = Number.isNaN(overrideDay) ? new Date().getDay() : overrideDay;
+  const debugDay = req.nextUrl.searchParams.get("debugDay");
+  
+  // Handle both numeric and string day parameters
+  let weekday: number;
+  if (debugDay) {
+    const dayLower = debugDay.toLowerCase();
+    if (dayStringMap[dayLower]) {
+      weekday = dayStringMap[dayLower];
+    } else {
+      const numericDay = Number(debugDay);
+      if (isNaN(numericDay) || numericDay < 0 || numericDay > 6) {
+        return NextResponse.json({ 
+          error: "Invalid day parameter. Use 0-6 or day names like 'monday', 'mon', etc." 
+        }, { status: 400 });
+      }
+      weekday = numericDay;
+    }
+  } else {
+    weekday = new Date().getDay();
+  }
 
   /* 1️⃣ determine core lift */
   const coreLift = coreByDay[weekday];
