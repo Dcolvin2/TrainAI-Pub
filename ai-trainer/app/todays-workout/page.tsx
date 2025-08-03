@@ -8,7 +8,7 @@ import TimeSelector from '../components/TimeSelector';
 import { supabase } from '@/lib/supabaseClient';
 import { useWorkoutStore, WorkoutProvider } from '@/lib/workoutStore';
 import { fetchNikeWorkout } from '@/lib/nikeWorkoutHelper';
-import { buildWorkoutByDay } from "@/lib/buildWorkoutByDay";
+import { generateDayPlan } from "@/lib/dayWorkoutService";
 import { getExerciseInstructions } from '@/lib/getExerciseInstructions';
 import { fetchInstructions } from '@/lib/fetchInstructions';
 import { isQuickEntry, parseQuickEntry } from '@/utils/parseQuickEntry';
@@ -18,15 +18,19 @@ import { getExerciseInstruction } from '@/lib/getExerciseInstruction';
 
 // DEV ONLY: Smoke test helper
 if (typeof window !== 'undefined') {
-  (window as any).__showPlan = async (day = 'Monday') => {
-    const plan = await buildWorkoutByDay('test-user', day, 45);
+  (window as any).__showPlan = async (day = 1) => {
+    const plan = await generateDayPlan(supabase, 'test-user', day, 45);
+    if ('rest' in plan) {
+      console.table([['Rest day', day, 'N/A']]);
+      return plan;
+    }
     console.table([
-      ['Target (min)', day, plan.estimatedMinutes?.toFixed(1) || 'N/A'],
-      ...plan.accessories.map(a => ['accessory', a.name])
+      ['Target (min)', day, plan.duration || 'N/A'],
+      ...(plan.accessories || []).map((a: any) => ['accessory', a.name])
     ]);
     return plan;
   };
-  console.info('👋  call  __showPlan("Monday")  in DevTools');
+  console.info('👋  call  __showPlan(1)  in DevTools');
 }
 
 interface WorkoutData {
@@ -188,29 +192,41 @@ function TodaysWorkoutPageContent() {
   // Auto-generate workout on page load
   useEffect(() => {
     if (user?.id && !pendingWorkout && !activeWorkout) {
-      const dayNames = ["sunday","monday","tuesday","wednesday",
-                        "thursday","friday","saturday"];
-      const today = dayNames[new Date().getDay()];
+      const today = new Date().getDay(); // 0-6 (Sunday-Saturday)
       
       // Auto-generate today's workout
-      buildWorkoutByDay(user.id, today, timeAvailable).then(plan => {
+      generateDayPlan(supabase, user.id, today, timeAvailable).then(plan => {
+        // Handle rest day
+        if ('rest' in plan) {
+          const workoutData: WorkoutData = {
+            planId: crypto.randomUUID(),
+            warmup: [],
+            workout: [],
+            cooldown: [],
+            accessories: [],
+            prompt: `Rest Day`
+          };
+          setPendingWorkout(workoutData);
+          return;
+        }
+
         const workoutData: WorkoutData = {
           planId: crypto.randomUUID(),
-          warmup: plan.warmupArr.map(ex => `${ex.name}: 1x5`),
-          workout: plan.coreLift ? [`${plan.coreLift.name}: 3x8`] : [],
-          cooldown: plan.cooldownArr.map(ex => `${ex.name}: 1x5`),
-          accessories: plan.accessories.map(a => `${a.name}: 3x10`),
-          prompt: `${today} Workout (${timeAvailable} min)`
+          warmup: plan.warmup.map((ex: any) => `${ex.name}: 1x5`),
+          workout: plan.main.map((ex: any) => `${ex.name}: ${ex.sets}x${ex.reps}`),
+          cooldown: plan.cooldown.map((ex: any) => `${ex.name}: 1x5`),
+          accessories: plan.accessories.map((a: any) => `${a.name}: ${a.sets}x${a.reps}`),
+          prompt: `${plan.focus} Workout (${timeAvailable} min)`
         };
         
         setPendingWorkout(workoutData);
         
         // Store current plan for chat interactions
         const planRows = [
-          ...plan.warmupArr.map(ex => ({ ...ex, exercise_phase: 'warmup' })),
-          ...(plan.coreLift ? [{ ...plan.coreLift, exercise_phase: 'core_lift' }] : []),
-          ...plan.accessories.map(ex => ({ ...ex, exercise_phase: 'accessory' })),
-          ...plan.cooldownArr.map(ex => ({ ...ex, exercise_phase: 'cooldown' }))
+          ...plan.warmup.map((ex: any) => ({ ...ex, exercise_phase: 'warmup' })),
+          ...plan.main.map((ex: any) => ({ ...ex, exercise_phase: 'core_lift' })),
+          ...plan.accessories.map((ex: any) => ({ ...ex, exercise_phase: 'accessory' })),
+          ...plan.cooldown.map((ex: any) => ({ ...ex, exercise_phase: 'cooldown' }))
         ];
         setCurrentPlan(planRows);
       }).catch(error => {
@@ -468,15 +484,33 @@ function TodaysWorkoutPageContent() {
       const minutes = minMatch ? parseInt(minMatch[1], 10) : timeAvailable;
 
       try {
-        const plan = await buildWorkoutByDay(user.id, day, minutes);
+        const plan = await generateDayPlan(supabase, user.id, new Date().getDay(), minutes);
+        
+        // Handle rest day
+        if ('rest' in plan) {
+          const workoutData: WorkoutData = {
+            planId: crypto.randomUUID(),
+            warmup: [],
+            workout: [],
+            cooldown: [],
+            accessories: [],
+            prompt: `Rest Day`
+          };
+          setPendingWorkout(workoutData);
+          setChatMessages(prev => [
+            ...prev,
+            { sender: 'assistant', text: "Today is a rest day. Take it easy and recover!", timestamp: new Date().toLocaleTimeString() },
+          ]);
+          return;
+        }
         
         // Convert to WorkoutData format for the table
         const workoutData: WorkoutData = {
           planId: crypto.randomUUID(),
-          warmup: plan.warmupArr.map(ex => `${ex.name}: 1x5`),
-          workout: plan.coreLift ? [`${plan.coreLift.name}: 3x8`] : [],
-          cooldown: plan.cooldownArr.map(ex => `${ex.name}: 1x5`),
-          accessories: plan.accessories.map(a => `${a.name}: 3x10`),
+          warmup: plan.warmup.map((ex: any) => `${ex.name}: 1x5`),
+          workout: plan.main.map((ex: any) => `${ex.name}: ${ex.sets}x${ex.reps}`),
+          cooldown: plan.cooldown.map((ex: any) => `${ex.name}: 1x5`),
+          accessories: plan.accessories.map((a: any) => `${a.name}: ${a.sets}x${a.reps}`),
           prompt: `${day} Workout (${minutes} min)`
         };
         
@@ -484,10 +518,10 @@ function TodaysWorkoutPageContent() {
         
         const workoutText = 
           `**${day} Workout (${minutes} min)**\n\n` +
-          `*Warm-up*: ${plan.warmupArr.map(ex => ex.name).join(", ") || "—"}\n` +
-          (plan.coreLift ? `*Core Lift*: ${plan.coreLift.name}\n` : "") +
-          `*Accessories*: ${plan.accessories.map(a => a.name).join(", ") || "—"}\n` +
-          `*Cooldown*: ${plan.cooldownArr.map(ex => ex.name).join(", ") || "—"}`;
+          `*Warm-up*: ${plan.warmup.map((ex: any) => ex.name).join(", ") || "—"}\n` +
+          `*Core Lift*: ${plan.main.map((ex: any) => ex.name).join(", ") || "—"}\n` +
+          `*Accessories*: ${plan.accessories.map((a: any) => a.name).join(", ") || "—"}\n` +
+          `*Cooldown*: ${plan.cooldown.map((ex: any) => ex.name).join(", ") || "—"}`;
 
         setChatMessages(prev => [
           ...prev,
@@ -496,10 +530,10 @@ function TodaysWorkoutPageContent() {
         
         // ── STORE CURRENT PLAN ──
         const planRows = [
-          ...plan.warmupArr.map(ex => ({ ...ex, exercise_phase: 'warmup' })),
-          ...(plan.coreLift ? [{ ...plan.coreLift, exercise_phase: 'core_lift' }] : []),
-          ...plan.accessories.map(ex => ({ ...ex, exercise_phase: 'accessory' })),
-          ...plan.cooldownArr.map(ex => ({ ...ex, exercise_phase: 'cooldown' }))
+          ...plan.warmup.map((ex: any) => ({ ...ex, exercise_phase: 'warmup' })),
+          ...plan.main.map((ex: any) => ({ ...ex, exercise_phase: 'core_lift' })),
+          ...plan.accessories.map((ex: any) => ({ ...ex, exercise_phase: 'accessory' })),
+          ...plan.cooldown.map((ex: any) => ({ ...ex, exercise_phase: 'cooldown' }))
         ];
         setCurrentPlan(planRows);
         setMessages(prev => [...prev, { role: 'assistant', content: workoutText }]);
