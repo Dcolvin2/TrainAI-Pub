@@ -11,7 +11,7 @@ export function buildClaudePrompt(params: {
   const { day, coreLift, muscleTargets, duration, equipment, accessoryExercises = [] } = params;
 
   const accessoryOptions = accessoryExercises.length > 0 
-    ? `\n**Available Accessory Exercises (choose 2-4):**
+    ? `\n**Recommended Accessory Exercises (from database):**
 ${accessoryExercises.map(ex => `- ${ex.name} (${ex.primary_muscle}, ${ex.category}, rest: ${ex.rest_seconds_default}s)`).join('\n')}`
     : '';
 
@@ -38,7 +38,12 @@ You are an elite strength coach.
   "cooldown":[{"name":"…","duration":"…"}]
 }${accessoryOptions}
 
-**IMPORTANT**: For accessories, choose from the provided exercise list above. Only use exercises that are listed in the available options. If no exercises are provided, you may suggest general movements but prioritize the listed options.
+**ACCESSORY EXERCISE SELECTION:**
+- Use the recommended exercises above as a starting point
+- Feel free to suggest better alternatives if you know of more effective exercises
+- Prioritize exercises that complement the core lift and target the same muscle groups
+- Consider exercise variety, progression, and user experience
+- If you suggest exercises not in the database, ensure they use available equipment: ${equipment.length ? equipment.join(", ") : "body-weight"}
 
 Only JSON, no markdown.
 `;

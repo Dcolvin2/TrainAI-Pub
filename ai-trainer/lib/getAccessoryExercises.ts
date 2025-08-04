@@ -20,11 +20,6 @@ export async function getAccessoryExercises(
   excludeExercises: string[] = []
 ): Promise<AccessoryExercise[]> {
   
-  // Build equipment filter
-  const equipmentFilter = equipment.length > 0 
-    ? equipment.map(eq => `"${eq}"`).join(',')
-    : '[]';
-
   // Build muscle filter - target the primary muscles and common synergists
   const muscleMap: Record<string, string[]> = {
     'quads': ['quads', 'glutes', 'hamstrings'],
@@ -45,7 +40,7 @@ export async function getAccessoryExercises(
     muscleMap[target.toLowerCase()] || [target.toLowerCase()]
   );
 
-  // Query exercises that match our criteria
+  // Query exercises that match our criteria - broader search for better options
   const { data, error } = await supabase
     .from('exercises')
     .select('*')
@@ -79,9 +74,9 @@ export async function getAccessoryExercises(
     return requiredEquipment.every((req: string) => equipment.includes(req));
   });
 
-  // Sort by relevance (target muscles first, then by category)
+  // Enhanced sorting for better variety and progression
   const sortedExercises = availableExercises.sort((a, b) => {
-    // Prioritize exercises that directly target the primary muscle
+    // First priority: exercises that directly target the primary muscle
     const aIsPrimary = muscleTargets.some(target => 
       a.primary_muscle.toLowerCase().includes(target.toLowerCase())
     );
@@ -92,13 +87,35 @@ export async function getAccessoryExercises(
     if (aIsPrimary && !bIsPrimary) return -1;
     if (!aIsPrimary && bIsPrimary) return 1;
 
-    // Then sort by category preference (strength > hypertrophy > endurance)
+    // Second priority: category preference (strength > hypertrophy > endurance)
     const categoryOrder = { 'strength': 1, 'hypertrophy': 2, 'endurance': 3 };
     const aOrder = categoryOrder[a.category as keyof typeof categoryOrder] || 4;
     const bOrder = categoryOrder[b.category as keyof typeof categoryOrder] || 4;
 
-    return aOrder - bOrder;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+
+    // Third priority: equipment complexity (bodyweight first, then simple equipment)
+    const aEquipmentCount = a.equipment_required?.length || 0;
+    const bEquipmentCount = b.equipment_required?.length || 0;
+    
+    if (aEquipmentCount !== bEquipmentCount) return aEquipmentCount - bEquipmentCount;
+
+    // Finally: alphabetical for consistency
+    return a.name.localeCompare(b.name);
   });
 
-  return sortedExercises.slice(0, 20); // Return top 20 matches
+  // Return a good mix of exercises (not just top matches)
+  const primaryMatches = sortedExercises.filter(ex => 
+    muscleTargets.some(target => 
+      ex.primary_muscle.toLowerCase().includes(target.toLowerCase())
+    )
+  ).slice(0, 8);
+
+  const secondaryMatches = sortedExercises.filter(ex => 
+    !muscleTargets.some(target => 
+      ex.primary_muscle.toLowerCase().includes(target.toLowerCase())
+    )
+  ).slice(0, 12);
+
+  return [...primaryMatches, ...secondaryMatches];
 } 
