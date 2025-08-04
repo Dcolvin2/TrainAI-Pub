@@ -9,17 +9,19 @@ export async function getUserEquipment(userId: string): Promise<string[]> {
   try {
     console.log(`[getUserEquipment] Fetching equipment for user: ${userId}`);
     
-    const { data: userEquipment, error } = await supabase
+    const { data, error } = await supabase
       .from('user_equipment')
-      .select('equipment_id, custom_name, equipment!inner(name)')
-      .eq('user_id', userId);
+      .select('equipment(name)')
+      .eq('user_id', userId)
+      .eq('is_available', true);
 
     if (error) {
       console.error('[getUserEquipment] Error fetching equipment:', error);
-      return [];
+      throw error;
     }
 
-    const equipment = userEquipment?.map((eq: any) => eq.custom_name || eq.equipment.name) || [];
+    // -> ['Barbell', 'Bench', 'Dumbbells']
+    const equipment = data?.map((row: any) => row.equipment.name.toLowerCase()) || [];
     
     console.log(`[getUserEquipment] Found equipment:`, equipment);
     return equipment;

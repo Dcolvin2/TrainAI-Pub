@@ -111,13 +111,18 @@ export async function POST(request: Request) {
     console.log('User equipment:', userEquip);
 
     // Build core lift pool
-    const coreLiftPool = await buildCoreLiftPool(type, userEquip);
-    console.log('Core lift pool:', coreLiftPool);
+    const corePool = await buildCoreLiftPool(type, userEquip);
+    console.log('Core lift pool:', corePool);
 
-    // Fallback to push-up if no core lifts found
-    if (!coreLiftPool.length) {
-      coreLiftPool.push({ name: 'Push-up', equipment_required: [] });
+    // pick strongest candidate (later: weight progression logic)
+    const coreLift = corePool[0];
+
+    // Fail-loud guardrail
+    if (coreLift.name === 'Push-up') {
+      console.warn('⚠️  Fallback core-lift used – user lacks equipment for focus:', type);
     }
+
+    console.log(`[generate-workout] Selected core lift: ${coreLift.name}`);
 
     // Time-based exercise counts
     const exerciseCounts = {
@@ -130,12 +135,10 @@ export async function POST(request: Request) {
     const counts = exerciseCounts[timeMinutes as keyof typeof exerciseCounts] || exerciseCounts[45];
     
     // Generate the workout
-    const selectedCoreLift = coreLiftPool[Math.floor(Math.random() * coreLiftPool.length)];
-    
     const workout = {
       warmup: generateWarmupExercises(type, counts.warmup),
       mainLift: { 
-        name: selectedCoreLift.name, 
+        name: coreLift.name, 
         sets: counts.mainSets, 
         reps: "8-10", 
         rest: "2-3 min" 
@@ -148,7 +151,7 @@ export async function POST(request: Request) {
       focus: type, 
       minutes: timeMinutes, 
       equipment: userEquip, 
-      coreLiftCandidates: coreLiftPool.map(lift => lift.name), 
+      coreLiftCandidates: corePool.map(lift => lift.name), 
       accessoriesPool: workout.accessories.map(acc => acc.name) 
     });
 
