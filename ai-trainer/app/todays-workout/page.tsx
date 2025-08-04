@@ -30,6 +30,7 @@ const X = ({ className, ...props }: any) => (
 
 interface WorkoutSelection {
   type: string;
+  id: string;
   label: string;
   timeAvailable: number;
 }
@@ -43,6 +44,13 @@ interface WorkoutTypeSelectorProps {
 interface TimeSelectorProps {
   timeAvailable: number;
   onTimeChange: (time: number) => void;
+}
+
+interface GeneratedWorkout {
+  warmup: any[];
+  mainLift: any;
+  accessories: any[];
+  cooldown: any[];
 }
 
 // Time Selector Component
@@ -113,6 +121,7 @@ const WorkoutTypeSelector = ({ onSelect, timeAvailable, suggestedType }: Workout
   const handleSelection = (selection: any) => {
     onSelect({
       type: selection.id,
+      id: selection.id,
       label: selection.label,
       timeAvailable: timeAvailable
     });
@@ -126,10 +135,11 @@ const WorkoutTypeSelector = ({ onSelect, timeAvailable, suggestedType }: Workout
       <div className="mb-6">
         <p className="text-sm text-gray-400 mb-2">Popular choices:</p>
         <div className="flex flex-wrap gap-2">
-          {['push', 'pull', 'legs', 'upper', 'full_body'].map(type => {
+          {['push', 'pull', 'legs', 'upper', 'full_body', 'hiit'].map(type => {
             const option = Object.values(workoutCategories)
               .flatMap(cat => cat.options)
-              .find(opt => opt.id === type);
+              .find(opt => opt.id === type) || 
+              (type === 'hiit' ? { id: 'hiit', label: 'HIIT', muscles: 'Full body cardio', color: 'bg-yellow-500' } : null);
             if (!option) return null;
             return (
               <button
@@ -275,12 +285,128 @@ const ChatPanel = ({ workout, onClose, onUpdate }: ChatPanelProps) => {
   );
 };
 
+// Workout Summary Component
+const WorkoutSummary = ({ workout, selectedType, timeAvailable }: { 
+  workout: GeneratedWorkout; 
+  selectedType: WorkoutSelection; 
+  timeAvailable: number;
+}) => {
+  return (
+    <div className="bg-gray-900 rounded-lg p-6 mt-6">
+      <div className="flex justify-between items-start mb-6">
+        <div>
+          <h2 className="text-3xl font-bold text-white mb-2">
+            {selectedType.label} Workout
+          </h2>
+          <p className="text-gray-400">
+            {timeAvailable} minutes • {workout.warmup.length + 1 + workout.accessories.length + workout.cooldown.length} exercises
+          </p>
+        </div>
+        <div className="flex gap-4">
+          <button
+            onClick={() => console.log('Modify workout')}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-white transition-colors"
+          >
+            <MessageSquare className="w-4 h-4" />
+            Modify
+          </button>
+          <button
+            onClick={() => console.log('Start workout')}
+            className="px-6 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-white font-medium transition-colors"
+          >
+            Start Workout
+          </button>
+        </div>
+      </div>
+
+      {/* Warmup */}
+      {workout.warmup.length > 0 && (
+        <div className="mb-6">
+          <h3 className="text-lg font-semibold text-yellow-400 mb-3">Warmup</h3>
+          <div className="space-y-2">
+            {workout.warmup.map((exercise, index) => (
+              <div key={index} className="bg-gray-800 rounded-lg p-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-white font-medium">{exercise.name}</span>
+                  <span className="text-gray-400 text-sm">{exercise.duration}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Main Lift */}
+      {workout.mainLift && (
+        <div className="mb-6">
+          <h3 className="text-lg font-semibold text-red-400 mb-3">Main Lift</h3>
+          <div className="bg-gray-800 rounded-lg p-4">
+            <div className="flex justify-between items-center">
+              <div>
+                <h4 className="text-white font-medium">{workout.mainLift.name}</h4>
+                <p className="text-gray-400 text-sm">
+                  {workout.mainLift.sets} sets × {workout.mainLift.reps}
+                </p>
+              </div>
+              <span className="px-3 py-1 rounded-full text-sm bg-red-900/50 text-red-400">
+                Main
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Accessories */}
+      {workout.accessories.length > 0 && (
+        <div className="mb-6">
+          <h3 className="text-lg font-semibold text-blue-400 mb-3">Accessories</h3>
+          <div className="space-y-2">
+            {workout.accessories.map((exercise, index) => (
+              <div key={index} className="bg-gray-800 rounded-lg p-3">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <span className="text-white font-medium">{exercise.name}</span>
+                    <p className="text-gray-400 text-sm">
+                      {exercise.sets} sets × {exercise.reps}
+                    </p>
+                  </div>
+                  <span className="px-3 py-1 rounded-full text-sm bg-gray-700 text-gray-400">
+                    Accessory
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Cooldown */}
+      {workout.cooldown.length > 0 && (
+        <div className="mb-6">
+          <h3 className="text-lg font-semibold text-green-400 mb-3">Cooldown</h3>
+          <div className="space-y-2">
+            {workout.cooldown.map((exercise, index) => (
+              <div key={index} className="bg-gray-800 rounded-lg p-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-white font-medium">{exercise.name}</span>
+                  <span className="text-gray-400 text-sm">{exercise.duration}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // Main Workout Page Component
 export default function TodaysWorkout() {
   const { user } = useAuth();
   const router = useRouter();
   const [timeAvailable, setTimeAvailable] = useState(45);
-  const [selectedWorkout, setSelectedWorkout] = useState<any>(null);
+  const [selectedType, setSelectedType] = useState<WorkoutSelection | null>(null);
+  const [generatedWorkout, setGeneratedWorkout] = useState<GeneratedWorkout | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [suggestedType, setSuggestedType] = useState<string | null>(null);
@@ -302,37 +428,42 @@ export default function TodaysWorkout() {
   };
 
   const handleWorkoutSelect = async (selection: WorkoutSelection) => {
+    setSelectedType(selection);
     setIsGenerating(true);
+    
     try {
-      // Create a mock workout type for the selected type
-      const workoutType = {
-        id: selection.type,
-        name: selection.type,
-        category: 'split',
-        target_muscles: selection.type === 'push' ? ['chest', 'shoulders', 'triceps'] : 
-                       selection.type === 'pull' ? ['back', 'biceps'] : 
-                       selection.type === 'legs' ? ['quads', 'hamstrings', 'glutes'] : ['all'],
-        movement_patterns: []
-      };
-      
-      const workout = await generateWorkoutForType(workoutType, userId);
-      setSelectedWorkout({
-        type: selection.label,
-        exercises: [
-          ...workout.mainExercises.map((ex: any) => ({ ...ex, phase: 'main' })),
-          ...workout.accessories.map((ex: any) => ({ ...ex, phase: 'accessory' }))
-        ]
+      const response = await fetch('/api/generate-workout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: selection.id,
+          timeMinutes: timeAvailable,
+          userId: user?.id
+        })
       });
+      
+      if (!response.ok) {
+        throw new Error('Failed to generate workout');
+      }
+      
+      const workout = await response.json();
+      setGeneratedWorkout(workout);
     } catch (error) {
       console.error('Error generating workout:', error);
       // Fallback to mock data
-      setSelectedWorkout({
-        type: selection.label,
-        exercises: [
-          { name: 'Bench Press', sets: 4, reps: '8-10', phase: 'main' },
-          { name: 'Overhead Press', sets: 3, reps: '10-12', phase: 'main' },
-          { name: 'Dips', sets: 3, reps: '12-15', phase: 'accessory' },
-          { name: 'Lateral Raises', sets: 3, reps: '15-20', phase: 'accessory' }
+      setGeneratedWorkout({
+        warmup: [
+          { name: 'High Knees', duration: '2 min' },
+          { name: 'Treadmill Walking', duration: '3 min' }
+        ],
+        mainLift: { name: 'Bench Press', sets: 4, reps: '8-10' },
+        accessories: [
+          { name: 'Dips', sets: 3, reps: '12-15' },
+          { name: 'Lateral Raises', sets: 3, reps: '15-20' }
+        ],
+        cooldown: [
+          { name: 'Foam Roll Quads', duration: '2 min' },
+          { name: 'Stretching', duration: '3 min' }
         ]
       });
     } finally {
@@ -380,100 +511,47 @@ export default function TodaysWorkout() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-8">
-        {!selectedWorkout ? (
-          // Selection Screen
-          <div className="max-w-3xl mx-auto">
-            {/* Time Selector */}
-            <TimeSelector 
+        <div className="max-w-3xl mx-auto">
+          {/* Time Selector */}
+          <TimeSelector 
+            timeAvailable={timeAvailable}
+            onTimeChange={handleTimeChange}
+          />
+
+          {/* Workout Type Selector */}
+          <div className="bg-gray-900 rounded-lg p-6">
+            <WorkoutTypeSelector 
+              onSelect={handleWorkoutSelect} 
               timeAvailable={timeAvailable}
-              onTimeChange={handleTimeChange}
+              suggestedType={suggestedType}
             />
+          </div>
 
-            {/* Workout Type Selector */}
-            <div className="bg-gray-900 rounded-lg p-6">
-              <WorkoutTypeSelector 
-                onSelect={handleWorkoutSelect} 
-                timeAvailable={timeAvailable}
-                suggestedType={suggestedType}
-              />
+          {/* Loading State */}
+          {isGenerating && (
+            <div className="flex flex-col items-center justify-center py-20">
+              <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-green-400 mb-4"></div>
+              <p className="text-xl text-white">Generating your {selectedType?.label} workout...</p>
             </div>
-          </div>
-        ) : isGenerating ? (
-          // Loading State
-          <div className="flex flex-col items-center justify-center py-20">
-            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-green-400 mb-4"></div>
-            <p className="text-xl text-white">Generating your {selectedWorkout.type} workout...</p>
-          </div>
-        ) : (
-          // Workout Display
-          <div>
-            <div className="bg-gray-900 rounded-lg p-6 mb-6">
-              <div className="flex justify-between items-start mb-6">
-                <div>
-                  <h2 className="text-3xl font-bold text-white mb-2">
-                    {selectedWorkout.type} Workout
-                  </h2>
-                  <p className="text-gray-400">
-                    {timeAvailable} minutes • {selectedWorkout.exercises.length} exercises
-                  </p>
-                </div>
-                <div className="flex gap-4">
-                  <button
-                    onClick={() => setShowChat(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-white transition-colors"
-                  >
-                    <MessageSquare className="w-4 h-4" />
-                    Modify
-                  </button>
-                  <button
-                    onClick={handleStartWorkout}
-                    className="px-6 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-white font-medium transition-colors"
-                  >
-                    Start Workout
-                  </button>
-                </div>
-              </div>
+          )}
 
-              {/* Exercise List */}
-              <div className="space-y-4">
-                {selectedWorkout.exercises.map((exercise: any, index: number) => (
-                  <div key={index} className="bg-gray-800 rounded-lg p-4">
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <h3 className="text-lg font-medium text-white">{exercise.name}</h3>
-                        <p className="text-gray-400">
-                          {exercise.sets} sets × {exercise.reps} reps
-                        </p>
-                      </div>
-                      <span className={`px-3 py-1 rounded-full text-sm ${
-                        exercise.phase === 'main' 
-                          ? 'bg-blue-900/50 text-blue-400' 
-                          : 'bg-gray-700 text-gray-400'
-                      }`}>
-                        {exercise.phase}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <button
-              onClick={() => setSelectedWorkout(null)}
-              className="text-gray-400 hover:text-white transition-colors"
-            >
-              ← Choose different workout
-            </button>
-          </div>
-        )}
+          {/* Generated Workout Summary */}
+          {generatedWorkout && selectedType && !isGenerating && (
+            <WorkoutSummary 
+              workout={generatedWorkout}
+              selectedType={selectedType}
+              timeAvailable={timeAvailable}
+            />
+          )}
+        </div>
       </div>
 
       {/* Chat Panel */}
       {showChat && (
         <ChatPanel 
-          workout={selectedWorkout}
+          workout={generatedWorkout}
           onClose={() => setShowChat(false)}
-          onUpdate={(updated) => setSelectedWorkout(updated)}
+          onUpdate={(updated) => setGeneratedWorkout(updated)}
         />
       )}
     </div>
