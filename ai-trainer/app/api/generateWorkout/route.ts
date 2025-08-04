@@ -86,13 +86,20 @@ export async function GET(req: NextRequest) {
   console.log("[DEBUG] Muscle targets:", muscleTargets);
   console.log("[DEBUG] Available muscle mappings:", Object.keys(muscleMap));
   
-  const accessoryExercises = await getAccessoryExercises(
-    muscleTargets,
-    equipment,
-    [coreLift] // Exclude the core lift from accessory options
-  );
-  console.log("[DEBUG] Found accessory exercises:", accessoryExercises.length);
-  console.log("[DEBUG] Accessory exercise names:", accessoryExercises.map(ex => ex.name));
+  let accessoryExercises: any[] = [];
+  try {
+    accessoryExercises = await getAccessoryExercises(
+      muscleTargets,
+      equipment,
+      [coreLift] // Exclude the core lift from accessory options
+    );
+    console.log("[DEBUG] Found accessory exercises:", accessoryExercises.length);
+    console.log("[DEBUG] Accessory exercise names:", accessoryExercises.map(ex => ex.name));
+  } catch (error) {
+    console.error("[DEBUG] Error fetching accessory exercises:", error);
+    // Continue with empty accessory exercises if database fails
+    accessoryExercises = [];
+  }
 
   /* 4️⃣ build Claude prompt & call */
   const prompt = buildClaudePrompt({

@@ -25,6 +25,12 @@ export async function getAccessoryExercises(
   console.log("[DEBUG] - equipment:", equipment);
   console.log("[DEBUG] - excludeExercises:", excludeExercises);
   
+  // Early return if no muscle targets
+  if (!muscleTargets || muscleTargets.length === 0) {
+    console.log("[DEBUG] No muscle targets provided, returning empty array");
+    return [];
+  }
+  
   // Build muscle filter - target the primary muscles and common synergists
   const muscleMap: Record<string, string[]> = {
     'quads': ['quads', 'glutes', 'hamstrings'],
@@ -46,6 +52,12 @@ export async function getAccessoryExercises(
   );
   
   console.log("[DEBUG] - targetMuscles:", targetMuscles);
+
+  // Safety check - if no target muscles, return empty
+  if (targetMuscles.length === 0) {
+    console.log("[DEBUG] No target muscles found, returning empty array");
+    return [];
+  }
 
   // Query exercises that match our criteria - broader search for better options
   const { data, error } = await supabase
