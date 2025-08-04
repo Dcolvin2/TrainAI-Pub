@@ -1,5 +1,3 @@
-import { NextRequest, NextResponse } from 'next/server';
-
 // Exercise database for different workout types
 const exerciseDatabase = {
   push: {
@@ -85,50 +83,44 @@ function generateCooldownExercises(type: string, count: number): any[] {
   }));
 }
 
-export async function generateWorkout(type: string, timeMinutes: number, userId: string) {
-  // Time-based exercise counts
-  const exerciseCounts = {
-    15: { warmup: 2, mainSets: 3, accessories: 1, cooldown: 1 },
-    30: { warmup: 2, mainSets: 4, accessories: 3, cooldown: 2 },
-    45: { warmup: 3, mainSets: 4, accessories: 4, cooldown: 2 },
-    60: { warmup: 3, mainSets: 5, accessories: 6, cooldown: 3 }
-  };
-  
-  const counts = exerciseCounts[timeMinutes as keyof typeof exerciseCounts] || exerciseCounts[45];
-  
-  // Generate appropriate exercises for each section
-  const workout = {
-    warmup: generateWarmupExercises(type, counts.warmup),
-    mainLift: {
-      name: getMainLiftForType(type),
-      sets: counts.mainSets,
-      reps: "8-10",
-      rest: "2-3 min"
-    },
-    accessories: generateAccessoryExercises(type, counts.accessories),
-    cooldown: generateCooldownExercises(type, counts.cooldown)
-  };
-  
-  return workout;
-}
-
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
     const { type, timeMinutes, userId } = await request.json();
     
     if (!type || !timeMinutes) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'Missing required fields: type and timeMinutes' },
         { status: 400 }
       );
     }
 
-    const workout = await generateWorkout(type, timeMinutes, userId);
+    // Time-based exercise counts
+    const exerciseCounts = {
+      15: { warmup: 2, mainSets: 3, accessories: 1, cooldown: 1 },
+      30: { warmup: 2, mainSets: 4, accessories: 3, cooldown: 2 },
+      45: { warmup: 3, mainSets: 4, accessories: 4, cooldown: 2 },
+      60: { warmup: 3, mainSets: 5, accessories: 6, cooldown: 3 }
+    };
     
-    return NextResponse.json(workout);
+    const counts = exerciseCounts[timeMinutes as keyof typeof exerciseCounts] || exerciseCounts[45];
+    
+    // Generate the workout
+    const workout = {
+      warmup: generateWarmupExercises(type, counts.warmup),
+      mainLift: {
+        name: getMainLiftForType(type),
+        sets: counts.mainSets,
+        reps: "8-10",
+        rest: "2-3 min"
+      },
+      accessories: generateAccessoryExercises(type, counts.accessories),
+      cooldown: generateCooldownExercises(type, counts.cooldown)
+    };
+    
+    return Response.json(workout);
   } catch (error) {
     console.error('Error generating workout:', error);
-    return NextResponse.json(
+    return Response.json(
       { error: 'Failed to generate workout' },
       { status: 500 }
     );
