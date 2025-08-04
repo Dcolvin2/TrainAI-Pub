@@ -84,18 +84,6 @@ const WorkoutTypeSelector = ({ onSelect, timeAvailable, suggestedType }: Workout
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
 
   const workoutCategories = {
-    'Split Routines': {
-      icon: <Dumbbell className="w-5 h-5" />,
-      description: 'Popular training splits',
-      options: [
-        { id: 'push', label: 'Push', muscles: 'Chest, Shoulders, Triceps', color: 'bg-blue-500' },
-        { id: 'pull', label: 'Pull', muscles: 'Back, Biceps', color: 'bg-green-500' },
-        { id: 'legs', label: 'Legs', muscles: 'Quads, Hamstrings, Glutes', color: 'bg-purple-500' },
-        { id: 'upper', label: 'Upper Body', muscles: 'All upper body muscles', color: 'bg-orange-500' },
-        { id: 'lower', label: 'Lower Body', muscles: 'All lower body muscles', color: 'bg-pink-500' },
-        { id: 'full_body', label: 'Full Body', muscles: 'Complete workout', color: 'bg-red-500' }
-      ]
-    },
     'Muscle Groups': {
       icon: <Target className="w-5 h-5" />,
       description: 'Target specific muscles',
@@ -138,22 +126,23 @@ const WorkoutTypeSelector = ({ onSelect, timeAvailable, suggestedType }: Workout
       <div className="mb-6">
         <p className="text-sm text-gray-400 mb-2">Popular choices:</p>
         <div className="flex flex-wrap gap-2">
-          {['push', 'pull', 'legs', 'upper', 'full_body', 'hiit'].map(type => {
-            const option = Object.values(workoutCategories)
-              .flatMap(cat => cat.options)
-              .find(opt => opt.id === type) || 
-              (type === 'hiit' ? { id: 'hiit', label: 'HIIT', muscles: 'Full body cardio', color: 'bg-yellow-500' } : null);
-            if (!option) return null;
-            return (
-              <button
-                key={type}
-                onClick={() => handleSelection(option)}
-                className={`px-4 py-2 rounded-lg text-white font-medium transition-all ${option.color} hover:opacity-90`}
-              >
-                {option.label}
-              </button>
-            );
-          })}
+          {[
+            { id: 'push', label: 'Push', muscles: 'Chest, Shoulders, Triceps', color: 'bg-blue-500' },
+            { id: 'pull', label: 'Pull', muscles: 'Back, Biceps', color: 'bg-green-500' },
+            { id: 'legs', label: 'Legs', muscles: 'Quads, Hamstrings, Glutes', color: 'bg-purple-500' },
+            { id: 'upper', label: 'Upper Body', muscles: 'All upper body muscles', color: 'bg-orange-500' },
+            { id: 'full_body', label: 'Full Body', muscles: 'Complete workout', color: 'bg-red-500' },
+            { id: 'hiit', label: 'HIIT', muscles: 'Full body cardio', color: 'bg-yellow-500' },
+            { id: 'nike', label: 'Nike WOD', muscles: 'Nike workout of the day', color: 'bg-[#ff914d]' }
+          ].map(option => (
+            <button
+              key={option.id}
+              onClick={() => handleSelection(option)}
+              className={`px-4 py-2 rounded-lg text-white font-medium transition-all ${option.color} hover:opacity-90`}
+            >
+              {option.label}
+            </button>
+          ))}
         </div>
       </div>
 
