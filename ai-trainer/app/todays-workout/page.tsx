@@ -286,116 +286,64 @@ const ChatPanel = ({ workout, onClose, onUpdate }: ChatPanelProps) => {
 };
 
 // Workout Summary Component
-const WorkoutSummary = ({ workout, selectedType, timeAvailable }: { 
+const WorkoutSummary = ({ workout, selectedType, timeAvailable, setShowChat }: { 
   workout: GeneratedWorkout; 
   selectedType: WorkoutSelection; 
   timeAvailable: number;
+  setShowChat: (show: boolean) => void;
 }) => {
   return (
-    <div className="bg-gray-900 rounded-lg p-6 mt-6">
-      <div className="flex justify-between items-start mb-6">
-        <div>
-          <h2 className="text-3xl font-bold text-white mb-2">
-            {selectedType.label} Workout
-          </h2>
-          <p className="text-gray-400">
-            {timeAvailable} minutes • {workout.warmup.length + 1 + workout.accessories.length + workout.cooldown.length} exercises
-          </p>
-        </div>
-        <div className="flex gap-4">
-          <button
-            onClick={() => console.log('Modify workout')}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-white transition-colors"
-          >
-            <MessageSquare className="w-4 h-4" />
-            Modify
-          </button>
-          <button
-            onClick={() => console.log('Start workout')}
-            className="px-6 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-white font-medium transition-colors"
-          >
-            Start Workout
-          </button>
+    <div className="bg-gray-900 rounded-lg p-6 space-y-6">
+      {/* Warmup Section */}
+      <div>
+        <h3 className="text-green-400 font-bold mb-2">🔥 Warm-up (5 min)</h3>
+        <div className="space-y-2">
+          {workout.warmup.map((exercise, index) => (
+            <div key={index} className="bg-gray-800 p-3 rounded">
+              {exercise.name} - {exercise.duration || exercise.reps}
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* Warmup */}
-      {workout.warmup.length > 0 && (
-        <div className="mb-6">
-          <h3 className="text-lg font-semibold text-yellow-400 mb-3">Warmup</h3>
-          <div className="space-y-2">
-            {workout.warmup.map((exercise, index) => (
-              <div key={index} className="bg-gray-800 rounded-lg p-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-white font-medium">{exercise.name}</span>
-                  <span className="text-gray-400 text-sm">{exercise.duration}</span>
-                </div>
-              </div>
-            ))}
-          </div>
+      {/* Main Work */}
+      <div>
+        <h3 className="text-blue-400 font-bold mb-2">💪 Main Work</h3>
+        <div className="bg-gray-800 p-4 rounded mb-2">
+          <h4 className="font-bold text-white">{workout.mainLift.name}</h4>
+          <p className="text-gray-400">{workout.mainLift.sets} x {workout.mainLift.reps}</p>
         </div>
-      )}
-
-      {/* Main Lift */}
-      {workout.mainLift && (
-        <div className="mb-6">
-          <h3 className="text-lg font-semibold text-red-400 mb-3">Main Lift</h3>
-          <div className="bg-gray-800 rounded-lg p-4">
-            <div className="flex justify-between items-center">
-              <div>
-                <h4 className="text-white font-medium">{workout.mainLift.name}</h4>
-                <p className="text-gray-400 text-sm">
-                  {workout.mainLift.sets} sets × {workout.mainLift.reps}
-                </p>
-              </div>
-              <span className="px-3 py-1 rounded-full text-sm bg-red-900/50 text-red-400">
-                Main
-              </span>
-            </div>
+        {workout.accessories.map((exercise, index) => (
+          <div key={index} className="bg-gray-800 p-3 rounded mb-2">
+            {exercise.name} - {exercise.sets} x {exercise.reps}
           </div>
-        </div>
-      )}
-
-      {/* Accessories */}
-      {workout.accessories.length > 0 && (
-        <div className="mb-6">
-          <h3 className="text-lg font-semibold text-blue-400 mb-3">Accessories</h3>
-          <div className="space-y-2">
-            {workout.accessories.map((exercise, index) => (
-              <div key={index} className="bg-gray-800 rounded-lg p-3">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <span className="text-white font-medium">{exercise.name}</span>
-                    <p className="text-gray-400 text-sm">
-                      {exercise.sets} sets × {exercise.reps}
-                    </p>
-                  </div>
-                  <span className="px-3 py-1 rounded-full text-sm bg-gray-700 text-gray-400">
-                    Accessory
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+        ))}
+      </div>
 
       {/* Cooldown */}
-      {workout.cooldown.length > 0 && (
-        <div className="mb-6">
-          <h3 className="text-lg font-semibold text-green-400 mb-3">Cooldown</h3>
-          <div className="space-y-2">
-            {workout.cooldown.map((exercise, index) => (
-              <div key={index} className="bg-gray-800 rounded-lg p-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-white font-medium">{exercise.name}</span>
-                  <span className="text-gray-400 text-sm">{exercise.duration}</span>
-                </div>
-              </div>
-            ))}
-          </div>
+      <div>
+        <h3 className="text-purple-400 font-bold mb-2">🧘 Cool-down (5 min)</h3>
+        <div className="space-y-2">
+          {workout.cooldown.map((exercise, index) => (
+            <div key={index} className="bg-gray-800 p-3 rounded">
+              {exercise.name} - {exercise.duration || exercise.reps}
+            </div>
+          ))}
         </div>
-      )}
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex gap-4">
+        <button className="bg-green-600 px-6 py-3 rounded-lg text-white font-medium hover:bg-green-700 transition-colors">
+          Start Workout
+        </button>
+        <button 
+          onClick={() => setShowChat(true)} 
+          className="bg-gray-700 px-6 py-3 rounded-lg text-white font-medium hover:bg-gray-600 transition-colors"
+        >
+          Modify Workout
+        </button>
+      </div>
     </div>
   );
 };
@@ -541,6 +489,7 @@ export default function TodaysWorkout() {
               workout={generatedWorkout}
               selectedType={selectedType}
               timeAvailable={timeAvailable}
+              setShowChat={setShowChat}
             />
           )}
         </div>
