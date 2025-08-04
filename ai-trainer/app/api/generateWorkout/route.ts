@@ -74,6 +74,8 @@ export async function GET(req: NextRequest) {
     .select("equipment!inner(name)")
     .eq("user_id", userId);
   const equipment = (eqRows ?? []).map((r: any) => r.equipment.name);
+  
+  console.table({ focus: muscleMap[coreLift]?.[0] || "strength", minutes: mins, equipment, coreLiftCandidates: [coreLift], accessoriesPool: [] });
 
   /* 3️⃣ build Claude prompt & call */
   const prompt = buildClaudePrompt({

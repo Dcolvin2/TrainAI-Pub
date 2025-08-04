@@ -106,24 +106,21 @@ export async function POST(request: Request) {
 
     // Get user's available equipment
     let availableEquipment: string[] = [];
-    let userEquipment: any = null;
-    
     if (userId) {
       try {
         // Log equipment query
         console.log('Fetching equipment for user:', userId);
-        const { data: equipmentData, error } = await supabase
+        const { data: userEquipment, error } = await supabase
           .from('user_equipment')
           .select('equipment_id, custom_name, equipment!inner(name)')
           .eq('user_id', userId);
           
-        console.log('User equipment:', equipmentData);
+        console.log('User equipment:', userEquipment);
         console.log('Equipment error:', error);
         
-        userEquipment = equipmentData;
         availableEquipment = userEquipment?.map((eq: any) => 
-          eq.custom_name || eq.equipment?.name || eq.equipment_id
-        ).filter(Boolean) || [];
+          eq.custom_name || eq.equipment.name
+        ) || [];
       } catch (error) {
         console.error('Error fetching user equipment:', error);
         // Continue without equipment filtering if there's an error
@@ -142,159 +139,18 @@ export async function POST(request: Request) {
     
     // When generating exercises, log what's happening
     console.log('Generating exercises for type:', type, 'category:', category);
-    console.log('Available equipment:', availableEquipment);
-
-    // Debug: Check what exercises exist
-    const { data: sampleExercises, error: sampleError } = await supabase
-      .from('exercises')
-      .select('name, exercise_phase, primary_muscle, category, equipment_required')
-      .limit(10);
-      
-    console.log('Sample exercises in DB:', sampleExercises);
-    console.log('Sample error:', sampleError);
-
-    // Debug: Check exercises for specific muscle
-    const { data: pullExercises } = await supabase
-      .from('exercises')
-      .select('name, primary_muscle, category')
-      .or('primary_muscle.ilike.%back%,primary_muscle.ilike.%bicep%,category.ilike.%pull%')
-      .limit(10);
-      
-    console.log('Pull exercises found:', pullExercises);
-
-    // Function to get exercises that match user's equipment
-    async function getExercisesForType(targetMuscles: string[], count: number, phase: string) {
-      console.log(`Searching for ${phase} exercises targeting ${targetMuscles}`);
-      
-      // Simpler query first
-      let { data, error } = await supabase
-        .from('exercises')
-        .select('*')
-        .limit(20);
-        
-      console.log('All exercises query error:', error);
-      console.log('Total exercises found:', data?.length);
-      
-      // If exercises table is empty, try exercises_final
-      if (!data || data.length === 0) {
-        console.log('No exercises found in main table, trying exercises_final...');
-        const { data: finalData, error: finalError } = await supabase
-          .from('exercises_final')
-          .select('*')
-          .limit(20);
-          
-        console.log('Exercises_final query error:', finalError);
-        console.log('Exercises_final found:', finalData?.length);
-        
-        if (finalData && finalData.length > 0) {
-          data = finalData;
-          console.log('Using exercises_final table');
-        } else {
-          console.log('No exercises found in either table!');
-          // Return fallback exercises
-          return [{
-            name: `${targetMuscles[0]} exercise`,
-            sets: 3,
-            reps: '10-12'
-          }];
-        }
-      }
-      
-      // Filter in JavaScript for now
-      const filtered = data.filter((ex: any) => {
-        // Check if exercise matches phase
-        if (phase && ex.exercise_phase && ex.exercise_phase !== phase) return false;
-        
-        // Check if matches muscle group
-        if (targetMuscles.length > 0 && targetMuscles[0] !== 'any') {
-          const muscleMatch = targetMuscles.some((muscle: string) => 
-            ex.primary_muscle?.toLowerCase().includes(muscle.toLowerCase()) ||
-            ex.category?.toLowerCase().includes(muscle.toLowerCase())
-          );
-          if (!muscleMatch) return false;
-        }
-        
-        // Check equipment
-        if (availableEquipment.length > 0 && ex.equipment_required?.length > 0) {
-          const hasEquipment = ex.equipment_required.every((req: string) => 
-            availableEquipment.some((avail: string) => 
-              avail.toLowerCase().includes(req.toLowerCase())
-            )
-          );
-          if (!hasEquipment) return false;
-        }
-        
-        return true;
-      });
-      
-      console.log(`Filtered to ${filtered.length} exercises`);
-      
-      return filtered.slice(0, count);
-    }
-
-    // Helper function for muscle targeting
-    function getTargetMuscles(type: string): string[] {
-      const muscleMap: Record<string, string[]> = {
-        // Split routines
-        'push': ['chest', 'shoulders', 'triceps'],
-        'pull': ['back', 'biceps', 'lats'],
-        'legs': ['quads', 'hamstrings', 'glutes', 'calves'],
-        'upper': ['chest', 'back', 'shoulders', 'biceps', 'triceps'],
-        'lower': ['quads', 'hamstrings', 'glutes', 'calves'],
-        'full_body': ['chest', 'back', 'legs', 'shoulders'],
-        
-        // Direct muscle groups
-        'chest': ['chest', 'pectorals'],
-        'back': ['back', 'lats', 'rhomboids'],
-        'shoulders': ['shoulders', 'deltoids'],
-        'arms': ['biceps', 'triceps'],
-        'core': ['abs', 'obliques'],
-        'biceps': ['biceps'],
-        'triceps': ['triceps'],
-        'glutes': ['glutes'],
-        'calves': ['calves']
-      };
-      
-      return muscleMap[type] || [type];
-    }
-
-    // Determine target muscles based on type
-    const targetMuscles = getTargetMuscles(type);
-
-    // Generate real workout
-
-    const workout = {
-      warmup: await getExercisesForType(['any'], counts.warmup, 'warmup'),
-      mainLift: (await getExercisesForType(targetMuscles, 1, 'main'))[0] || 
-        { name: `Bodyweight ${type} Exercise`, sets: counts.mainSets, reps: '8-12' },
-      accessories: await getExercisesForType(targetMuscles, counts.accessories, 'accessory'),
-      cooldown: await getExercisesForType(['any'], counts.cooldown, 'cooldown')
-    };
-
-    // Format the workout
-    const formattedWorkout = {
-      warmup: workout.warmup.map((ex: any) => ({
-        name: ex.name,
-        reps: ex.set_duration_seconds ? `${ex.set_duration_seconds}s` : '10-15'
-      })),
-      mainLift: {
-        name: workout.mainLift.name,
-        sets: counts.mainSets,
-        reps: workout.mainLift.reps || '8-10',
-        rest: '2-3 min'
-      },
-      accessories: workout.accessories.map((ex: any) => ({
-        name: ex.name,
-        sets: 3,
-        reps: '10-15'
-      })),
-      cooldown: workout.cooldown.map((ex: any) => ({
-        name: ex.name,
-        duration: ex.set_duration_seconds ? `${ex.set_duration_seconds}s` : '30s'
-      }))
-    };
-
-    return Response.json(formattedWorkout);
+    
+    // Return a simple test response first to verify connection
+    return Response.json({
+      debug: true,
+      receivedType: type,
+      receivedCategory: category,
+      userEquipmentCount: availableEquipment.length,
+      warmup: [{ name: 'Test Exercise', reps: '10' }],
+      mainLift: { name: `Test ${type} Main Lift`, sets: 3, reps: '10' },
+      accessories: [{ name: `Test ${type} Accessory`, sets: 3, reps: '12' }],
+      cooldown: [{ name: 'Test Cooldown', duration: '30s' }]
+    });
   } catch (error) {
     console.error('Error generating workout:', error);
     return Response.json(
