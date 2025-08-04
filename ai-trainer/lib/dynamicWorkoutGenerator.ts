@@ -241,7 +241,7 @@ export class DynamicWorkoutGenerator {
   
   async selectExercisesForType(workoutType: any, availableEquipment: string[]) {
     const patterns = this.getMovementPatternsForType(workoutType);
-    const exercises = {
+    const exercises: { main: any[], accessories: any[] } = {
       main: [],
       accessories: []
     };
