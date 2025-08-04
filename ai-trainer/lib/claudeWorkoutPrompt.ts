@@ -1,19 +1,19 @@
-import { AccessoryExercise } from './getAccessoryExercises';
-
 export function buildClaudePrompt(params: {
   day: string;
   coreLift: string;
   muscleTargets: string[];
   duration: number;                 // minutes
   equipment: string[];
-  accessoryExercises?: AccessoryExercise[];
+  trainingPattern?: string;
 }) {
-  const { day, coreLift, muscleTargets, duration, equipment, accessoryExercises = [] } = params;
+  const { day, coreLift, muscleTargets, duration, equipment, trainingPattern } = params;
 
-  const accessoryOptions = accessoryExercises.length > 0 
-    ? `\n**Recommended Accessory Exercises (from database):**
-${accessoryExercises.map(ex => `- ${ex.name} (${ex.primary_muscle}, ${ex.category}, rest: ${ex.rest_seconds_default}s)`).join('\n')}`
-    : '';
+  const patternContext = trainingPattern ? `
+**Training Pattern**: ${trainingPattern}
+- Follow the ${trainingPattern} methodology
+- Focus on compound movements that align with this pattern
+- Ensure accessory work complements the pattern's goals
+` : '';
 
   return `
 You are an elite strength coach.
@@ -30,21 +30,14 @@ You are an elite strength coach.
    • warmup (3 short moves, total ≤ 5 min)  
    • accessory lifts (2-4 moves, 3 sets each, with set×rep)  
    • cool-down (3 moves, total ≤ 4 min)  
+${patternContext}
 6. Return **valid JSON** = 
 {
   "warmup":[{"name":"…","duration":"…"}],
   "main":[{"name":"${coreLift}","sets":4,"reps":"6-8"}],
   "accessories":[{"name":"…","sets":3,"reps":"10-12"}],
   "cooldown":[{"name":"…","duration":"…"}]
-}${accessoryOptions}
-
-**ACCESSORY EXERCISE SELECTION:**
-- Use the recommended exercises above as a starting point
-- Feel free to suggest better alternatives if you know of more effective exercises
-- Prioritize exercises that complement the core lift and target the same muscle groups
-- Consider exercise variety, progression, and user experience
-- If you suggest exercises not in the database, ensure they use available equipment: ${equipment.length ? equipment.join(", ") : "body-weight"}
-
+}
 Only JSON, no markdown.
 `;
 } 

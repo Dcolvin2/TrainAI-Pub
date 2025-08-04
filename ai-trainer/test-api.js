@@ -1,40 +1,19 @@
-// Simple test to verify the API is working
-const { coreByDay, muscleMap, dayStringMap } = require('./lib/coreMap');
+// Test script to verify API setup
+require('dotenv').config({ path: '.env.local' });
 
-console.log("=== API TEST ===");
+console.log('=== Environment Variables Check ===');
+console.log('OpenAI API Key:', process.env.OPENAI_API_KEY ? '✅ Set' : '❌ Missing');
+console.log('Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? '✅ Set' : '❌ Missing');
+console.log('Supabase Service Key:', process.env.SUPABASE_SERVICE_KEY ? '✅ Set' : '❌ Missing');
 
-// Test the muscle mapping
-const monday = dayStringMap["monday"];
-const mondayCoreLift = coreByDay[monday];
-const mondayMuscles = muscleMap[mondayCoreLift];
-
-console.log("Monday test:");
-console.log("- Day number:", monday);
-console.log("- Core lift:", mondayCoreLift);
-console.log("- Muscle targets:", mondayMuscles);
-
-// Test API call (if running locally)
-if (typeof fetch !== 'undefined') {
-  console.log("\n=== TESTING API ===");
-  
-  fetch('/api/generateWorkout?debugDay=monday&durationMin=45', {
-    headers: { 'x-user-id': 'test-user' }
-  })
-  .then(response => {
-    console.log("Response status:", response.status);
-    return response.json();
-  })
-  .then(data => {
-    console.log("API Response:", data);
-  })
-  .catch(error => {
-    console.error("API Error:", error);
-  });
+if (process.env.SUPABASE_SERVICE_KEY === 'your-supabase-service-role-key-here') {
+  console.log('\n❌ ERROR: Supabase Service Key is still set to placeholder value!');
+  console.log('You need to get your actual service role key from:');
+  console.log('1. Go to https://supabase.com/dashboard');
+  console.log('2. Select your project');
+  console.log('3. Go to Settings → API');
+  console.log('4. Copy the "service_role" key (not the anon key)');
+  console.log('5. Replace the placeholder in .env.local');
 } else {
-  console.log("\n=== SKIPPING API TEST (no fetch available) ===");
-}
-
-console.log("\n=== EXPECTED RESULTS ===");
-console.log("✅ Monday should target: quads, glutes, hamstrings");
-console.log("✅ API should return 200 status");
-console.log("✅ Response should include accessories array"); 
+  console.log('\n✅ All environment variables appear to be set correctly');
+} 

@@ -1,3 +1,5 @@
+import { getCoreLiftForDay } from './trainingPatterns';
+
 export const coreByDay: Record<number,string> = {
   1: "Barbell Back Squat",
   2: "Barbell Bench Press",
@@ -26,8 +28,23 @@ export const dayStringMap: Record<string, number> = {
   "sat": 6
 };
 
+// Get core lift with optional training pattern
+export function getCoreLift(day: number, trainingPattern?: string): string {
+  if (trainingPattern) {
+    return getCoreLiftForDay(day, trainingPattern as any);
+  }
+  return coreByDay[day] || "Rest";
+}
+
 export const muscleMap: Record<string,string[]> = {
   "Barbell Back Squat": ["quads","glutes","hamstrings"],
   "Barbell Bench Press": ["chest","triceps","shoulders"],
-  "Trap Bar Deadlift": ["glutes","hamstrings","back"]
+  "Trap Bar Deadlift": ["glutes","hamstrings","back"],
+  "Barbell Deadlift": ["back","glutes","hamstrings"],
+  "Barbell Overhead Press": ["shoulders","triceps"],
+  "Pull-Up": ["back","biceps"],
+  "Barbell Bent-Over Row": ["back","biceps"],
+  "Barbell Front Squat": ["quads","glutes","core"],
+  "Barbell Romanian Deadlift": ["hamstrings","glutes"],
+  "Parallel Bar Dips": ["chest","triceps","shoulders"]
 }; 
