@@ -144,45 +144,92 @@ export async function POST(request: Request) {
     console.log('Generating exercises for type:', type, 'category:', category);
     console.log('Available equipment:', availableEquipment);
 
+    // Debug: Check what exercises exist
+    const { data: sampleExercises, error: sampleError } = await supabase
+      .from('exercises')
+      .select('name, exercise_phase, primary_muscle, category, equipment_required')
+      .limit(10);
+      
+    console.log('Sample exercises in DB:', sampleExercises);
+    console.log('Sample error:', sampleError);
+
+    // Debug: Check exercises for specific muscle
+    const { data: pullExercises } = await supabase
+      .from('exercises')
+      .select('name, primary_muscle, category')
+      .or('primary_muscle.ilike.%back%,primary_muscle.ilike.%bicep%,category.ilike.%pull%')
+      .limit(10);
+      
+    console.log('Pull exercises found:', pullExercises);
+
     // Function to get exercises that match user's equipment
     async function getExercisesForType(targetMuscles: string[], count: number, phase: string) {
-      // First try: get exercises user CAN do with their equipment
-      let query = supabase
+      console.log(`Searching for ${phase} exercises targeting ${targetMuscles}`);
+      
+      // Simpler query first
+      let { data, error } = await supabase
         .from('exercises')
         .select('*')
-        .eq('exercise_phase', phase);
+        .limit(20);
         
-      // Add muscle targeting
-      if (targetMuscles.length > 0) {
-        query = query.or(
-          `primary_muscle.in.(${targetMuscles.join(',')}),` +
-          `target_muscles.cs.{${targetMuscles.join(',')}}`
-        );
+      console.log('All exercises query error:', error);
+      console.log('Total exercises found:', data?.length);
+      
+      // If exercises table is empty, try exercises_final
+      if (!data || data.length === 0) {
+        console.log('No exercises found in main table, trying exercises_final...');
+        const { data: finalData, error: finalError } = await supabase
+          .from('exercises_final')
+          .select('*')
+          .limit(20);
+          
+        console.log('Exercises_final query error:', finalError);
+        console.log('Exercises_final found:', finalData?.length);
+        
+        if (finalData && finalData.length > 0) {
+          data = finalData;
+          console.log('Using exercises_final table');
+        } else {
+          console.log('No exercises found in either table!');
+          // Return fallback exercises
+          return [{
+            name: `${targetMuscles[0]} exercise`,
+            sets: 3,
+            reps: '10-12'
+          }];
+        }
       }
       
-      const { data: allExercises } = await query;
-      
-      // Filter by equipment
-      const validExercises = allExercises?.filter((exercise: any) => {
-        // Bodyweight exercises (no equipment) are always valid
-        if (!exercise.equipment_required || exercise.equipment_required.length === 0) {
-          return true;
+      // Filter in JavaScript for now
+      const filtered = data.filter((ex: any) => {
+        // Check if exercise matches phase
+        if (phase && ex.exercise_phase && ex.exercise_phase !== phase) return false;
+        
+        // Check if matches muscle group
+        if (targetMuscles.length > 0 && targetMuscles[0] !== 'any') {
+          const muscleMatch = targetMuscles.some((muscle: string) => 
+            ex.primary_muscle?.toLowerCase().includes(muscle.toLowerCase()) ||
+            ex.category?.toLowerCase().includes(muscle.toLowerCase())
+          );
+          if (!muscleMatch) return false;
         }
-        // Check if user has required equipment
-        return exercise.equipment_required.every((req: string) => 
-          availableEquipment.some((avail: string) => 
-            avail.toLowerCase().includes(req.toLowerCase()) ||
-            req.toLowerCase().includes(avail.toLowerCase())
-          )
-        );
-      }) || [];
+        
+        // Check equipment
+        if (availableEquipment.length > 0 && ex.equipment_required?.length > 0) {
+          const hasEquipment = ex.equipment_required.every((req: string) => 
+            availableEquipment.some((avail: string) => 
+              avail.toLowerCase().includes(req.toLowerCase())
+            )
+          );
+          if (!hasEquipment) return false;
+        }
+        
+        return true;
+      });
       
-      console.log(`Found ${validExercises.length} valid exercises for ${phase}`);
+      console.log(`Filtered to ${filtered.length} exercises`);
       
-      // Randomly select requested count
-      return validExercises
-        .sort(() => Math.random() - 0.5)
-        .slice(0, count);
+      return filtered.slice(0, count);
     }
 
     // Helper function for muscle targeting
