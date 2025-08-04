@@ -273,7 +273,7 @@ const ChatPanel = ({ workout, onClose, onUpdate }: ChatPanelProps) => {
             placeholder="Type your modification..."
             className="flex-1 bg-gray-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
-          <button 
+          <button
             onClick={handleSend}
             className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg text-white font-medium transition-colors"
           >
@@ -294,60 +294,58 @@ const WorkoutSummary = ({ workout, selectedType, timeAvailable, setShowChat }: {
 }) => {
   return (
     <div className="bg-gray-900 rounded-lg p-6 space-y-6">
-      {/* Warmup Section */}
+      {/* Warmup */}
       <div>
-        <h3 className="text-green-400 font-bold mb-2">🔥 Warm-up (5 min)</h3>
-        <div className="space-y-2">
-          {workout.warmup.map((exercise, index) => (
-            <div key={index} className="bg-gray-800 p-3 rounded">
-              {exercise.name} - {exercise.duration || exercise.reps}
-            </div>
-          ))}
-        </div>
+        <h3 className="text-green-400 font-bold mb-2">🔥 Warm-up</h3>
+        {workout.warmup && workout.warmup.map((ex, i) => (
+          <div key={i} className="bg-gray-800 p-2 rounded mb-1">
+            {ex.name} - {ex.reps || ex.duration}
+          </div>
+        ))}
       </div>
 
       {/* Main Lift */}
       <div>
         <h3 className="text-blue-400 font-bold mb-2">💪 Main Lift</h3>
-        <div className="bg-gray-800 p-4 rounded mb-4 border-2 border-blue-400">
-          <h4 className="font-bold text-lg text-white">{workout.mainLift.name}</h4>
-          <p className="text-gray-300">{workout.mainLift.sets} x {workout.mainLift.reps}</p>
-        </div>
+        {workout.mainLift && (
+          <div className="bg-gray-800 p-4 rounded border-2 border-blue-400">
+            <h4 className="font-bold text-lg text-white">{workout.mainLift.name}</h4>
+            <p className="text-gray-400">{workout.mainLift.sets} sets × {workout.mainLift.reps}</p>
+            <p className="text-sm text-gray-400">Rest: {workout.mainLift.rest}</p>
+          </div>
+        )}
       </div>
 
       {/* Accessories */}
       <div>
         <h3 className="text-orange-400 font-bold mb-2">🎯 Accessories</h3>
-        <div className="space-y-2">
-          {workout.accessories.map((exercise, index) => (
-            <div key={index} className="bg-gray-800 p-3 rounded">
-              {exercise.name} - {exercise.sets} x {exercise.reps}
+        {workout.accessories && workout.accessories.length > 0 ? (
+          workout.accessories.map((ex, i) => (
+            <div key={i} className="bg-gray-800 p-3 rounded mb-2">
+              {ex.name} - {ex.sets} × {ex.reps}
             </div>
-          ))}
-        </div>
+          ))
+        ) : (
+          <p className="text-gray-500">No accessories for this workout</p>
+        )}
       </div>
 
       {/* Cooldown */}
       <div>
-        <h3 className="text-purple-400 font-bold mb-2">🧘 Cool-down (5 min)</h3>
-        <div className="space-y-2">
-          {workout.cooldown.map((exercise, index) => (
-            <div key={index} className="bg-gray-800 p-3 rounded">
-              {exercise.name} - {exercise.duration || exercise.reps}
-            </div>
-          ))}
-        </div>
+        <h3 className="text-purple-400 font-bold mb-2">🧘 Cool-down</h3>
+        {workout.cooldown && workout.cooldown.map((ex, i) => (
+          <div key={i} className="bg-gray-800 p-2 rounded mb-1">
+            {ex.name} - {ex.duration || ex.reps}
+          </div>
+        ))}
       </div>
 
-      {/* Action Buttons */}
+      {/* Buttons */}
       <div className="flex gap-4">
         <button className="bg-green-600 px-6 py-3 rounded-lg text-white font-medium hover:bg-green-700 transition-colors">
           Start Workout
         </button>
-        <button 
-          onClick={() => setShowChat(true)} 
-          className="bg-gray-700 px-6 py-3 rounded-lg text-white font-medium hover:bg-gray-600 transition-colors"
-        >
+        <button onClick={() => setShowChat(true)} className="bg-gray-700 px-6 py-3 rounded-lg text-white font-medium hover:bg-gray-600 transition-colors">
           Modify Workout
         </button>
       </div>
@@ -396,7 +394,7 @@ export default function TodaysWorkout() {
           userId: user?.id
         })
       });
-      
+
       if (!response.ok) {
         throw new Error('Failed to generate workout');
       }
@@ -481,7 +479,7 @@ export default function TodaysWorkout() {
               suggestedType={suggestedType}
             />
           </div>
-
+          
           {/* Loading State */}
           {isGenerating && (
             <div className="flex flex-col items-center justify-center py-20">
