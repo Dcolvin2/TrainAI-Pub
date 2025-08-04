@@ -8,7 +8,7 @@ import TimeSelector from '../components/TimeSelector';
 import { supabase } from '@/lib/supabaseClient';
 import { useWorkoutStore, WorkoutProvider } from '@/lib/workoutStore';
 import { fetchNikeWorkout } from '@/lib/nikeWorkoutHelper';
-import { buildWorkoutByDay } from "@/lib/buildWorkoutByDay";
+// Removed buildWorkoutByDay import - now using new API
 import { getExerciseInstructions } from '@/lib/getExerciseInstructions';
 import { fetchInstructions } from '@/lib/fetchInstructions';
 import { isQuickEntry, parseQuickEntry } from '@/utils/parseQuickEntry';
@@ -19,10 +19,13 @@ import { getExerciseInstruction } from '@/lib/getExerciseInstruction';
 // DEV ONLY: Smoke test helper
 if (typeof window !== 'undefined') {
   (window as any).__showPlan = async (day = 'Monday') => {
-    const plan = await buildWorkoutByDay('test-user', day, 45);
+    const response = await fetch(`/api/generateWorkout?debugDay=${day.toLowerCase()}&durationMin=45`, {
+      headers: { 'x-user-id': 'test-user' }
+    });
+    const plan = await response.json();
     console.table([
-      ['Target (min)', day, plan.estimatedMinutes?.toFixed(1) || 'N/A'],
-      ...plan.accessories.map(a => ['accessory', a.name])
+      ['Target (min)', day, plan.duration || 'N/A'],
+      ...(plan.accessories || []).map((a: any) => ['accessory', a.name])
     ]);
     return plan;
   };
@@ -192,14 +195,27 @@ function TodaysWorkoutPageContent() {
                         "thursday","friday","saturday"];
       const today = dayNames[new Date().getDay()];
       
-      // Auto-generate today's workout
-      buildWorkoutByDay(user.id, today, timeAvailable).then(plan => {
+      // Use the new API instead of buildWorkoutByDay
+      fetch(`/api/generateWorkout?debugDay=${today}&durationMin=${timeAvailable}`, {
+        headers: {
+          'x-user-id': user.id
+        }
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(plan => {
+        console.log('[DEBUG] Generated workout plan:', plan);
+        
         const workoutData: WorkoutData = {
           planId: crypto.randomUUID(),
-          warmup: plan.warmupArr.map(ex => `${ex.name}: 1x5`),
-          workout: plan.coreLift ? [`${plan.coreLift.name}: 3x8`] : [],
-          cooldown: plan.cooldownArr.map(ex => `${ex.name}: 1x5`),
-          accessories: plan.accessories.map(a => `${a.name}: 3x10`),
+          warmup: plan.warmup?.map((ex: any) => `${ex.name}: ${ex.duration}`) || [],
+          workout: plan.main?.map((ex: any) => `${ex.name}: ${ex.sets}x${ex.reps}`) || [],
+          cooldown: plan.cooldown?.map((ex: any) => `${ex.name}: ${ex.duration}`) || [],
+          accessories: plan.accessories?.map((ex: any) => `${ex.name}: ${ex.sets}x${ex.reps}`) || [],
           prompt: `${today} Workout (${timeAvailable} min)`
         };
         
@@ -207,10 +223,28 @@ function TodaysWorkoutPageContent() {
         
         // Store current plan for chat interactions
         const planRows = [
-          ...plan.warmupArr.map(ex => ({ ...ex, exercise_phase: 'warmup' })),
-          ...(plan.coreLift ? [{ ...plan.coreLift, exercise_phase: 'core_lift' }] : []),
-          ...plan.accessories.map(ex => ({ ...ex, exercise_phase: 'accessory' })),
-          ...plan.cooldownArr.map(ex => ({ ...ex, exercise_phase: 'cooldown' }))
+          ...(plan.warmup || []).map((ex: any) => ({ 
+            name: ex.name, 
+            exercise_phase: 'warmup',
+            duration: ex.duration 
+          })),
+          ...(plan.main || []).map((ex: any) => ({ 
+            name: ex.name, 
+            exercise_phase: 'core_lift',
+            sets: ex.sets,
+            reps: ex.reps 
+          })),
+          ...(plan.accessories || []).map((ex: any) => ({ 
+            name: ex.name, 
+            exercise_phase: 'accessory',
+            sets: ex.sets,
+            reps: ex.reps 
+          })),
+          ...(plan.cooldown || []).map((ex: any) => ({ 
+            name: ex.name, 
+            exercise_phase: 'cooldown',
+            duration: ex.duration 
+          }))
         ];
         setCurrentPlan(planRows);
       }).catch(error => {
@@ -468,15 +502,24 @@ function TodaysWorkoutPageContent() {
       const minutes = minMatch ? parseInt(minMatch[1], 10) : timeAvailable;
 
       try {
-        const plan = await buildWorkoutByDay(user.id, day, minutes);
+        const response = await fetch(`/api/generateWorkout?debugDay=${day.toLowerCase()}&durationMin=${minutes}`, {
+          headers: { 'x-user-id': user.id }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const plan = await response.json();
+        console.log('[DEBUG] Generated workout plan:', plan);
         
         // Convert to WorkoutData format for the table
         const workoutData: WorkoutData = {
           planId: crypto.randomUUID(),
-          warmup: plan.warmupArr.map(ex => `${ex.name}: 1x5`),
-          workout: plan.coreLift ? [`${plan.coreLift.name}: 3x8`] : [],
-          cooldown: plan.cooldownArr.map(ex => `${ex.name}: 1x5`),
-          accessories: plan.accessories.map(a => `${a.name}: 3x10`),
+          warmup: plan.warmup?.map((ex: any) => `${ex.name}: ${ex.duration}`) || [],
+          workout: plan.main?.map((ex: any) => `${ex.name}: ${ex.sets}x${ex.reps}`) || [],
+          cooldown: plan.cooldown?.map((ex: any) => `${ex.name}: ${ex.duration}`) || [],
+          accessories: plan.accessories?.map((ex: any) => `${ex.name}: ${ex.sets}x${ex.reps}`) || [],
           prompt: `${day} Workout (${minutes} min)`
         };
         
@@ -484,10 +527,10 @@ function TodaysWorkoutPageContent() {
         
         const workoutText = 
           `**${day} Workout (${minutes} min)**\n\n` +
-          `*Warm-up*: ${plan.warmupArr.map(ex => ex.name).join(", ") || "—"}\n` +
-          (plan.coreLift ? `*Core Lift*: ${plan.coreLift.name}\n` : "") +
-          `*Accessories*: ${plan.accessories.map(a => a.name).join(", ") || "—"}\n` +
-          `*Cooldown*: ${plan.cooldownArr.map(ex => ex.name).join(", ") || "—"}`;
+          `*Warm-up*: ${(plan.warmup || []).map((ex: any) => ex.name).join(", ") || "—"}\n` +
+          (plan.main?.[0] ? `*Core Lift*: ${plan.main[0].name}\n` : "") +
+          `*Accessories*: ${(plan.accessories || []).map((ex: any) => ex.name).join(", ") || "—"}\n` +
+          `*Cooldown*: ${(plan.cooldown || []).map((ex: any) => ex.name).join(", ") || "—"}`;
 
         setChatMessages(prev => [
           ...prev,
@@ -496,10 +539,28 @@ function TodaysWorkoutPageContent() {
         
         // ── STORE CURRENT PLAN ──
         const planRows = [
-          ...plan.warmupArr.map(ex => ({ ...ex, exercise_phase: 'warmup' })),
-          ...(plan.coreLift ? [{ ...plan.coreLift, exercise_phase: 'core_lift' }] : []),
-          ...plan.accessories.map(ex => ({ ...ex, exercise_phase: 'accessory' })),
-          ...plan.cooldownArr.map(ex => ({ ...ex, exercise_phase: 'cooldown' }))
+          ...(plan.warmup || []).map((ex: any) => ({ 
+            name: ex.name, 
+            exercise_phase: 'warmup',
+            duration: ex.duration 
+          })),
+          ...(plan.main || []).map((ex: any) => ({ 
+            name: ex.name, 
+            exercise_phase: 'core_lift',
+            sets: ex.sets,
+            reps: ex.reps 
+          })),
+          ...(plan.accessories || []).map((ex: any) => ({ 
+            name: ex.name, 
+            exercise_phase: 'accessory',
+            sets: ex.sets,
+            reps: ex.reps 
+          })),
+          ...(plan.cooldown || []).map((ex: any) => ({ 
+            name: ex.name, 
+            exercise_phase: 'cooldown',
+            duration: ex.duration 
+          }))
         ];
         setCurrentPlan(planRows);
         setMessages(prev => [...prev, { role: 'assistant', content: workoutText }]);
