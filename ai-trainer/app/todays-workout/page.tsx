@@ -306,18 +306,25 @@ const WorkoutSummary = ({ workout, selectedType, timeAvailable, setShowChat }: {
         </div>
       </div>
 
-      {/* Main Work */}
+      {/* Main Lift */}
       <div>
-        <h3 className="text-blue-400 font-bold mb-2">💪 Main Work</h3>
-        <div className="bg-gray-800 p-4 rounded mb-2">
-          <h4 className="font-bold text-white">{workout.mainLift.name}</h4>
-          <p className="text-gray-400">{workout.mainLift.sets} x {workout.mainLift.reps}</p>
+        <h3 className="text-blue-400 font-bold mb-2">💪 Main Lift</h3>
+        <div className="bg-gray-800 p-4 rounded mb-4 border-2 border-blue-400">
+          <h4 className="font-bold text-lg text-white">{workout.mainLift.name}</h4>
+          <p className="text-gray-300">{workout.mainLift.sets} x {workout.mainLift.reps}</p>
         </div>
-        {workout.accessories.map((exercise, index) => (
-          <div key={index} className="bg-gray-800 p-3 rounded mb-2">
-            {exercise.name} - {exercise.sets} x {exercise.reps}
-          </div>
-        ))}
+      </div>
+
+      {/* Accessories */}
+      <div>
+        <h3 className="text-orange-400 font-bold mb-2">🎯 Accessories</h3>
+        <div className="space-y-2">
+          {workout.accessories.map((exercise, index) => (
+            <div key={index} className="bg-gray-800 p-3 rounded">
+              {exercise.name} - {exercise.sets} x {exercise.reps}
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Cooldown */}
