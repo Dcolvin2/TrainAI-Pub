@@ -40,6 +40,36 @@ interface WorkoutTypeSelectorProps {
   suggestedType: string | null;
 }
 
+interface TimeSelectorProps {
+  timeAvailable: number;
+  onTimeChange: (time: number) => void;
+}
+
+// Time Selector Component
+const TimeSelector = ({ timeAvailable, onTimeChange }: TimeSelectorProps) => {
+  return (
+    <div className="bg-gray-900 rounded-lg p-6 mb-8">
+      <label className="flex items-center justify-between mb-4">
+        <span className="text-lg font-medium text-white">Time Available</span>
+        <span className="text-2xl font-bold text-green-400">{timeAvailable} minutes</span>
+      </label>
+      <div className="grid grid-cols-4 gap-4">
+        {[15, 30, 45, 60].map(time => (
+          <button
+            key={time}
+            onClick={() => onTimeChange(time)}
+            className={`p-4 rounded-lg font-bold text-white transition-colors ${
+              timeAvailable === time ? 'bg-green-600' : 'bg-gray-800 hover:bg-gray-700'
+            }`}
+          >
+            {time} min
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 // Workout Type Selector Component
 const WorkoutTypeSelector = ({ onSelect, timeAvailable, suggestedType }: WorkoutTypeSelectorProps) => {
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
@@ -315,6 +345,10 @@ export default function TodaysWorkout() {
     console.log('Starting workout...');
   };
 
+  const handleTimeChange = (time: number) => {
+    setTimeAvailable(time);
+  };
+
   // Redirect if not authenticated
   if (!user) {
     return (
@@ -350,26 +384,10 @@ export default function TodaysWorkout() {
           // Selection Screen
           <div className="max-w-3xl mx-auto">
             {/* Time Selector */}
-            <div className="bg-gray-900 rounded-lg p-6 mb-8">
-              <label className="flex items-center justify-between mb-4">
-                <span className="text-lg font-medium text-white">Time Available</span>
-                <span className="text-2xl font-bold text-green-400">{timeAvailable} minutes</span>
-              </label>
-              <input 
-                type="range" 
-                min="15" 
-                max="90" 
-                step="15"
-                value={timeAvailable}
-                onChange={(e) => setTimeAvailable(Number(e.target.value))}
-                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-              />
-              <div className="flex justify-between mt-2 text-sm text-gray-500">
-                <span>15 min</span>
-                <span>45 min</span>
-                <span>90 min</span>
-              </div>
-            </div>
+            <TimeSelector 
+              timeAvailable={timeAvailable}
+              onTimeChange={handleTimeChange}
+            />
 
             {/* Workout Type Selector */}
             <div className="bg-gray-900 rounded-lg p-6">
