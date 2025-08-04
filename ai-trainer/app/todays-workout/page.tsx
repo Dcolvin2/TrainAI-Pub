@@ -120,11 +120,12 @@ const WorkoutTypeSelector = ({ onSelect, timeAvailable, suggestedType }: Workout
   };
 
   const handleSelection = (selection: any) => {
+    console.log('Selected workout:', selection); // Add this
     onSelect({
       type: selection.id,
       id: selection.id,
       label: selection.label,
-      category: selection.category || 'split',
+      category: expandedCategory || 'split', // Make sure this is included
       timeAvailable: timeAvailable
     });
   };

@@ -92,7 +92,10 @@ const supabase = createClient(
 
 export async function POST(request: Request) {
   try {
-    const { type, timeMinutes, userId, category } = await request.json();
+    const body = await request.json();
+    console.log('Received workout request:', body); // See what's being sent
+    
+    const { type, category, timeMinutes, userId } = body;
     
     if (!type || !timeMinutes) {
       return Response.json(
@@ -105,10 +108,15 @@ export async function POST(request: Request) {
     let availableEquipment: string[] = [];
     if (userId) {
       try {
-        const { data: userEquipment } = await supabase
+        // Log equipment query
+        console.log('Fetching equipment for user:', userId);
+        const { data: userEquipment, error } = await supabase
           .from('user_equipment')
           .select('equipment_id, custom_name, equipment!inner(name)')
           .eq('user_id', userId);
+          
+        console.log('User equipment:', userEquipment);
+        console.log('Equipment error:', error);
         
         availableEquipment = userEquipment?.map((eq: any) => 
           eq.custom_name || eq.equipment.name
@@ -129,20 +137,20 @@ export async function POST(request: Request) {
     
     const counts = exerciseCounts[timeMinutes as keyof typeof exerciseCounts] || exerciseCounts[45];
     
-    // Generate the workout with equipment filtering
-    const workout = {
-      warmup: await generateWarmupExercisesWithEquipment(type, counts.warmup, availableEquipment),
-      mainLift: {
-        name: await getMainLiftForTypeWithEquipment(type, availableEquipment),
-        sets: counts.mainSets,
-        reps: "8-10",
-        rest: "2-3 min"
-      },
-      accessories: await generateAccessoryExercisesWithEquipment(type, counts.accessories, availableEquipment),
-      cooldown: await generateCooldownExercisesWithEquipment(type, counts.cooldown, availableEquipment)
-    };
+    // When generating exercises, log what's happening
+    console.log('Generating exercises for type:', type, 'category:', category);
     
-    return Response.json(workout);
+    // Return a simple test response first to verify connection
+    return Response.json({
+      debug: true,
+      receivedType: type,
+      receivedCategory: category,
+      userEquipmentCount: availableEquipment.length,
+      warmup: [{ name: 'Test Exercise', reps: '10' }],
+      mainLift: { name: `Test ${type} Main Lift`, sets: 3, reps: '10' },
+      accessories: [{ name: `Test ${type} Accessory`, sets: 3, reps: '12' }],
+      cooldown: [{ name: 'Test Cooldown', duration: '30s' }]
+    });
   } catch (error) {
     console.error('Error generating workout:', error);
     return Response.json(
