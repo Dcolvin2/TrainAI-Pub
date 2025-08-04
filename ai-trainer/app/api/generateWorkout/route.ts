@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { buildClaudePrompt } from "@/lib/claudeWorkoutPrompt";
 import { chatClaude } from "@/lib/claudeClient";
 import { coreByDay, muscleMap, dayStringMap } from "@/lib/coreMap";
+import { getAccessoryExercises } from "@/lib/getAccessoryExercises";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -74,19 +75,28 @@ export async function GET(req: NextRequest) {
     .eq("user_id", userId);
   const equipment = (eqRows ?? []).map((r: any) => r.equipment.name);
 
-  /* 3️⃣ build Claude prompt & call */
+  /* 3️⃣ get accessory exercises from database */
+  const muscleTargets = muscleMap[coreLift] || [];
+  const accessoryExercises = await getAccessoryExercises(
+    muscleTargets,
+    equipment,
+    [coreLift] // Exclude the core lift from accessory options
+  );
+
+  /* 4️⃣ build Claude prompt & call */
   const prompt = buildClaudePrompt({
     day: ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][weekday],
     coreLift,
-    muscleTargets: muscleMap[coreLift] || [],
+    muscleTargets,
     duration: mins,
-    equipment
+    equipment,
+    accessoryExercises
   });
 
   try {
     const rawJson = await chatClaude(prompt);
 
-    /* 4️⃣ parse + basic sanity check */
+    /* 5️⃣ parse + basic sanity check */
     let plan;
     try { 
       plan = JSON.parse(rawJson); 
@@ -101,7 +111,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "No core lift" }, { status: 502 });
     }
 
-    /* 5️⃣ add duration and focus */
+    /* 6️⃣ add duration and focus */
     plan.duration = mins;
     plan.focus = muscleMap[coreLift]?.[0] || "strength";
 
