@@ -32,6 +32,7 @@ interface WorkoutSelection {
   type: string;
   id: string;
   label: string;
+  category?: string;
   timeAvailable: number;
 }
 
@@ -123,6 +124,7 @@ const WorkoutTypeSelector = ({ onSelect, timeAvailable, suggestedType }: Workout
       type: selection.id,
       id: selection.id,
       label: selection.label,
+      category: selection.category || 'split',
       timeAvailable: timeAvailable
     });
   };
@@ -380,21 +382,25 @@ export default function TodaysWorkout() {
     }
   };
 
-  const handleWorkoutSelect = async (selection: WorkoutSelection) => {
+    const handleWorkoutSelect = async (selection: WorkoutSelection) => {
+    // Clear previous workout for ANY selection (not just popular ones)
+    setGeneratedWorkout(null);
     setSelectedType(selection);
     setIsGenerating(true);
     
     try {
+      // This should fire for muscle groups and specific focus too
       const response = await fetch('/api/generate-workout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          type: selection.id,
+          type: selection.id,        // This should be 'chest', 'biceps', etc.
+          category: selection.category, // Add this - tells if it's 'muscle_group' or 'specific_focus'
           timeMinutes: timeAvailable,
           userId: user?.id
         })
       });
-
+      
       if (!response.ok) {
         throw new Error('Failed to generate workout');
       }

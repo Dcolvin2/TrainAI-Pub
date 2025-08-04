@@ -83,15 +83,40 @@ function generateCooldownExercises(type: string, count: number): any[] {
   }));
 }
 
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
 export async function POST(request: Request) {
   try {
-    const { type, timeMinutes, userId } = await request.json();
+    const { type, timeMinutes, userId, category } = await request.json();
     
     if (!type || !timeMinutes) {
       return Response.json(
         { error: 'Missing required fields: type and timeMinutes' },
         { status: 400 }
       );
+    }
+
+    // Get user's available equipment
+    let availableEquipment: string[] = [];
+    if (userId) {
+      try {
+        const { data: userEquipment } = await supabase
+          .from('user_equipment')
+          .select('equipment_id, custom_name, equipment!inner(name)')
+          .eq('user_id', userId);
+        
+        availableEquipment = userEquipment?.map((eq: any) => 
+          eq.custom_name || eq.equipment.name
+        ) || [];
+      } catch (error) {
+        console.error('Error fetching user equipment:', error);
+        // Continue without equipment filtering if there's an error
+      }
     }
 
     // Time-based exercise counts
@@ -104,17 +129,17 @@ export async function POST(request: Request) {
     
     const counts = exerciseCounts[timeMinutes as keyof typeof exerciseCounts] || exerciseCounts[45];
     
-    // Generate the workout
+    // Generate the workout with equipment filtering
     const workout = {
-      warmup: generateWarmupExercises(type, counts.warmup),
+      warmup: await generateWarmupExercisesWithEquipment(type, counts.warmup, availableEquipment),
       mainLift: {
-        name: getMainLiftForType(type),
+        name: await getMainLiftForTypeWithEquipment(type, availableEquipment),
         sets: counts.mainSets,
         reps: "8-10",
         rest: "2-3 min"
       },
-      accessories: generateAccessoryExercises(type, counts.accessories),
-      cooldown: generateCooldownExercises(type, counts.cooldown)
+      accessories: await generateAccessoryExercisesWithEquipment(type, counts.accessories, availableEquipment),
+      cooldown: await generateCooldownExercisesWithEquipment(type, counts.cooldown, availableEquipment)
     };
     
     return Response.json(workout);
@@ -125,4 +150,61 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+}
+
+// Equipment-aware helper functions
+async function getExercisesForTypeWithEquipment(exerciseType: string, count: number, availableEquipment: string[]): Promise<any[]> {
+  try {
+    const { data: exercises } = await supabase
+      .from('exercises')
+      .select('*')
+      .contains('target_muscles', [exerciseType])
+      .or(`equipment_required.is.null,equipment_required.ov.{${availableEquipment.join(',')}}`);
+    
+    if (!exercises) return [];
+    
+    // Filter out exercises requiring equipment user doesn't have
+    const validExercises = exercises.filter((ex: any) => {
+      if (!ex.equipment_required || ex.equipment_required.length === 0) return true;
+      return ex.equipment_required.every((req: string) => availableEquipment.includes(req));
+    });
+    
+    // Shuffle and return requested count
+    const shuffled = validExercises.sort(() => 0.5 - Math.random());
+    return shuffled.slice(0, count);
+  } catch (error) {
+    console.error('Error fetching exercises:', error);
+    // Fallback to database exercises
+    return getRandomExercises(exerciseDatabase[exerciseType as keyof typeof exerciseDatabase]?.mainLifts || ['Bench Press'], count);
+  }
+}
+
+async function getMainLiftForTypeWithEquipment(type: string, availableEquipment: string[]): Promise<string> {
+  const exercises = await getExercisesForTypeWithEquipment(type, 1, availableEquipment);
+  return exercises.length > 0 ? (exercises[0] as any).name : getMainLiftForType(type);
+}
+
+async function generateWarmupExercisesWithEquipment(type: string, count: number, availableEquipment: string[]): Promise<any[]> {
+  const exercises = await getExercisesForTypeWithEquipment(type, count, availableEquipment);
+  return exercises.map(ex => ({
+    name: ex.name,
+    reps: Math.random() > 0.5 ? '10 each side' : '30 seconds'
+  }));
+}
+
+async function generateAccessoryExercisesWithEquipment(type: string, count: number, availableEquipment: string[]): Promise<any[]> {
+  const exercises = await getExercisesForTypeWithEquipment(type, count, availableEquipment);
+  return exercises.map(ex => ({
+    name: ex.name,
+    sets: 3,
+    reps: Math.random() > 0.5 ? '12-15' : '10-12'
+  }));
+}
+
+async function generateCooldownExercisesWithEquipment(type: string, count: number, availableEquipment: string[]): Promise<any[]> {
+  const exercises = await getExercisesForTypeWithEquipment(type, count, availableEquipment);
+  return exercises.map(ex => ({
+    name: ex.name,
+    duration: '30 seconds each side'
+  }));
 } 
