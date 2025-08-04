@@ -84,6 +84,8 @@ function generateCooldownExercises(type: string, count: number): any[] {
 }
 
 import { createClient } from '@supabase/supabase-js';
+import { buildCoreLiftPool } from '@/lib/buildCoreLiftPool';
+import { getUserEquipment } from '@/lib/getUserEquipment';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -105,26 +107,16 @@ export async function POST(request: Request) {
     }
 
     // Get user's available equipment
-    let availableEquipment: string[] = [];
-    if (userId) {
-      try {
-        // Log equipment query
-        console.log('Fetching equipment for user:', userId);
-        const { data: userEquipment, error } = await supabase
-          .from('user_equipment')
-          .select('equipment_id, custom_name, equipment!inner(name)')
-          .eq('user_id', userId);
-          
-        console.log('User equipment:', userEquipment);
-        console.log('Equipment error:', error);
-        
-        availableEquipment = userEquipment?.map((eq: any) => 
-          eq.custom_name || eq.equipment.name
-        ) || [];
-      } catch (error) {
-        console.error('Error fetching user equipment:', error);
-        // Continue without equipment filtering if there's an error
-      }
+    const userEquip = await getUserEquipment(userId);
+    console.log('User equipment:', userEquip);
+
+    // Build core lift pool
+    const coreLiftPool = await buildCoreLiftPool(type, userEquip);
+    console.log('Core lift pool:', coreLiftPool);
+
+    // Fallback to push-up if no core lifts found
+    if (!coreLiftPool.length) {
+      coreLiftPool.push({ name: 'Push-up', equipment_required: [] });
     }
 
     // Time-based exercise counts
@@ -137,20 +129,30 @@ export async function POST(request: Request) {
     
     const counts = exerciseCounts[timeMinutes as keyof typeof exerciseCounts] || exerciseCounts[45];
     
-    // When generating exercises, log what's happening
-    console.log('Generating exercises for type:', type, 'category:', category);
+    // Generate the workout
+    const selectedCoreLift = coreLiftPool[Math.floor(Math.random() * coreLiftPool.length)];
     
-    // Return a simple test response first to verify connection
-    return Response.json({
-      debug: true,
-      receivedType: type,
-      receivedCategory: category,
-      userEquipmentCount: availableEquipment.length,
-      warmup: [{ name: 'Test Exercise', reps: '10' }],
-      mainLift: { name: `Test ${type} Main Lift`, sets: 3, reps: '10' },
-      accessories: [{ name: `Test ${type} Accessory`, sets: 3, reps: '12' }],
-      cooldown: [{ name: 'Test Cooldown', duration: '30s' }]
+    const workout = {
+      warmup: generateWarmupExercises(type, counts.warmup),
+      mainLift: { 
+        name: selectedCoreLift.name, 
+        sets: counts.mainSets, 
+        reps: "8-10", 
+        rest: "2-3 min" 
+      },
+      accessories: generateAccessoryExercises(type, counts.accessories),
+      cooldown: generateCooldownExercises(type, counts.cooldown)
+    };
+
+    console.table({ 
+      focus: type, 
+      minutes: timeMinutes, 
+      equipment: userEquip, 
+      coreLiftCandidates: coreLiftPool.map(lift => lift.name), 
+      accessoriesPool: workout.accessories.map(acc => acc.name) 
     });
+
+    return Response.json(workout);
   } catch (error) {
     console.error('Error generating workout:', error);
     return Response.json(
