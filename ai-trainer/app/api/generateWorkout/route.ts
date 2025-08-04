@@ -36,8 +36,13 @@ export async function GET(req: NextRequest) {
     weekday = new Date().getDay();
   }
 
+  console.log("[DEBUG] Weekday:", weekday);
+  console.log("[DEBUG] Day name:", ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][weekday]);
+
   /* 1️⃣ determine core lift */
   const coreLift = coreByDay[weekday];
+  console.log("[DEBUG] Core lift:", coreLift);
+  
   if (!coreLift) return NextResponse.json({ error: "No plan for that day" }, { status: 400 });
 
   /* Handle rest/cardio/hiit days */
@@ -74,14 +79,20 @@ export async function GET(req: NextRequest) {
     .select("equipment!inner(name)")
     .eq("user_id", userId);
   const equipment = (eqRows ?? []).map((r: any) => r.equipment.name);
+  console.log("[DEBUG] User equipment:", equipment);
 
   /* 3️⃣ get accessory exercises from database */
   const muscleTargets = muscleMap[coreLift] || [];
+  console.log("[DEBUG] Muscle targets:", muscleTargets);
+  console.log("[DEBUG] Available muscle mappings:", Object.keys(muscleMap));
+  
   const accessoryExercises = await getAccessoryExercises(
     muscleTargets,
     equipment,
     [coreLift] // Exclude the core lift from accessory options
   );
+  console.log("[DEBUG] Found accessory exercises:", accessoryExercises.length);
+  console.log("[DEBUG] Accessory exercise names:", accessoryExercises.map(ex => ex.name));
 
   /* 4️⃣ build Claude prompt & call */
   const prompt = buildClaudePrompt({
@@ -92,6 +103,8 @@ export async function GET(req: NextRequest) {
     equipment,
     accessoryExercises
   });
+
+  console.log("[DEBUG] Claude prompt length:", prompt.length);
 
   try {
     const rawJson = await chatClaude(prompt);
@@ -110,6 +123,8 @@ export async function GET(req: NextRequest) {
       console.error('No core lift in Claude response:', plan);
       return NextResponse.json({ error: "No core lift" }, { status: 502 });
     }
+
+    console.log("[DEBUG] Final plan accessories:", plan.accessories?.map((a: any) => a.name));
 
     /* 6️⃣ add duration and focus */
     plan.duration = mins;

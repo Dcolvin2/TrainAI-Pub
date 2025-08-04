@@ -20,6 +20,11 @@ export async function getAccessoryExercises(
   excludeExercises: string[] = []
 ): Promise<AccessoryExercise[]> {
   
+  console.log("[DEBUG] getAccessoryExercises called with:");
+  console.log("[DEBUG] - muscleTargets:", muscleTargets);
+  console.log("[DEBUG] - equipment:", equipment);
+  console.log("[DEBUG] - excludeExercises:", excludeExercises);
+  
   // Build muscle filter - target the primary muscles and common synergists
   const muscleMap: Record<string, string[]> = {
     'quads': ['quads', 'glutes', 'hamstrings'],
@@ -39,6 +44,8 @@ export async function getAccessoryExercises(
   const targetMuscles = muscleTargets.flatMap(target => 
     muscleMap[target.toLowerCase()] || [target.toLowerCase()]
   );
+  
+  console.log("[DEBUG] - targetMuscles:", targetMuscles);
 
   // Query exercises that match our criteria - broader search for better options
   const { data, error } = await supabase
@@ -47,6 +54,11 @@ export async function getAccessoryExercises(
     .in('exercise_phase', ['accessory', 'main'])
     .not('category', 'in', '("hiit", "mobility", "endurance")')
     .or(`primary_muscle.in.(${targetMuscles.map(m => `"${m}"`).join(',')})`);
+
+  console.log("[DEBUG] Database query result:");
+  console.log("[DEBUG] - error:", error);
+  console.log("[DEBUG] - data count:", data?.length || 0);
+  console.log("[DEBUG] - sample data:", data?.slice(0, 3).map(ex => ({ name: ex.name, muscle: ex.primary_muscle, category: ex.category })));
 
   if (error) {
     console.error('Error fetching accessory exercises:', error);
@@ -73,6 +85,9 @@ export async function getAccessoryExercises(
     const requiredEquipment = exercise.equipment_required;
     return requiredEquipment.every((req: string) => equipment.includes(req));
   });
+
+  console.log("[DEBUG] After equipment filtering:", availableExercises.length);
+  console.log("[DEBUG] - sample available:", availableExercises.slice(0, 3).map(ex => ({ name: ex.name, muscle: ex.primary_muscle, category: ex.category })));
 
   // Enhanced sorting for better variety and progression
   const sortedExercises = availableExercises.sort((a, b) => {
@@ -117,5 +132,13 @@ export async function getAccessoryExercises(
     )
   ).slice(0, 12);
 
-  return [...primaryMatches, ...secondaryMatches];
+  const finalResult = [...primaryMatches, ...secondaryMatches];
+  
+  console.log("[DEBUG] Final result:");
+  console.log("[DEBUG] - primary matches:", primaryMatches.length);
+  console.log("[DEBUG] - secondary matches:", secondaryMatches.length);
+  console.log("[DEBUG] - total exercises:", finalResult.length);
+  console.log("[DEBUG] - exercise names:", finalResult.map(ex => ex.name));
+
+  return finalResult;
 } 
