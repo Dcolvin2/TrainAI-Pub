@@ -35,30 +35,7 @@ interface GeneratedWorkout {
   focus: string;
 }
 
-interface WorkoutOptions {
-  timeLimit?: number;
-  exerciseCount?: number;
-}
-
-export async function generateWorkout(workoutType: WorkoutType, timeMinutes: number, userId: string): Promise<GeneratedWorkout> {
-  const generator = new DynamicWorkoutGenerator();
-  
-  // Adjust exercise count based on time
-  const exerciseCount = Math.floor(timeMinutes / 8); // ~8 min per exercise
-  
-  const workout = await generator.generateWorkoutForType(
-    workoutType,
-    userId,
-    {
-      timeLimit: timeMinutes,
-      exerciseCount: exerciseCount
-    }
-  );
-  
-  return workout;
-}
-
-export async function generateWorkoutForType(workoutType: WorkoutType, userId: string, options?: WorkoutOptions): Promise<GeneratedWorkout> {
+export async function generateWorkoutForType(workoutType: WorkoutType, userId: string): Promise<GeneratedWorkout> {
   // Get user equipment
   const equipment = await getUserEquipment(userId);
   
@@ -69,10 +46,10 @@ export async function generateWorkoutForType(workoutType: WorkoutType, userId: s
   return {
     type: workoutType,
     warmup: selectWarmupExercises(workoutType),
-    mainExercises: selectMainExercises(exercises, workoutType, options),
-    accessories: selectAccessories(exercises, workoutType, options),
+    mainExercises: selectMainExercises(exercises, workoutType),
+    accessories: selectAccessories(exercises, workoutType),
     cooldown: selectCooldown(workoutType),
-    duration: options?.timeLimit || 45,
+    duration: 45, // Default duration
     focus: workoutType.target_muscles[0] || 'strength'
   };
 }
@@ -139,7 +116,7 @@ function selectWarmupExercises(workoutType: WorkoutType): any[] {
   return warmupExercises;
 }
 
-function selectMainExercises(exercises: Exercise[], workoutType: WorkoutType, options?: WorkoutOptions): any[] {
+function selectMainExercises(exercises: Exercise[], workoutType: WorkoutType): any[] {
   const mainExercises: any[] = [];
   
   // Select 1-2 main compound movements
@@ -162,9 +139,8 @@ function selectMainExercises(exercises: Exercise[], workoutType: WorkoutType, op
     return 0;
   });
 
-  // Select exercises based on time limit
-  const maxExercises = options?.exerciseCount ? Math.min(2, options.exerciseCount) : 2;
-  const selectedExercises = prioritizedExercises.slice(0, maxExercises);
+  // Select top 1-2 exercises
+  const selectedExercises = prioritizedExercises.slice(0, 2);
   
   selectedExercises.forEach(exercise => {
     mainExercises.push({
@@ -179,7 +155,7 @@ function selectMainExercises(exercises: Exercise[], workoutType: WorkoutType, op
   return mainExercises;
 }
 
-function selectAccessories(exercises: Exercise[], workoutType: WorkoutType, options?: WorkoutOptions): any[] {
+function selectAccessories(exercises: Exercise[], workoutType: WorkoutType): any[] {
   const accessories: any[] = [];
   
   // Select 2-4 accessory exercises
@@ -202,9 +178,8 @@ function selectAccessories(exercises: Exercise[], workoutType: WorkoutType, opti
     return 0;
   });
 
-  // Select accessories based on time limit
-  const maxAccessories = options?.exerciseCount ? Math.max(2, options.exerciseCount - 2) : 4;
-  const selectedAccessories = prioritizedAccessories.slice(0, maxAccessories);
+  // Select top 3-4 accessories
+  const selectedAccessories = prioritizedAccessories.slice(0, 4);
   
   selectedAccessories.forEach(exercise => {
     accessories.push({
@@ -269,12 +244,5 @@ export async function getWorkoutSuggestions(userId: string) {
   } catch (error) {
     console.error('Error getting workout suggestions:', error);
     return null;
-  }
-}
-
-// DynamicWorkoutGenerator class (simplified for this implementation)
-class DynamicWorkoutGenerator {
-  async generateWorkoutForType(workoutType: WorkoutType, userId: string, options?: WorkoutOptions): Promise<GeneratedWorkout> {
-    return generateWorkoutForType(workoutType, userId, options);
   }
 } 
