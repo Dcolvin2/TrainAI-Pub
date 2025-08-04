@@ -11,136 +11,150 @@ const supabase = createClient(
 );
 
 export async function GET(req: NextRequest) {
-  const userId = req.headers.get("x-user-id");
-  if (!userId) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  try {
+    const userId = req.headers.get("x-user-id");
+    if (!userId) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
 
-  const mins = Number(req.nextUrl.searchParams.get("durationMin") ?? "45");
-  const debugDay = req.nextUrl.searchParams.get("debugDay");
-  
-  // Handle both numeric and string day parameters
-  let weekday: number;
-  if (debugDay) {
-    const dayLower = debugDay.toLowerCase();
-    if (dayStringMap[dayLower]) {
-      weekday = dayStringMap[dayLower];
-    } else {
-      const numericDay = Number(debugDay);
-      if (isNaN(numericDay) || numericDay < 0 || numericDay > 6) {
-        return NextResponse.json({ 
-          error: "Invalid day parameter. Use 0-6 or day names like 'monday', 'mon', etc." 
-        }, { status: 400 });
-      }
-      weekday = numericDay;
-    }
-  } else {
-    weekday = new Date().getDay();
-  }
-
-  console.log("[DEBUG] Weekday:", weekday);
-  console.log("[DEBUG] Day name:", ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][weekday]);
-
-  /* 1️⃣ determine core lift */
-  const coreLift = coreByDay[weekday];
-  console.log("[DEBUG] Core lift:", coreLift);
-  
-  if (!coreLift) return NextResponse.json({ error: "No plan for that day" }, { status: 400 });
-
-  /* Handle rest/cardio/hiit days */
-  if (coreLift === "Rest") return NextResponse.json({ rest: true });
-  if (["Cardio", "HIIT"].includes(coreLift)) {
-    return NextResponse.json({
-      focus: coreLift.toLowerCase(),
-      duration: mins,
-      warmup: [
-        { name: "Light Cardio", duration: "2 min" },
-        { name: "Dynamic Stretches", duration: "2 min" },
-        { name: "Movement Prep", duration: "1 min" }
-      ],
-      main: [
-        {
-          name: coreLift === "HIIT" ? "Burpees / Jump Circuit" : "Moderate Cardio",
-          sets: coreLift === "HIIT" ? 6 : 1,
-          reps: coreLift === "HIIT" ? "40 sec on / 20 sec off" : `${mins - 7} min`,
-          duration: "–"
+    const mins = Number(req.nextUrl.searchParams.get("durationMin") ?? "45");
+    const debugDay = req.nextUrl.searchParams.get("debugDay");
+    
+    console.log("[DEBUG] API called with:", { userId, mins, debugDay });
+    
+    // Handle both numeric and string day parameters
+    let weekday: number;
+    if (debugDay) {
+      const dayLower = debugDay.toLowerCase();
+      if (dayStringMap[dayLower]) {
+        weekday = dayStringMap[dayLower];
+      } else {
+        const numericDay = Number(debugDay);
+        if (isNaN(numericDay) || numericDay < 0 || numericDay > 6) {
+          return NextResponse.json({ 
+            error: "Invalid day parameter. Use 0-6 or day names like 'monday', 'mon', etc." 
+          }, { status: 400 });
         }
-      ],
-      accessories: [],
-      cooldown: [
-        { name: "Light Stretching", duration: "2 min" },
-        { name: "Deep Breathing", duration: "1 min" },
-        { name: "Cool Down Walk", duration: "1 min" }
-      ]
-    });
-  }
+        weekday = numericDay;
+      }
+    } else {
+      weekday = new Date().getDay();
+    }
 
-  /* 2️⃣ pull user equipment */
-  const { data: eqRows } = await supabase
-    .from("user_equipment")
-    .select("equipment!inner(name)")
-    .eq("user_id", userId);
-  const equipment = (eqRows ?? []).map((r: any) => r.equipment.name);
-  console.log("[DEBUG] User equipment:", equipment);
+    console.log("[DEBUG] Weekday:", weekday);
+    console.log("[DEBUG] Day name:", ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][weekday]);
 
-  /* 3️⃣ get accessory exercises from database */
-  const muscleTargets = muscleMap[coreLift] || [];
-  console.log("[DEBUG] Muscle targets:", muscleTargets);
-  console.log("[DEBUG] Available muscle mappings:", Object.keys(muscleMap));
-  
-  let accessoryExercises: any[] = [];
-  try {
-    accessoryExercises = await getAccessoryExercises(
-      muscleTargets,
-      equipment,
-      [coreLift] // Exclude the core lift from accessory options
-    );
-    console.log("[DEBUG] Found accessory exercises:", accessoryExercises.length);
-    console.log("[DEBUG] Accessory exercise names:", accessoryExercises.map(ex => ex.name));
-  } catch (error) {
-    console.error("[DEBUG] Error fetching accessory exercises:", error);
-    // Continue with empty accessory exercises if database fails
-    accessoryExercises = [];
-  }
+    /* 1️⃣ determine core lift */
+    const coreLift = coreByDay[weekday];
+    console.log("[DEBUG] Core lift:", coreLift);
+    
+    if (!coreLift) return NextResponse.json({ error: "No plan for that day" }, { status: 400 });
 
-  /* 4️⃣ build Claude prompt & call */
-  const prompt = buildClaudePrompt({
-    day: ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][weekday],
-    coreLift,
-    muscleTargets,
-    duration: mins,
-    equipment,
-    accessoryExercises
-  });
+    /* Handle rest/cardio/hiit days */
+    if (coreLift === "Rest") return NextResponse.json({ rest: true });
+    if (["Cardio", "HIIT"].includes(coreLift)) {
+      return NextResponse.json({
+        focus: coreLift.toLowerCase(),
+        duration: mins,
+        warmup: [
+          { name: "Light Cardio", duration: "2 min" },
+          { name: "Dynamic Stretches", duration: "2 min" },
+          { name: "Movement Prep", duration: "1 min" }
+        ],
+        main: [
+          {
+            name: coreLift === "HIIT" ? "Burpees / Jump Circuit" : "Moderate Cardio",
+            sets: coreLift === "HIIT" ? 6 : 1,
+            reps: coreLift === "HIIT" ? "40 sec on / 20 sec off" : `${mins - 7} min`,
+            duration: "–"
+          }
+        ],
+        accessories: [],
+        cooldown: [
+          { name: "Light Stretching", duration: "2 min" },
+          { name: "Deep Breathing", duration: "1 min" },
+          { name: "Cool Down Walk", duration: "1 min" }
+        ]
+      });
+    }
 
-  console.log("[DEBUG] Claude prompt length:", prompt.length);
-
-  try {
-    const rawJson = await chatClaude(prompt);
-
-    /* 5️⃣ parse + basic sanity check */
-    let plan;
-    try { 
-      plan = JSON.parse(rawJson); 
+    /* 2️⃣ pull user equipment */
+    let equipment: string[] = [];
+    try {
+      const { data: eqRows } = await supabase
+        .from("user_equipment")
+        .select("equipment!inner(name)")
+        .eq("user_id", userId);
+      equipment = (eqRows ?? []).map((r: any) => r.equipment.name);
+      console.log("[DEBUG] User equipment:", equipment);
     } catch (error) {
-      console.error('Claude JSON parse error:', error);
-      console.error('Raw response:', rawJson);
-      return NextResponse.json({ error: "Claude JSON invalid" }, { status: 502 });
+      console.error("[DEBUG] Error fetching equipment:", error);
+      // Continue with empty equipment array
+      equipment = [];
     }
 
-    if (!plan?.main?.[0]?.name) {
-      console.error('No core lift in Claude response:', plan);
-      return NextResponse.json({ error: "No core lift" }, { status: 502 });
+    /* 3️⃣ get accessory exercises from database */
+    const muscleTargets = muscleMap[coreLift] || [];
+    console.log("[DEBUG] Muscle targets:", muscleTargets);
+    console.log("[DEBUG] Available muscle mappings:", Object.keys(muscleMap));
+    
+    let accessoryExercises: any[] = [];
+    try {
+      accessoryExercises = await getAccessoryExercises(
+        muscleTargets,
+        equipment,
+        [coreLift] // Exclude the core lift from accessory options
+      );
+      console.log("[DEBUG] Found accessory exercises:", accessoryExercises.length);
+      console.log("[DEBUG] Accessory exercise names:", accessoryExercises.map(ex => ex.name));
+    } catch (error) {
+      console.error("[DEBUG] Error fetching accessory exercises:", error);
+      // Continue with empty accessory exercises if database fails
+      accessoryExercises = [];
     }
 
-    console.log("[DEBUG] Final plan accessories:", plan.accessories?.map((a: any) => a.name));
+    /* 4️⃣ build Claude prompt & call */
+    const prompt = buildClaudePrompt({
+      day: ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][weekday],
+      coreLift,
+      muscleTargets,
+      duration: mins,
+      equipment,
+      accessoryExercises
+    });
 
-    /* 6️⃣ add duration and focus */
-    plan.duration = mins;
-    plan.focus = muscleMap[coreLift]?.[0] || "strength";
+    console.log("[DEBUG] Claude prompt length:", prompt.length);
 
-    return NextResponse.json(plan);
+    try {
+      const rawJson = await chatClaude(prompt);
 
+      /* 5️⃣ parse + basic sanity check */
+      let plan;
+      try { 
+        plan = JSON.parse(rawJson); 
+      } catch (error) {
+        console.error('Claude JSON parse error:', error);
+        console.error('Raw response:', rawJson);
+        return NextResponse.json({ error: "Claude JSON invalid" }, { status: 502 });
+      }
+
+      if (!plan?.main?.[0]?.name) {
+        console.error('No core lift in Claude response:', plan);
+        return NextResponse.json({ error: "No core lift" }, { status: 502 });
+      }
+
+      console.log("[DEBUG] Final plan accessories:", plan.accessories?.map((a: any) => a.name));
+
+      /* 6️⃣ add duration and focus */
+      plan.duration = mins;
+      plan.focus = muscleMap[coreLift]?.[0] || "strength";
+
+      return NextResponse.json(plan);
+
+    } catch (error) {
+      console.error('Claude API error:', error);
+      return NextResponse.json({ error: "Claude API error" }, { status: 502 });
+    }
   } catch (error) {
-    console.error('Claude API error:', error);
-    return NextResponse.json({ error: "Claude API error" }, { status: 502 });
+    console.error('[DEBUG] Unexpected error in API:', error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 } 
