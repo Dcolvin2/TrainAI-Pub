@@ -1,10 +1,9 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { generateWorkoutForType, getWorkoutSuggestions, saveWorkout } from '@/lib/workoutGenerator';
-import { WorkoutChat } from '@/app/components/WorkoutChat';
 
 // Simple icon components
 const ChevronRight = ({ className, ...props }: any) => (
@@ -27,9 +26,6 @@ const MessageSquare = ({ className, ...props }: any) => (
 );
 const X = ({ className, ...props }: any) => (
   <span className={className} {...props}>✕</span>
-);
-const Send = ({ className, ...props }: any) => (
-  <span className={className} {...props}>💬</span>
 );
 
 interface WorkoutSelection {
@@ -230,75 +226,44 @@ const ChatPanel = ({ workout, onClose, onUpdate }: ChatPanelProps) => {
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
 
   const handleSendMessage = async (message: string) => {
+    if (!workout.sessionId) {
+      console.error('No session ID available for workout modification');
+      return;
+    }
+
     setIsLoading(true);
     
     try {
-      if (!workout?.sessionId) {
-        // No session ID - use workoutChat API for general chat
-        console.log('No session ID, using general chat...');
-        
-        const response = await fetch('/api/workoutChat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            messages: [...messages, { role: 'user', content: message }]
-          })
-        });
-        
-        if (!response.ok) {
-          throw new Error('Failed to get response');
-        }
-        
-        const data = await response.json();
-        
-        setMessages(prev => [...prev, { 
-          role: 'assistant', 
-          content: data.response
-        }]);
-      } else {
-        // Has session ID - modify existing workout
-        console.log('Modifying existing workout with session ID:', workout.sessionId);
-        
-        const response = await fetch('/api/modify-workout', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            modification: message,
-            sessionId: workout.sessionId
-          })
-        });
-        
-        if (!response.ok) {
-          throw new Error('Failed to modify workout');
-        }
-        
-        const modifiedWorkout = await response.json();
-        
-        // Update the workout state
-        onUpdate(modifiedWorkout);
-        
-        // Add success message
-        setMessages(prev => [...prev, { 
-          role: 'assistant', 
-          content: `✅ Workout updated successfully! I've modified it according to your request: "${message}"` 
-        }]);
+      const response = await fetch('/api/modify-workout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          modification: message,
+          sessionId: workout.sessionId
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to modify workout');
       }
-    } catch (error) {
-      console.error('Error in chat:', error);
+      
+      const modifiedWorkout = await response.json();
+      
+      // Update the workout state
+      onUpdate(modifiedWorkout);
+      
+      // Add success message
       setMessages(prev => [...prev, { 
         role: 'assistant', 
-        content: '❌ Sorry, I had trouble with that request. Please try again.' 
+        content: `✅ Workout updated successfully! I've modified it according to your request: "${message}"` 
+      }]);
+    } catch (error) {
+      console.error('Error modifying workout:', error);
+      setMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: '❌ Sorry, I had trouble modifying your workout. Please try again.' 
       }]);
     } finally {
       setIsLoading(false);
@@ -312,14 +277,14 @@ const ChatPanel = ({ workout, onClose, onUpdate }: ChatPanelProps) => {
     setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
     setInput('');
     
-    // Call the chat API
+    // Call the modify workout API
     handleSendMessage(userMessage);
   };
 
   return (
     <div className="fixed right-0 top-0 h-full w-96 bg-gray-900 shadow-2xl z-50 flex flex-col">
       <div className="p-6 border-b border-gray-800 flex justify-between items-center">
-        <h3 className="text-xl font-bold text-white">AI Workout Assistant</h3>
+        <h3 className="text-xl font-bold text-white">Modify Workout</h3>
         <button onClick={onClose} className="text-gray-400 hover:text-white">
           <X className="w-6 h-6" />
         </button>
@@ -343,32 +308,30 @@ const ChatPanel = ({ workout, onClose, onUpdate }: ChatPanelProps) => {
             <div className="bg-gray-800 text-gray-300 p-4 rounded-lg">
               <div className="flex items-center space-x-2">
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
-                <span>Thinking...</span>
+                <span>Modifying your workout...</span>
               </div>
             </div>
           </div>
         )}
-        
-        <div ref={messagesEndRef} />
       </div>
 
-      <div className="border-t border-gray-800 p-4">
+      <div className="p-6 border-t border-gray-800">
         <div className="flex gap-2">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="Ask about workouts..."
-            className="flex-1 px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Type your modification..."
             disabled={isLoading}
+            className="flex-1 bg-gray-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
           />
           <button
             onClick={handleSend}
-            disabled={isLoading || !input.trim()}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={isLoading}
+            className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg text-white font-medium transition-colors disabled:opacity-50"
           >
-            <Send className="w-5 h-5" />
+            Send
           </button>
         </div>
       </div>
@@ -472,43 +435,56 @@ export default function TodaysWorkout() {
   };
 
     const handleWorkoutSelect = async (selection: WorkoutSelection) => {
-    console.log('🔍 Selected workout type:', selection);
-    
     // Clear previous workout for ANY selection (not just popular ones)
     setGeneratedWorkout(null);
     setSelectedType(selection);
     setIsGenerating(true);
     
     try {
-      console.log('💪 Generating Claude-enhanced workout...');
-      // Use Claude-enhanced workout generation
-      const response = await fetch('/api/generate-workout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          timeAvailable,
-          workoutType: selection.id,
-          focus: selection.id
-        })
-      });
+      if (selection.id === 'nike') {
+        // Call Nike WOD endpoint
+        const response = await fetch('/api/generate-nike-wod', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})  // Will use next sequential workout
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to generate Nike workout');
+        }
+        
+        const data = await response.json();
+        // Nike WOD returns sessionId in the response
+        setGeneratedWorkout({
+          ...data,
+          sessionId: data.sessionId
+        });
+      } else {
+        // Existing workout generation logic
+        const response = await fetch('/api/generate-workout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: selection.id,        // This should be 'chest', 'biceps', etc.
+            category: selection.category, // Add this - tells if it's 'muscle_group' or 'specific_focus'
+            timeMinutes: timeAvailable,
+            userId: user?.id
+          })
+        });
 
-      if (!response.ok) {
-        throw new Error('Failed to generate workout');
+        if (!response.ok) {
+          throw new Error('Failed to generate workout');
+        }
+        
+        const workout = await response.json();
+        // Standard workout generation might not return sessionId, so we'll use a fallback
+        setGeneratedWorkout({
+          ...workout,
+          sessionId: workout.sessionId || `workout-${Date.now()}`
+        });
       }
-      
-      const workout = await response.json();
-      console.log('✅ Claude-enhanced workout response:', workout);
-      
-      // Set the generated workout with proper structure
-      setGeneratedWorkout({
-        warmup: workout.warmup || [],
-        mainLift: workout.workout?.[0] ? { name: workout.workout[0], sets: 4, reps: '8-10' } : { name: 'Bench Press', sets: 4, reps: '8-10' },
-        accessories: workout.workout?.slice(1) || [],
-        cooldown: workout.cooldown || [],
-        sessionId: workout.sessionId || `workout-${Date.now()}`
-      });
     } catch (error) {
-      console.error('❌ Error generating workout:', error);
+      console.error('Error generating workout:', error);
       // Fallback to mock data
       setGeneratedWorkout({
         warmup: [
@@ -616,9 +592,6 @@ export default function TodaysWorkout() {
           onUpdate={(updated) => setGeneratedWorkout(updated)}
         />
       )}
-
-      {/* WorkoutChat Component */}
-      <WorkoutChat />
     </div>
   );
 } 

@@ -1,27 +1,99 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useRef } from 'react';
+import { useWorkoutStore } from '@/lib/workoutStore';
 
-// Simple icon components to replace lucide-react
-const SendIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+// Simple icon components (since we don't have lucide-react)
+const Send = ({ size }: { size: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
   </svg>
 );
 
-const LoaderIcon = () => (
-  <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+const MessageCircle = ({ size }: { size: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
   </svg>
 );
 
-export function WorkoutChatPanel({ onClose }: { onClose?: () => void }) {
+const X = ({ size }: { size: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M18 6L6 18M6 6l12 12"/>
+  </svg>
+);
+
+// Simple UI components
+const Button = ({ 
+  children, 
+  onClick, 
+  disabled = false, 
+  variant = "default", 
+  size = "default",
+  className = "" 
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  variant?: "default" | "outline";
+  size?: "default" | "sm";
+  className?: string;
+}) => {
+  const baseClasses = "px-4 py-2 rounded-lg font-medium transition-colors";
+  const variantClasses = {
+    default: "bg-blue-500 text-white hover:bg-blue-600 disabled:bg-gray-400",
+    outline: "border border-gray-300 text-gray-700 hover:bg-gray-50"
+  };
+  const sizeClasses = {
+    default: "px-4 py-2",
+    sm: "px-3 py-1 text-sm"
+  };
+  
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${className}`}
+    >
+      {children}
+    </button>
+  );
+};
+
+const Input = ({ 
+  value, 
+  onChange, 
+  onKeyPress, 
+  placeholder, 
+  className = "" 
+}: {
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onKeyPress?: (e: React.KeyboardEvent) => void;
+  placeholder?: string;
+  className?: string;
+}) => (
+  <input
+    value={value}
+    onChange={onChange}
+    onKeyPress={onKeyPress}
+    placeholder={placeholder}
+    className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${className}`}
+  />
+);
+
+const Card = ({ children, className = "" }: { children: React.ReactNode; className?: string }) => (
+  <div className={`bg-white border border-gray-200 rounded-lg shadow-lg ${className}`}>
+    {children}
+  </div>
+);
+
+export function WorkoutChatPanel() {
+  const [isOpen, setIsOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const router = useRouter();
+  const { setPending } = useWorkoutStore();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -36,7 +108,6 @@ export function WorkoutChatPanel({ onClose }: { onClose?: () => void }) {
 
     const userMessage = { type: 'user', content: message };
     setMessages(prev => [...prev, userMessage]);
-    const currentMessage = message;
     setMessage('');
     setIsLoading(true);
 
@@ -45,213 +116,186 @@ export function WorkoutChatPanel({ onClose }: { onClose?: () => void }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          message: currentMessage,
+          message,
           context: messages.slice(-5)
         })
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to get response');
-      }
-      
       const data = await response.json();
-      console.log('Chat response:', data);
 
-      if (data.type === 'workout') {
-        // Display workout summary
-        setMessages(prev => [...prev, {
-          type: 'workout',
-          content: formatWorkoutDisplay(data.workout),
-          workout: data.workout,
-          sessionId: data.sessionId
-        }]);
-      } else if (data.type === 'nike_list') {
+      if (data.type === 'nike_list') {
         setMessages(prev => [...prev, {
           type: 'nike_list',
           content: data.message,
           workouts: data.workouts
         }]);
-      } else {
+      } else if (data.type === 'custom_workout') {
         setMessages(prev => [...prev, {
           type: 'assistant',
-          content: data.message
+          content: data.formattedResponse
         }]);
+        
+        // Set as pending workout
+        setPending({
+          planId: data.sessionId,
+          warmup: data.workout.phases.warmup.exercises.map((e: any) => e.name),
+          workout: data.workout.phases.main.exercises.map((e: any) => e.name),
+          cooldown: data.workout.phases.cooldown.exercises.map((e: any) => e.name)
+        });
       }
     } catch (error) {
-      console.error('Chat error:', error);
       setMessages(prev => [...prev, {
         type: 'error',
-        content: '❌ Sorry, I had trouble with that request. Please try again.'
+        content: 'Sorry, I had trouble generating that workout. Please try again.'
       }]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const formatWorkoutDisplay = (workout: any) => {
-    if (!workout.exercises) return 'Workout generated!';
+  const handleNikeSelect = async (workoutNumber: number) => {
+    setIsLoading(true);
+    try {
+      const response = await fetch('/api/generate-nike-wod', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workoutNumber })
+      });
 
-    return `
-📋 **${workout.name}** (${workout.duration} min)
+      const data = await response.json();
+      
+      setMessages(prev => [...prev, {
+        type: 'assistant',
+        content: `✅ Generated Nike Workout #${workoutNumber}: ${data.workoutName}`
+      }]);
 
-${workout.exercises.map((ex: any) => `
-**${ex.name}**
-${ex.sets?.map((set: any) => 
-  `Set ${set.setNumber}: ${set.reps} reps @ ${set.weight || 'bodyweight'} lbs${set.previousWeight ? ` (prev: ${set.previousWeight} lbs)` : ''}`
-).join('\n') || `${ex.sets} sets x ${ex.reps} reps`}
-${ex.instructions ? `💡 ${ex.instructions}` : ''}
-`).join('\n---\n')}
-
-${workout.notes ? `\n📝 Notes: ${workout.notes}` : ''}
-`;
-  };
-
-  const handleStartWorkout = (sessionId: string) => {
-    router.push(`/workout/${sessionId}`);
-    onClose?.();
+      // Set as pending workout
+      setPending({
+        planId: data.sessionId,
+        warmup: data.exercises.filter((e: any) => e.phase === 'warmup').map((e: any) => e.name),
+        workout: data.exercises.filter((e: any) => e.phase === 'main').map((e: any) => e.name),
+        cooldown: data.exercises.filter((e: any) => e.phase === 'cooldown').map((e: any) => e.name),
+        accessories: data.exercises.filter((e: any) => e.phase === 'accessory').map((e: any) => e.name)
+      });
+    } catch (error) {
+      console.error('Nike workout error:', error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.length === 0 && (
-          <div className="text-center text-gray-500 mt-8">
-            <p className="mb-4">Ask me to create a workout! Try:</p>
-            <div className="space-y-2 text-sm">
-              <p>"I have 20 minutes and only kettlebells"</p>
-              <p>"Create a push workout with dumbbells"</p>
-              <p>"Nike workouts"</p>
-              <p>"30 minute leg day"</p>
-            </div>
-          </div>
-        )}
+    <>
+      {/* Floating Chat Button */}
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="fixed bottom-6 right-6 bg-blue-500 text-white rounded-full p-4 shadow-lg hover:bg-blue-600 transition-all z-50"
+      >
+        {isOpen ? <X size={24} /> : <MessageCircle size={24} />}
+      </button>
 
-        {messages.map((msg, idx) => (
-          <div key={idx} className="animate-fadeIn">
-            {msg.type === 'user' && (
-              <div className="flex justify-end">
-                <div className="bg-blue-600 text-white rounded-lg p-3 max-w-[80%]">
-                  {msg.content}
+      {/* Chat Panel */}
+      {isOpen && (
+        <Card className="fixed bottom-24 right-6 w-96 h-[500px] shadow-xl z-40 flex flex-col">
+          <div className="p-4 border-b">
+            <h3 className="font-semibold">Workout Assistant</h3>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {messages.map((msg, idx) => (
+              <div key={idx}>
+                {msg.type === 'user' && (
+                  <div className="flex justify-end">
+                    <div className="bg-blue-500 text-white rounded-lg p-3 max-w-[80%]">
+                      {msg.content}
+                    </div>
+                  </div>
+                )}
+                
+                {msg.type === 'assistant' && (
+                  <div className="flex justify-start">
+                    <div className="bg-gray-100 rounded-lg p-3 max-w-[80%] whitespace-pre-wrap">
+                      {msg.content}
+                    </div>
+                  </div>
+                )}
+
+                {msg.type === 'nike_list' && (
+                  <div className="flex justify-start">
+                    <div className="bg-gray-100 rounded-lg p-3 max-w-[80%]">
+                      <p className="mb-3">{msg.content}</p>
+                      <div className="space-y-2">
+                        {msg.workouts.map((w: any) => (
+                          <Button
+                            key={w.number}
+                            variant={w.isCurrent ? "default" : "outline"}
+                            size="sm"
+                            className="w-full text-left justify-start"
+                            onClick={() => handleNikeSelect(w.number)}
+                          >
+                            {w.isCurrent && "➡️ "}
+                            Workout #{w.number}: {w.name}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+            
+            {isLoading && (
+              <div className="flex justify-start">
+                <div className="bg-gray-100 rounded-lg p-3">
+                  <div className="animate-pulse">Generating workout...</div>
                 </div>
               </div>
             )}
             
-            {msg.type === 'assistant' && (
-              <div className="flex justify-start">
-                <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-3 max-w-[80%]">
-                  {msg.content}
-                </div>
-              </div>
-            )}
-
-            {msg.type === 'workout' && (
-              <div className="flex justify-start">
-                <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4 max-w-[90%]">
-                  <pre className="whitespace-pre-wrap font-sans text-sm">
-                    {msg.content}
-                  </pre>
-                  {msg.sessionId && (
-                    <button
-                      onClick={() => handleStartWorkout(msg.sessionId)}
-                      className="mt-4 w-full bg-green-600 text-white rounded-lg py-2 hover:bg-green-700"
-                    >
-                      Start Workout
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {msg.type === 'nike_list' && (
-              <div className="flex justify-start">
-                <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-4 max-w-[80%]">
-                  <p className="mb-3 font-semibold">{msg.content}</p>
-                  <div className="space-y-2">
-                    {msg.workouts?.map((w: any) => (
-                      <button
-                        key={w.number}
-                        className={`w-full text-left p-3 rounded-lg ${
-                          w.isCurrent 
-                            ? 'bg-indigo-600 text-white' 
-                            : 'bg-white dark:bg-gray-700 hover:bg-gray-100'
-                        }`}
-                        onClick={() => setMessage(`Generate Nike workout ${w.number}`)}
-                      >
-                        {w.isCurrent && "➡️ "}
-                        Workout #{w.number}: {w.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {msg.type === 'error' && (
-              <div className="flex justify-start">
-                <div className="bg-red-100 text-red-700 rounded-lg p-3 max-w-[80%]">
-                  {msg.content}
-                </div>
-              </div>
-            )}
+            <div ref={messagesEndRef} />
           </div>
-        ))}
-        
-        {isLoading && (
-          <div className="flex justify-start">
-            <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-3 flex items-center gap-2">
-              <LoaderIcon />
-              <span>Generating your workout...</span>
+
+          <div className="p-4 border-t">
+            <div className="flex gap-2 mb-2">
+              <Input
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
+                placeholder="Ask for a workout..."
+                className="flex-1"
+              />
+              <Button onClick={handleSend} disabled={isLoading}>
+                <Send size={20} />
+              </Button>
+            </div>
+            
+            {/* Quick Actions */}
+            <div className="flex gap-2 flex-wrap">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setMessage("Nike workouts")}
+              >
+                Nike Program
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setMessage("45 min upper body")}
+              >
+                Upper Body
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setMessage("Quick HIIT")}
+              >
+                HIIT
+              </Button>
             </div>
           </div>
-        )}
-        
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Input */}
-      <div className="border-t p-4">
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
-            placeholder="Type your workout request..."
-            className="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600"
-            disabled={isLoading}
-          />
-          <button
-            onClick={handleSend}
-            disabled={isLoading || !message.trim()}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <SendIcon />
-          </button>
-        </div>
-
-        {/* Quick prompts */}
-        <div className="flex gap-2 mt-3 flex-wrap">
-          <button
-            onClick={() => setMessage("I have 20 minutes and only have kettlebells, please generate a workout")}
-            className="text-xs px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded-full hover:bg-gray-300"
-          >
-            20 min KB workout
-          </button>
-          <button
-            onClick={() => setMessage("Nike workouts")}
-            className="text-xs px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded-full hover:bg-gray-300"
-          >
-            Nike workouts
-          </button>
-          <button
-            onClick={() => setMessage("Create a push day workout")}
-            className="text-xs px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded-full hover:bg-gray-300"
-          >
-            Push day
-          </button>
-        </div>
-      </div>
-    </div>
+        </Card>
+      )}
+    </>
   );
 } 
