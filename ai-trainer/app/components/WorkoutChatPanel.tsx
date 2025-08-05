@@ -112,23 +112,41 @@ export function WorkoutChatPanel() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/chat-test', {
+      const response = await fetch('/api/chat-workout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message })
+        body: JSON.stringify({ 
+          message,
+          context: messages.slice(-5)
+        })
       });
 
       const data = await response.json();
-      
-      setMessages(prev => [...prev, {
-        type: 'assistant',
-        content: data.response
-      }]);
 
+      if (data.type === 'nike_list') {
+        setMessages(prev => [...prev, {
+          type: 'nike_list',
+          content: data.message,
+          workouts: data.workouts
+        }]);
+      } else if (data.type === 'custom_workout') {
+        setMessages(prev => [...prev, {
+          type: 'assistant',
+          content: data.formattedResponse
+        }]);
+        
+        // Set as pending workout
+        setPending({
+          planId: data.sessionId,
+          warmup: data.workout.phases.warmup.exercises.map((e: any) => e.name),
+          workout: data.workout.phases.main.exercises.map((e: any) => e.name),
+          cooldown: data.workout.phases.cooldown.exercises.map((e: any) => e.name)
+        });
+      }
     } catch (error) {
       setMessages(prev => [...prev, {
         type: 'error',
-        content: 'Sorry, I had trouble processing that. Please try again.'
+        content: 'Sorry, I had trouble generating that workout. Please try again.'
       }]);
     } finally {
       setIsLoading(false);
