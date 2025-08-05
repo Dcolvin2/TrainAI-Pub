@@ -52,6 +52,8 @@ interface GeneratedWorkout {
   mainLift: any;
   accessories: any[];
   cooldown: any[];
+  workoutType?: string;
+  workoutNo?: number;
 }
 
 // Time Selector Component
@@ -286,6 +288,12 @@ const WorkoutSummary = ({ workout, selectedType, timeAvailable, setShowChat }: {
 }) => {
   return (
     <div className="bg-gray-900 rounded-lg p-6 space-y-6">
+      {/* Nike Workout Type Label */}
+      {workout.workoutType && (
+        <p className="text-sm italic text-zinc-400 mb-1">
+          Nike {workout.workoutType} — Workout #{workout.workoutNo}
+        </p>
+      )}
       {/* Warmup */}
       <div>
         <h3 className="text-green-400 font-bold mb-2">🔥 Warm-up</h3>
