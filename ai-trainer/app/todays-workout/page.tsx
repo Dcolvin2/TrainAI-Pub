@@ -40,6 +40,7 @@ interface WorkoutTypeSelectorProps {
   onSelect: (selection: WorkoutSelection) => void;
   timeAvailable: number;
   suggestedType: string | null;
+  setShowChat: (show: boolean) => void;
 }
 
 interface TimeSelectorProps {
@@ -81,7 +82,7 @@ const TimeSelector = ({ timeAvailable, onTimeChange }: TimeSelectorProps) => {
 };
 
 // Workout Type Selector Component
-const WorkoutTypeSelector = ({ onSelect, timeAvailable, suggestedType }: WorkoutTypeSelectorProps) => {
+const WorkoutTypeSelector = ({ onSelect, timeAvailable, suggestedType, setShowChat }: WorkoutTypeSelectorProps) => {
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
 
   const workoutCategories = {
@@ -143,6 +144,13 @@ const WorkoutTypeSelector = ({ onSelect, timeAvailable, suggestedType }: Workout
               {option.label}
             </button>
           ))}
+          <button
+            onClick={() => setShowChat(true)}
+            className="px-4 py-2 rounded-lg text-white font-medium transition-all bg-blue-600 hover:bg-blue-700 flex items-center gap-2"
+          >
+            <MessageSquare className="w-4 h-4" />
+            Chat with AI
+          </button>
         </div>
       </div>
 
@@ -552,6 +560,7 @@ export default function TodaysWorkout() {
               onSelect={handleWorkoutSelect} 
               timeAvailable={timeAvailable}
               suggestedType={suggestedType}
+              setShowChat={setShowChat}
             />
           </div>
           
