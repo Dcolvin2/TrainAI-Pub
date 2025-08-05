@@ -11,37 +11,34 @@ export async function POST(request: Request) {
     const { workoutNumber } = await request.json();
     
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-    // Get user profile
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('user_id', user.id)
-      .single();
-
-    // Get user equipment
-    const { data: userEquipment } = await supabase
-      .from('user_equipment')
-      .select('equipment:equipment_id(name)')
-      .eq('user_id', user.id)
-      .eq('is_available', true);
-
-    const equipment = userEquipment?.map((eq: any) => eq.equipment.name) || [];
-
-    // GET NIKE WORKOUT FROM YOUR nike_workouts TABLE
-    const { data: nikeExercises, error } = await supabase
-      .from('nike_workouts')
-      .select('*')
-      .eq('workout', workoutNumber);
-
-    if (error) {
-      console.error('Error fetching Nike workout:', error);
-      return NextResponse.json({ error: 'Failed to fetch workout' }, { status: 500 });
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!nikeExercises || nikeExercises.length === 0) {
-      return NextResponse.json({ error: `Nike workout #${workoutNumber} not found` }, { status: 404 });
+    // Get user profile and equipment
+    const [profileResult, equipmentResult] = await Promise.all([
+      supabase.from('profiles').select('*').eq('user_id', user.id).single(),
+      supabase.from('user_equipment')
+        .select('equipment:equipment_id(name)')
+        .eq('user_id', user.id)
+        .eq('is_available', true)
+    ]);
+
+    const profile = profileResult.data;
+    const equipment = equipmentResult.data?.map((eq: any) => eq.equipment.name) || [];
+
+    // Determine workout number
+    const targetWorkout = workoutNumber || ((profile?.last_nike_workout || 0) % 24) + 1;
+
+    // Get Nike workout from database
+    const { data: nikeExercises } = await supabase
+      .from('nike_workouts')
+      .select('*')
+      .eq('workout', targetWorkout)
+      .order('exercise_phase', { ascending: true });
+
+    if (!nikeExercises?.length) {
+      return NextResponse.json({ error: 'Nike workout not found' }, { status: 404 });
     }
 
     // Group exercises by phase
@@ -52,55 +49,52 @@ export async function POST(request: Request) {
       cooldown: nikeExercises.filter(e => e.exercise_phase === 'cooldown')
     };
 
-    // Get the workout name (they all have the same workout_type for a given workout number)
-    const workoutName = nikeExercises[0].workout_type;
-
-    // Build prompt for Claude to adapt based on available equipment
-    const prompt = `
-You are adapting Nike Workout #${workoutNumber}: ${workoutName}
+    // Build Claude prompt to adapt workout
+    const prompt = `You are an expert fitness coach adapting a Nike workout for a user.
 
 User Profile:
 - Current weight: ${profile.current_weight} lbs
 - Goal weight: ${profile.goal_weight} lbs
-- Training goal: ${profile.training_goal || 'weight_loss'}
+- Goal: Weight loss while maintaining strength
 - Available equipment: ${equipment.join(', ')}
 
-Original Nike Workout from database:
-Warmup: ${phases.warmup.map(e => `${e.exercise} (${e.sets}x${e.reps})`).join(', ')}
-Main: ${phases.main.map(e => `${e.exercise} (${e.sets}x${e.reps})`).join(', ')}
-Accessory: ${phases.accessory.map(e => `${e.exercise} (${e.sets}x${e.reps})`).join(', ')}
-Cooldown: ${phases.cooldown.map(e => `${e.exercise} (${e.sets}x${e.reps})`).join(', ')}
+Nike Workout #${targetWorkout}: ${nikeExercises[0].workout_type}
 
-Instructions from database:
-${nikeExercises.map(e => e.instructions ? `${e.exercise}: ${e.instructions}` : '').filter(Boolean).join('\n')}
+Original exercises by phase:
+${JSON.stringify(phases, null, 2)}
 
-IMPORTANT:
-1. Use ONLY the user's available equipment
-2. If an exercise requires equipment they don't have, substitute with a similar exercise
-3. Keep the same workout structure and volume
-4. Make instructions clear and concise
+Instructions:
+1. Adapt each exercise to use ONLY the available equipment
+2. If equipment is unavailable, substitute with similar exercises targeting the same muscles
+3. Adjust sets/reps for weight loss (moderate weight, 12-15 reps for accessories)
+4. Keep the same phase structure and exercise count
+5. Make instructions clear and concise
 
-Return JSON:
+Return a JSON object with this EXACT structure:
 {
-  "workoutName": "${workoutName}",
-  "workoutNumber": ${workoutNumber},
+  "workoutName": "${nikeExercises[0].workout_type}",
+  "workoutNumber": ${targetWorkout},
   "phases": {
     "warmup": [
-      {"name": "Exercise", "sets": "2", "reps": "10", "instruction": "Brief instruction"}
+      {
+        "name": "Exercise Name",
+        "sets": "2",
+        "reps": "10",
+        "duration": "30 seconds",
+        "rest": 30,
+        "instruction": "Clear instruction",
+        "originalExercise": "Original name if substituted"
+      }
     ],
-    "main": [
-      {"name": "Exercise", "sets": "3", "reps": "8", "instruction": "Brief instruction", "rest": "90s"}
-    ],
-    "accessory": [
-      {"name": "Exercise", "sets": "3", "reps": "12", "instruction": "Brief instruction", "rest": "60s"}
-    ],
-    "cooldown": [
-      {"name": "Exercise", "sets": "1", "duration": "30s", "instruction": "Brief instruction"}
-    ]
+    "main": [...],
+    "accessory": [...],
+    "cooldown": [...]
   }
-}`;
+}
 
-    // Call Claude to adapt the workout
+ONLY return valid JSON, no markdown or explanations.`;
+
+    // Call Claude
     const response = await claude.messages.create({
       model: "claude-3-5-sonnet-20241022",
       max_tokens: 2000,
@@ -118,27 +112,21 @@ Return JSON:
         user_id: user.id,
         date: new Date().toISOString().split('T')[0],
         workout_source: 'nike',
-        nike_workout_number: workoutNumber,
-        workout_name: workoutName,
-        workout_type: workoutName,
+        nike_workout_number: targetWorkout,
+        workout_name: adaptedWorkout.workoutName,
         planned_exercises: adaptedWorkout
       })
       .select()
       .single();
 
-    // Update last Nike workout in profile
+    // Update last Nike workout
     await supabase
       .from('profiles')
-      .update({ last_nike_workout: workoutNumber })
+      .update({ last_nike_workout: targetWorkout })
       .eq('user_id', user.id);
-
-    // Check for workout streak
-    await supabase.rpc('update_workout_streak', { p_user_id: user.id });
 
     return NextResponse.json({
       sessionId: session.id,
-      workoutNumber,
-      workoutName,
       ...adaptedWorkout
     });
 
