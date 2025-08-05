@@ -435,6 +435,8 @@ export default function TodaysWorkout() {
   };
 
     const handleWorkoutSelect = async (selection: WorkoutSelection) => {
+    console.log('🔍 Selected workout type:', selection);
+    
     // Clear previous workout for ANY selection (not just popular ones)
     setGeneratedWorkout(null);
     setSelectedType(selection);
@@ -442,6 +444,7 @@ export default function TodaysWorkout() {
     
     try {
       if (selection.id === 'nike') {
+        console.log('🏃‍♂️ Generating Nike WOD...');
         // Call Nike WOD endpoint
         const response = await fetch('/api/generate-nike-wod', {
           method: 'POST',
@@ -454,12 +457,14 @@ export default function TodaysWorkout() {
         }
         
         const data = await response.json();
+        console.log('✅ Nike WOD response:', data);
         // Nike WOD returns sessionId in the response
         setGeneratedWorkout({
           ...data,
           sessionId: data.sessionId
         });
       } else {
+        console.log('💪 Generating standard workout...');
         // Existing workout generation logic
         const response = await fetch('/api/generate-workout', {
           method: 'POST',
@@ -477,6 +482,8 @@ export default function TodaysWorkout() {
         }
         
         const workout = await response.json();
+        console.log('✅ Standard workout response:', workout);
+        
         // Standard workout generation might not return sessionId, so we'll use a fallback
         setGeneratedWorkout({
           ...workout,
@@ -484,7 +491,7 @@ export default function TodaysWorkout() {
         });
       }
     } catch (error) {
-      console.error('Error generating workout:', error);
+      console.error('❌ Error generating workout:', error);
       // Fallback to mock data
       setGeneratedWorkout({
         warmup: [

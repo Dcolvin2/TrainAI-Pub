@@ -95,7 +95,7 @@ const supabase = createClient(
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    console.log('Received workout request:', body); // See what's being sent
+    console.log('🎯 Received workout request:', body);
     
     const { type, category, timeMinutes, userId } = body;
     
@@ -108,11 +108,11 @@ export async function POST(request: Request) {
 
     // Get user's available equipment
     const userEquip = await getUserEquipment(userId);
-    console.log('User equipment:', userEquip);
+    console.log('📦 User equipment:', userEquip);
 
     // Build core lift pool
     const corePool = await buildCoreLiftPool(type, userEquip);
-    console.log('Core lift pool:', corePool);
+    console.log('💪 Core lift pool:', corePool);
 
     // pick strongest candidate (later: weight progression logic)
     const coreLift = corePool[0];
@@ -122,7 +122,7 @@ export async function POST(request: Request) {
       console.warn('⚠️  Fallback core-lift used – user lacks equipment for focus:', type);
     }
 
-    console.log(`[generate-workout] Selected core lift: ${coreLift.name}`);
+    console.log(`🎯 Selected core lift: ${coreLift.name}`);
 
     // Time-based exercise counts
     const exerciseCounts = {
@@ -155,9 +155,29 @@ export async function POST(request: Request) {
       accessoriesPool: workout.accessories.map(acc => acc.name) 
     });
 
-    return Response.json(workout);
+    // Save workout session to database
+    const { data: session } = await supabase
+      .from('workout_sessions')
+      .insert({
+        user_id: userId,
+        date: new Date().toISOString().split('T')[0],
+        workout_source: 'ai_generated',
+        workout_name: `${type.charAt(0).toUpperCase() + type.slice(1)} Workout`,
+        workout_type: type,
+        planned_exercises: workout
+      })
+      .select()
+      .single();
+
+    console.log('✅ Workout session saved:', session?.id);
+
+    // Return the workout with session ID
+    return Response.json({
+      ...workout,
+      sessionId: session?.id
+    });
   } catch (error) {
-    console.error('Error generating workout:', error);
+    console.error('❌ Error generating workout:', error);
     return Response.json(
       { error: 'Failed to generate workout' },
       { status: 500 }
