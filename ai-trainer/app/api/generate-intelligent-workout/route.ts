@@ -1,5 +1,4 @@
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
+import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 
@@ -45,7 +44,10 @@ const MAIN_LIFTS = {
 export async function POST(request: Request) {
   try {
     const { workoutType, timeAvailable } = await request.json();
-    const supabase = createRouteHandlerClient({ cookies });
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
     
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -61,7 +63,7 @@ export async function POST(request: Request) {
     ]);
 
     const profile = profileResult.data;
-    const userEquipment = equipmentResult.data?.map(eq => eq.equipment.name) || [];
+    const userEquipment = equipmentResult.data?.map((eq: any) => eq.equipment.name) || [];
     const exerciseDatabase = exercisesResult.data || [];
 
     // Build Claude prompt that uses DB as reference but applies logic
@@ -80,7 +82,7 @@ User Context:
 - Time Available: ${timeAvailable} minutes
 
 Exercise Database Reference (use as guide, not strict limitation):
-${exerciseDatabase.filter(e => e.is_compound).map(e => `- ${e.name}: ${e.category}`).slice(0, 20).join('\n')}
+${exerciseDatabase.filter((e: any) => e.is_compound).map((e: any) => `- ${e.name}: ${e.category}`).slice(0, 20).join('\n')}
 
 Create a ${workoutType.toUpperCase()} workout following this structure:
 
@@ -146,7 +148,8 @@ IMPORTANT: Use your knowledge to select the BEST exercises for the user's goals,
       ]
     });
 
-    const workoutPlan = JSON.parse(response.content[0].text);
+    const content = response.content[0];
+    const workoutPlan = JSON.parse(content.type === 'text' ? content.text : '{}');
 
     // Validate that main lift is actually a compound movement
     const validMainLifts = Object.values(MAIN_LIFTS).flat();
