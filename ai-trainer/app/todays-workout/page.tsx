@@ -379,24 +379,40 @@ export default function TodaysWorkout() {
     setIsGenerating(true);
     
     try {
-      // This should fire for muscle groups and specific focus too
-      const response = await fetch('/api/generate-workout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: selection.id,        // This should be 'chest', 'biceps', etc.
-          category: selection.category, // Add this - tells if it's 'muscle_group' or 'specific_focus'
-          timeMinutes: timeAvailable,
-          userId: user?.id
-        })
-      });
+      if (selection.id === 'nike') {
+        // Call Nike WOD endpoint
+        const response = await fetch('/api/generate-nike-wod', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})  // Will use next sequential workout
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to generate Nike workout');
+        }
+        
+        const data = await response.json();
+        setGeneratedWorkout(data);
+      } else {
+        // Existing workout generation logic
+        const response = await fetch('/api/generate-workout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: selection.id,        // This should be 'chest', 'biceps', etc.
+            category: selection.category, // Add this - tells if it's 'muscle_group' or 'specific_focus'
+            timeMinutes: timeAvailable,
+            userId: user?.id
+          })
+        });
 
-      if (!response.ok) {
-        throw new Error('Failed to generate workout');
+        if (!response.ok) {
+          throw new Error('Failed to generate workout');
+        }
+        
+        const workout = await response.json();
+        setGeneratedWorkout(workout);
       }
-      
-      const workout = await response.json();
-      setGeneratedWorkout(workout);
     } catch (error) {
       console.error('Error generating workout:', error);
       // Fallback to mock data
