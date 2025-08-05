@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { claude } from '@/lib/claudeClient';
+import { buildNikeWODPrompt } from '@/lib/buildNikeWODPrompt';
 
 export async function POST(request: Request) {
   const supabase = createClient(
@@ -44,39 +45,13 @@ export async function POST(request: Request) {
   };
 
   // Build prompt for Claude to adapt the workout
-  const prompt = `Adapt this Nike workout for the user's available equipment.
-
-User Profile:
-- Weight: ${profile.current_weight} lbs → ${profile.goal_weight} lbs
-- Equipment: ${equipment.join(', ')}
-
-Nike Workout #${workoutNumber}: ${nikeExercises[0].workout_type}
-
-Original Exercises:
-${JSON.stringify(phases, null, 2)}
-
-Rules:
-1. Keep the same structure and exercise count
-2. If equipment is missing, substitute with similar exercises
-3. Adjust for weight loss goal (moderate weight, higher reps)
-4. Make instructions clear and concise
-
-Return JSON:
-{
-  "workoutName": "${nikeExercises[0].workout_type}",
-  "workoutNumber": ${workoutNumber},
-  "exercises": [
-    {
-      "name": "Exercise Name",
-      "phase": "warmup|main|accessory|cooldown",
-      "sets": 3,
-      "reps": "12",
-      "restSeconds": 60,
-      "instruction": "Clear instruction",
-      "originalExercise": "Name if substituted"
-    }
-  ]
-}`;
+  const prompt = buildNikeWODPrompt(
+    workoutNumber,
+    nikeExercises[0].workout_type,
+    phases,
+    equipment,
+    profile
+  );
 
   const response = await claude.messages.create({
     model: "claude-3-5-sonnet-20241022",
