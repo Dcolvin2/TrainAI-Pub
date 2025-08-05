@@ -35,13 +35,15 @@ export async function POST(request: Request) {
     if (message.toLowerCase().includes('nike workout')) {
       const nextNum = ((profile?.last_nike_workout || 0) % 24) + 1;
       
+      // Get the next 5 Nike workouts FROM YOUR nike_workouts TABLE
       const { data: workouts } = await supabase
         .from('nike_workouts')
-        .select('id, workout, workout_type, exercise_phase')
+        .select('workout, workout_type')
         .gte('workout', nextNum)
-        .lte('workout', nextNum + 4)
+        .lte('workout', Math.min(nextNum + 4, 24))
         .order('workout');
 
+      // Get unique workouts (since each workout number has multiple exercises)
       const uniqueWorkouts = Array.from(
         new Map(workouts?.map((w: any) => [w.workout, w])).values()
       );
@@ -57,7 +59,7 @@ export async function POST(request: Request) {
 
       return NextResponse.json({
         type: 'nike_list',
-        message: 'Here are your upcoming Nike workouts:',
+        message: `Here are your upcoming Nike workouts (currently on #${nextNum}):`,
         workouts: uniqueWorkouts.map((w: any) => ({
           number: w.workout,
           name: w.workout_type,
