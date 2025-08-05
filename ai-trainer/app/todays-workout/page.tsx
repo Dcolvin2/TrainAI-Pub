@@ -54,6 +54,7 @@ interface GeneratedWorkout {
   accessories: any[];
   cooldown: any[];
   sessionId?: string;
+  mainExercises?: any[]; // Added for new structure
 }
 
 // Time Selector Component
@@ -399,15 +400,27 @@ const WorkoutSummary = ({ workout, selectedType, timeAvailable, setShowChat }: {
         ))}
       </div>
 
-      {/* Main Lift */}
+      {/* Main Exercises */}
       <div>
-        <h3 className="text-blue-400 font-bold mb-2">💪 Main Lift</h3>
-        {workout.mainLift && (
+        <h3 className="text-blue-400 font-bold mb-2">💪 Main Exercises</h3>
+        {workout.mainExercises && workout.mainExercises.length > 0 ? (
+          workout.mainExercises.map((ex, i) => (
+            <div key={i} className="bg-gray-800 p-4 rounded border-2 border-blue-400 mb-3">
+              <h4 className="font-bold text-lg text-white">{ex.name}</h4>
+              <p className="text-gray-400">{ex.sets} sets × {ex.reps}</p>
+              <p className="text-sm text-gray-400">Rest: {ex.rest}</p>
+              {ex.notes && <p className="text-sm text-blue-300 mt-1">{ex.notes}</p>}
+            </div>
+          ))
+        ) : workout.mainLift ? (
+          // Fallback for old structure
           <div className="bg-gray-800 p-4 rounded border-2 border-blue-400">
             <h4 className="font-bold text-lg text-white">{workout.mainLift.name}</h4>
             <p className="text-gray-400">{workout.mainLift.sets} sets × {workout.mainLift.reps}</p>
             <p className="text-sm text-gray-400">Rest: {workout.mainLift.rest}</p>
           </div>
+        ) : (
+          <p className="text-gray-500">No main exercises for this workout</p>
         )}
       </div>
 
@@ -440,8 +453,11 @@ const WorkoutSummary = ({ workout, selectedType, timeAvailable, setShowChat }: {
         <button className="bg-green-600 px-6 py-3 rounded-lg text-white font-medium hover:bg-green-700 transition-colors">
           Start Workout
         </button>
-        <button onClick={() => setShowChat(true)} className="bg-blue-600 px-6 py-3 rounded-lg text-white font-medium hover:bg-blue-700 transition-colors">
-          Chat with AI
+        <button 
+          onClick={() => setShowChat(true)}
+          className="bg-blue-600 px-6 py-3 rounded-lg text-white font-medium hover:bg-blue-700 transition-colors"
+        >
+          Modify Workout
         </button>
       </div>
     </div>
