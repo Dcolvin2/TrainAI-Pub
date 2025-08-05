@@ -222,48 +222,89 @@ interface ChatPanelProps {
 // Chat Panel Component
 const ChatPanel = ({ workout, onClose, onUpdate }: ChatPanelProps) => {
   const [messages, setMessages] = useState([
-    { role: 'assistant', content: 'How would you like to modify your workout? Try "add face pulls" or "make it harder"' }
+    { 
+      role: 'assistant', 
+      content: workout?.sessionId 
+        ? 'How would you like to modify your workout? Try "add face pulls" or "make it harder"' 
+        : 'Ask me to create a workout! Try "I have 30 minutes and only dumbbells" or "Create a push workout"'
+    }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSendMessage = async (message: string) => {
-    if (!workout.sessionId) {
-      console.error('No session ID available for workout modification');
-      return;
-    }
-
     setIsLoading(true);
     
     try {
-      const response = await fetch('/api/modify-workout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          modification: message,
-          sessionId: workout.sessionId
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to modify workout');
+      if (!workout?.sessionId) {
+        // No session ID - use chat-workout API to generate new workout
+        console.log('No session ID, generating new workout via chat...');
+        
+        const response = await fetch('/api/chat-workout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message,
+            context: []
+          })
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to generate workout');
+        }
+        
+        const data = await response.json();
+        
+        if (data.type === 'workout') {
+          // Update the workout state with the new workout
+          onUpdate({
+            ...data.workout,
+            sessionId: data.sessionId
+          });
+          
+          setMessages(prev => [...prev, { 
+            role: 'assistant', 
+            content: `✅ Generated new workout: "${data.workout.name}"` 
+          }]);
+        } else {
+          setMessages(prev => [...prev, { 
+            role: 'assistant', 
+            content: data.message || 'Generated a new workout for you!' 
+          }]);
+        }
+      } else {
+        // Has session ID - modify existing workout
+        console.log('Modifying existing workout with session ID:', workout.sessionId);
+        
+        const response = await fetch('/api/modify-workout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            modification: message,
+            sessionId: workout.sessionId
+          })
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to modify workout');
+        }
+        
+        const modifiedWorkout = await response.json();
+        
+        // Update the workout state
+        onUpdate(modifiedWorkout);
+        
+        // Add success message
+        setMessages(prev => [...prev, { 
+          role: 'assistant', 
+          content: `✅ Workout updated successfully! I've modified it according to your request: "${message}"` 
+        }]);
       }
-      
-      const modifiedWorkout = await response.json();
-      
-      // Update the workout state
-      onUpdate(modifiedWorkout);
-      
-      // Add success message
-      setMessages(prev => [...prev, { 
-        role: 'assistant', 
-        content: `✅ Workout updated successfully! I've modified it according to your request: "${message}"` 
-      }]);
     } catch (error) {
-      console.error('Error modifying workout:', error);
+      console.error('Error in chat:', error);
       setMessages(prev => [...prev, { 
         role: 'assistant', 
-        content: '❌ Sorry, I had trouble modifying your workout. Please try again.' 
+        content: '❌ Sorry, I had trouble with that request. Please try again.' 
       }]);
     } finally {
       setIsLoading(false);

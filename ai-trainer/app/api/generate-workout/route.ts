@@ -1,7 +1,7 @@
 // Exercise database for different workout types
 const exerciseDatabase = {
   push: {
-    mainLifts: ['Barbell Bench Press', 'Dumbbell Bench Press', 'Push-Ups', 'Dips'],
+    mainLifts: ['Barbell Bench Press', 'Dumbbell Bench Press', 'Incline Barbell Press', 'Incline Dumbbell Press'],
     accessories: ['Dumbbell Flyes', 'Overhead Press', 'Lateral Raises', 'Tricep Dips', 'Push-Ups', 'Chest Press'],
     warmup: ['Arm Circles', 'Push-up to T', 'Shoulder Rotations', 'Light Push-Ups', 'Chest Stretch'],
     cooldown: ['Chest Stretch', 'Shoulder Stretch', 'Tricep Stretch', 'Foam Roll Chest']
@@ -65,7 +65,7 @@ function generateWarmupExercises(type: string, count: number): any[] {
 }
 
 function generateAccessoryExercises(type: string, count: number): any[] {
-  const accessories = exerciseDatabase[type as keyof typeof exerciseDatabase]?.accessories || ['Push-Ups'];
+  const accessories = exerciseDatabase[type as keyof typeof exerciseDatabase]?.accessories || ['Dumbbell Flyes'];
   const exercises = getRandomExercises(accessories, count);
   return exercises.map(ex => ({
     name: ex.name,
@@ -117,11 +117,6 @@ export async function POST(request: Request) {
     // pick strongest candidate (later: weight progression logic)
     const coreLift = corePool[0];
 
-    // Fail-loud guardrail
-    if (coreLift.name === 'Push-up') {
-      console.warn('⚠️  Fallback core-lift used – user lacks equipment for focus:', type);
-    }
-
     console.log(`🎯 Selected core lift: ${coreLift.name}`);
 
     // Time-based exercise counts
@@ -146,6 +141,22 @@ export async function POST(request: Request) {
       accessories: generateAccessoryExercises(type, counts.accessories),
       cooldown: generateCooldownExercises(type, counts.cooldown)
     };
+
+    // Fail-loud guardrail
+    if (workout.mainLift.name.toLowerCase().includes('push-up') || workout.mainLift.name.toLowerCase().includes('dip')) {
+      console.warn('⚠️  Bodyweight exercise used as main lift – user lacks equipment for focus:', type);
+      // Override with proper compound movement
+      const properMainLifts: Record<string, any> = {
+        push: { name: "Barbell Bench Press", sets: 4, reps: "6-8", rest: "3 min" },
+        pull: { name: "Barbell Bent-Over Row", sets: 4, reps: "8-10", rest: "2-3 min" },
+        legs: { name: "Barbell Back Squat", sets: 4, reps: "6-8", rest: "3-4 min" },
+        upper: { name: "Barbell Bench Press", sets: 4, reps: "6-8", rest: "3 min" },
+        lower: { name: "Barbell Back Squat", sets: 4, reps: "6-8", rest: "3-4 min" },
+        full_body: { name: "Barbell Deadlift", sets: 4, reps: "5-6", rest: "3-4 min" }
+      };
+      
+      workout.mainLift = properMainLifts[type.toLowerCase()] || properMainLifts.full_body;
+    }
 
     console.table({ 
       focus: type, 

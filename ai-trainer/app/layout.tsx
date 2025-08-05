@@ -29,9 +29,9 @@ export const metadata: Metadata = {
     description: "Track progress, get stronger, and stay consistent with intelligent training guidance.",
   },
   icons: {
-    icon: "/next.svg",
-    shortcut: "/next.svg",
-    apple: "/next.svg",
+    icon: "/favicon.svg",
+    shortcut: "/favicon.svg",
+    apple: "/favicon.svg",
   },
   manifest: "/manifest.json",
 };
@@ -43,10 +43,6 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <head>
-        <link rel="icon" href="/next.svg" type="image/svg+xml" />
-        <link rel="apple-touch-icon" href="/next.svg" />
-      </head>
       <body className={`${inter.variable} antialiased`}>
         <Providers>
           <Nav />
