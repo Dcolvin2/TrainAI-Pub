@@ -1,46 +1,62 @@
+import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+});
+
 export async function POST(request: Request) {
   try {
-    const anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    });
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+    const { messages } = await request.json();
+    
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
-    const { userId, messages, detailLevel = 'concise' } = await request.json();
+    // Get user context
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('user_id', user.id)
+      .single();
 
-    const userMessage = messages[messages.length - 1]?.content || 'Help me with my workout';
+    const { data: equipment } = await supabase
+      .from('user_equipment')
+      .select('equipment:equipment_id(name)')
+      .eq('user_id', user.id)
+      .eq('is_available', true);
 
-    // Define system prompts based on detail level
-    const systemPrompts = {
-      concise: `You are a concise fitness coach. Be direct and brief. Use bullet points. Limit responses to 120 words. Format as: brief answer, numbered steps (max 4), key tip. Avoid lengthy explanations unless specifically requested.`,
-      standard: `You are a fitness coach. Provide clear, actionable advice. Use bullet points for lists. Keep responses under 250 words unless detailed explanation is needed.`,
-      detailed: `You are a fitness coach. Provide comprehensive advice when requested. Use clear formatting with bullet points and numbered lists.`
-    };
+    const availableEquipment = equipment?.map((eq: any) => eq.equipment.name) || [];
 
-    const systemPrompt = systemPrompts[detailLevel as keyof typeof systemPrompts] || systemPrompts.concise;
+    // Build conversation with context
+    const systemPrompt = `You are a knowledgeable fitness coach assistant. 
+User Profile: ${profile.current_weight}lbs, goal: ${profile.goal_weight}lbs
+Available equipment: ${availableEquipment.join(', ')}
+Be helpful, concise, and friendly. If asked to create a workout, provide specific exercises with sets/reps.`;
 
     const response = await anthropic.messages.create({
       model: 'claude-3-5-sonnet-20241022',
-      max_tokens: detailLevel === 'concise' ? 400 : detailLevel === 'standard' ? 600 : 800,
-      messages: [
-        { role: 'user', content: `${systemPrompt}\n\nHelp with this workout question: ${userMessage}` }
-      ]
+      max_tokens: 500,
+      temperature: 0.7,
+      system: systemPrompt,
+      messages: messages
     });
 
     const content = response.content[0];
-    const text = content.type === 'text' ? content.text : 'No response';
-
-    return NextResponse.json({ 
-      assistantMessage: text,
-      model: 'claude-3-5-sonnet-20241022',
-      timestamp: new Date().toISOString(),
-      detailLevel
+    return NextResponse.json({
+      response: content.type === 'text' ? content.text : 'I can help you with your workout!'
     });
+
   } catch (error) {
-    console.error('WorkoutChat API error:', error);
+    console.error('Chat error:', error);
     return NextResponse.json(
-      { error: 'Failed to process workout chat' },
+      { error: 'Failed to process chat' },
       { status: 500 }
     );
   }
