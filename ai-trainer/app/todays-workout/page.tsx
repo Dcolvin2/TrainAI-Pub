@@ -52,6 +52,7 @@ interface GeneratedWorkout {
   mainLift: any;
   accessories: any[];
   cooldown: any[];
+  sessionId?: string;
 }
 
 // Time Selector Component
@@ -217,19 +218,60 @@ const ChatPanel = ({ workout, onClose, onUpdate }: ChatPanelProps) => {
     { role: 'assistant', content: 'How would you like to modify your workout? Try "add face pulls" or "make it harder"' }
   ]);
   const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSend = () => {
-    if (!input.trim()) return;
+  const handleSendMessage = async (message: string) => {
+    if (!workout.sessionId) {
+      console.error('No session ID available for workout modification');
+      return;
+    }
+
+    setIsLoading(true);
     
-    setMessages([...messages, { role: 'user', content: input }]);
-    // Simulate AI response
-    setTimeout(() => {
+    try {
+      const response = await fetch('/api/modify-workout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          modification: message,
+          sessionId: workout.sessionId
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to modify workout');
+      }
+      
+      const modifiedWorkout = await response.json();
+      
+      // Update the workout state
+      onUpdate(modifiedWorkout);
+      
+      // Add success message
       setMessages(prev => [...prev, { 
         role: 'assistant', 
-        content: `I'll help you ${input}. Updating your workout now...` 
+        content: `✅ Workout updated successfully! I've modified it according to your request: "${message}"` 
       }]);
-    }, 500);
+    } catch (error) {
+      console.error('Error modifying workout:', error);
+      setMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: '❌ Sorry, I had trouble modifying your workout. Please try again.' 
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSend = () => {
+    if (!input.trim() || isLoading) return;
+    
+    const userMessage = input.trim();
+    setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
     setInput('');
+    
+    // Call the modify workout API
+    handleSendMessage(userMessage);
   };
 
   return (
@@ -253,6 +295,17 @@ const ChatPanel = ({ workout, onClose, onUpdate }: ChatPanelProps) => {
             </div>
           </div>
         ))}
+        
+        {isLoading && (
+          <div className="mr-8">
+            <div className="bg-gray-800 text-gray-300 p-4 rounded-lg">
+              <div className="flex items-center space-x-2">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+                <span>Modifying your workout...</span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="p-6 border-t border-gray-800">
@@ -263,11 +316,13 @@ const ChatPanel = ({ workout, onClose, onUpdate }: ChatPanelProps) => {
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleSend()}
             placeholder="Type your modification..."
-            className="flex-1 bg-gray-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={isLoading}
+            className="flex-1 bg-gray-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
           />
           <button
             onClick={handleSend}
-            className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg text-white font-medium transition-colors"
+            disabled={isLoading}
+            className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg text-white font-medium transition-colors disabled:opacity-50"
           >
             Send
           </button>
@@ -392,7 +447,11 @@ export default function TodaysWorkout() {
         }
         
         const data = await response.json();
-        setGeneratedWorkout(data);
+        // Nike WOD returns sessionId in the response
+        setGeneratedWorkout({
+          ...data,
+          sessionId: data.sessionId
+        });
       } else {
         // Existing workout generation logic
         const response = await fetch('/api/generate-workout', {
@@ -411,7 +470,11 @@ export default function TodaysWorkout() {
         }
         
         const workout = await response.json();
-        setGeneratedWorkout(workout);
+        // Standard workout generation might not return sessionId, so we'll use a fallback
+        setGeneratedWorkout({
+          ...workout,
+          sessionId: workout.sessionId || `workout-${Date.now()}`
+        });
       }
     } catch (error) {
       console.error('Error generating workout:', error);
@@ -429,7 +492,8 @@ export default function TodaysWorkout() {
         cooldown: [
           { name: 'Foam Roll Quads', duration: '2 min' },
           { name: 'Stretching', duration: '3 min' }
-        ]
+        ],
+        sessionId: `mock-${Date.now()}`
       });
     } finally {
       setIsGenerating(false);
