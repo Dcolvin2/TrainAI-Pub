@@ -133,8 +133,7 @@ const WorkoutTypeSelector = ({ onSelect, timeAvailable, suggestedType }: Workout
             { id: 'legs', label: 'Legs', muscles: 'Quads, Hamstrings, Glutes', color: 'bg-purple-500' },
             { id: 'upper', label: 'Upper Body', muscles: 'All upper body muscles', color: 'bg-orange-500' },
             { id: 'full_body', label: 'Full Body', muscles: 'Complete workout', color: 'bg-red-500' },
-            { id: 'hiit', label: 'HIIT', muscles: 'Full body cardio', color: 'bg-yellow-500' },
-            { id: 'nike', label: 'Nike WOD', muscles: 'Nike workout of the day', color: 'bg-[#ff914d]' }
+            { id: 'hiit', label: 'HIIT', muscles: 'Full body cardio', color: 'bg-yellow-500' }
           ].map(option => (
             <button
               key={option.id}
