@@ -19,6 +19,59 @@ const FOCUS_MAP: Record<string, string[]> = {
   back:     ['back'],
 };
 
+export function getCoreLiftForWorkoutType(workoutType: string, equipment: string[]) {
+  // Define proper core lifts for each workout type
+  const coreLiftMap: Record<string, (string | null)[]> = {
+    push: [
+      equipment.includes('Barbell') ? 'Barbell Bench Press' : null,
+      equipment.includes('Dumbbells') ? 'Dumbbell Bench Press' : null,
+      equipment.includes('Cables') ? 'Cable Chest Press' : null,
+      'Push-Up' // Last resort only
+    ],
+    
+    pull: [
+      equipment.includes('Pull Up Bar') ? 'Pull-Up' : null,
+      equipment.includes('Barbell') ? 'Barbell Bent-Over Row' : null,
+      equipment.includes('Dumbbells') ? 'Dumbbell Row' : null,
+      equipment.includes('Cables') ? 'Cable Row' : null,
+    ],
+    
+    legs: [
+      equipment.includes('Barbell') && equipment.includes('Squat Rack') ? 'Barbell Back Squat' : null,
+      equipment.includes('Barbell') ? 'Barbell Deadlift' : null,
+      equipment.includes('Dumbbells') ? 'Dumbbell Goblet Squat' : null,
+      equipment.includes('Kettlebells') ? 'Kettlebell Goblet Squat' : null,
+      'Bodyweight Squat' // Last resort
+    ],
+    
+    upper: [
+      equipment.includes('Barbell') ? 'Barbell Overhead Press' : null,
+      equipment.includes('Dumbbells') ? 'Dumbbell Shoulder Press' : null,
+      equipment.includes('Barbell') ? 'Barbell Bench Press' : null,
+      equipment.includes('Pull Up Bar') ? 'Pull-Up' : null,
+    ],
+    
+    full: [
+      equipment.includes('Barbell') ? 'Barbell Deadlift' : null,
+      equipment.includes('Barbell') ? 'Barbell Clean and Press' : null,
+      equipment.includes('Dumbbells') ? 'Dumbbell Thrusters' : null,
+      equipment.includes('Kettlebells') ? 'Kettlebell Swing' : null,
+      'Burpee' // Last resort
+    ],
+    
+    hiit: [
+      equipment.includes('Kettlebells') ? 'Kettlebell Swing' : null,
+      equipment.includes('Plyo Box') ? 'Box Jump' : null,
+      equipment.includes('Battle Rope') ? 'Battle Rope Waves' : null,
+      equipment.includes('Medicine Ball') ? 'Medicine Ball Slam' : null,
+      'Burpee'
+    ],
+  };
+
+  const lifts = (coreLiftMap[workoutType.toLowerCase()] || []).filter((lift): lift is string => lift !== null);
+  return lifts[0] || 'Bodyweight Squat'; // Return first available, never push-up as default
+}
+
 export async function buildCoreLiftPool(
   focus: string,
   userEquip: string[],
