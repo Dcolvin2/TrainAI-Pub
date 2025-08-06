@@ -74,23 +74,6 @@ export default function TodaysWorkoutPage() {
   const [generatedWorkout, setGeneratedWorkout] = useState<GeneratedWorkout | null>(null);
   const [previousWorkoutData, setPreviousWorkoutData] = useState<any>({});
 
-  // Test Nike workout function
-  const testNikeWorkout = async () => {
-    try {
-      const response = await fetch('/api/nike-workout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
-      });
-      const data = await response.json();
-      console.log('Nike workout:', data);
-      alert(JSON.stringify(data, null, 2));
-    } catch (error) {
-      console.error('Error testing Nike workout:', error);
-      alert('Error testing Nike workout: ' + error);
-    }
-  };
-
   // Fetch previous workout data
   useEffect(() => {
     const fetchPreviousWorkout = async () => {
@@ -129,21 +112,61 @@ export default function TodaysWorkoutPage() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/chat-test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMessage })
-      });
+      // Check if user is requesting a Nike workout
+      const messageLower = userMessage.toLowerCase();
+      if (messageLower.includes('nike') || messageLower.includes('nike workout') || messageLower.includes('nike wod')) {
+        // Call Nike API directly
+        const nikeResponse = await fetch('/api/nike-workout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+        
+        if (nikeResponse.ok) {
+          const nikeData = await nikeResponse.json();
+          
+          // Add Nike response to chat
+          setChatMessages(prev => [...prev, { 
+            role: 'assistant', 
+            content: `Here's your Nike workout: ${nikeData.workout_name} (Workout #${nikeData.workout_number})` 
+          }]);
+          
+          // Update workout display
+          setGeneratedWorkout({
+            name: nikeData.workout_name,
+            warmup: nikeData.exercises.warmup.map((e: any) => e.exercise),
+            main: nikeData.exercises.main.map((e: any) => e.exercise),
+            accessories: nikeData.exercises.accessory.map((e: any) => e.exercise),
+            cooldown: nikeData.exercises.cooldown.map((e: any) => e.exercise)
+          });
+        } else {
+          setChatMessages(prev => [...prev, { 
+            role: 'assistant', 
+            content: "Sorry, I couldn't fetch a Nike workout right now. Please try again later." 
+          }]);
+        }
+      } else {
+        // Use regular chat endpoint for other requests
+        const response = await fetch('/api/chat-workout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: userMessage })
+        });
 
-      const data = await response.json();
-      setChatMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
-      
-      // If workout data is returned, update the display
-      if (data.workout) {
-        setGeneratedWorkout(data.workout);
+        const data = await response.json();
+        setChatMessages(prev => [...prev, { role: 'assistant', content: data.message || data.response }]);
+        
+        // If workout data is returned, update the display
+        if (data.workout) {
+          setGeneratedWorkout(data.workout);
+        }
       }
     } catch (error) {
       console.error('Chat error:', error);
+      setChatMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: "Sorry, I encountered an error. Please try again." 
+      }]);
     } finally {
       setIsLoading(false);
     }
@@ -265,16 +288,8 @@ export default function TodaysWorkoutPage() {
                 ))}
               </div>
               
-              {/* Nike Test Button */}
-              <div className="mt-4">
-                <button
-                  onClick={testNikeWorkout}
-                  className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
-                >
-                  Test Nike Workout
-                </button>
-              </div>
-        </div>
+              {/* Nike Test Button - REMOVED - Now integrated into chat */}
+            </div>
 
             {/* Generated Workout Display */}
             {generatedWorkout && (
