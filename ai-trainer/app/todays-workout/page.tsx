@@ -228,42 +228,30 @@ const ChatPanel = ({ workout, onClose, onUpdate }: ChatPanelProps) => {
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSendMessage = async (message: string) => {
-    if (!workout.sessionId) {
-      console.error('No session ID available for workout modification');
-      return;
-    }
+    if (!message.trim()) return;
 
     setIsLoading(true);
     
     try {
-      const response = await fetch('/api/modify-workout', {
+      // Change this to use our working endpoint
+      const response = await fetch('/api/chat-test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          modification: message,
-          sessionId: workout.sessionId
-        })
+        body: JSON.stringify({ message })
       });
+
+      const data = await response.json();
       
-      if (!response.ok) {
-        throw new Error('Failed to modify workout');
-      }
-      
-      const modifiedWorkout = await response.json();
-      
-      // Update the workout state
-      onUpdate(modifiedWorkout);
-      
-      // Add success message
-      setMessages(prev => [...prev, { 
-        role: 'assistant', 
-        content: `✅ Workout updated successfully! I've modified it according to your request: "${message}"` 
-      }]);
+      setMessages(prev => [
+        ...prev,
+        { role: 'user', content: message },
+        { role: 'assistant', content: data.response }
+      ]);
     } catch (error) {
-      console.error('Error modifying workout:', error);
+      console.error('Chat error:', error);
       setMessages(prev => [...prev, { 
         role: 'assistant', 
-        content: '❌ Sorry, I had trouble modifying your workout. Please try again.' 
+        content: '❌ Sorry, I had trouble processing your message. Please try again.' 
       }]);
     } finally {
       setIsLoading(false);
@@ -284,7 +272,7 @@ const ChatPanel = ({ workout, onClose, onUpdate }: ChatPanelProps) => {
   return (
     <div className="fixed right-0 top-0 h-full w-96 bg-gray-900 shadow-2xl z-50 flex flex-col">
       <div className="p-6 border-b border-gray-800 flex justify-between items-center">
-        <h3 className="text-xl font-bold text-white">Modify Workout</h3>
+        <h3 className="text-xl font-bold text-white">Chat with AI</h3>
         <button onClick={onClose} className="text-gray-400 hover:text-white">
           <X className="w-6 h-6" />
         </button>
@@ -308,7 +296,7 @@ const ChatPanel = ({ workout, onClose, onUpdate }: ChatPanelProps) => {
             <div className="bg-gray-800 text-gray-300 p-4 rounded-lg">
               <div className="flex items-center space-x-2">
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
-                <span>Modifying your workout...</span>
+                <span>Processing your message...</span>
               </div>
             </div>
           </div>
@@ -322,7 +310,7 @@ const ChatPanel = ({ workout, onClose, onUpdate }: ChatPanelProps) => {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="Type your modification..."
+            placeholder="Ask me anything..."
             disabled={isLoading}
             className="flex-1 bg-gray-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
           />
