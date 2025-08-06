@@ -155,7 +155,21 @@ export async function POST(request: Request) {
       accessoriesPool: workout.accessories.map(acc => acc.name) 
     });
 
-    return Response.json(workout);
+    // Add debugging console.log
+    console.log('API returning:', {
+      warmup: workout.warmup,
+      main: workout.mainLift,
+      accessories: workout.accessories,
+      cooldown: workout.cooldown
+    });
+
+    return Response.json({
+      name: `${type.toUpperCase()} Workout`,
+      warmup: workout.warmup || [],
+      main: [workout.mainLift] || [],
+      accessories: workout.accessories || [],
+      cooldown: workout.cooldown || []
+    });
   } catch (error) {
     console.error('Error generating workout:', error);
     return Response.json(

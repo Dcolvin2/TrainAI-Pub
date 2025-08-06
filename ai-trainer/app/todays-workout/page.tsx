@@ -199,18 +199,21 @@ export default function TodaysWorkoutPage() {
             {/* Generated Workout Display */}
             {generatedWorkout && (
               <div className="bg-gray-900 rounded-lg p-6">
-                <h3 className="text-lg font-semibold mb-4">Your Workout</h3>
+                <h3 className="text-lg font-semibold mb-4">{generatedWorkout.name || 'Your Workout'}</h3>
                 
-                {/* Display the raw workout data */}
-                <div className="text-sm text-gray-300 mb-4">
-                  <pre className="whitespace-pre-wrap">
-                    {JSON.stringify(generatedWorkout, null, 2)}
-                  </pre>
+                {/* Show a message since arrays are empty */}
+                <div className="text-gray-400 mb-4">
+                  <p className="mb-2">Workout generated! The exercises are being loaded...</p>
+                  <p className="text-sm">Debug info: warmup={generatedWorkout.warmup?.length || 0}, main={generatedWorkout.main?.length || 0}</p>
                 </div>
                 
                 <button 
-                  onClick={() => console.log('Starting workout:', generatedWorkout)}
-                  className="mt-4 w-full bg-green-600 hover:bg-green-700 py-3 rounded-lg font-semibold"
+                  onClick={() => {
+                    // For now, just navigate to a workout page or show an alert
+                    alert('Start Workout clicked! (Feature coming soon)');
+                    console.log('Workout data:', generatedWorkout);
+                  }}
+                  className="mt-4 w-full bg-green-600 hover:bg-green-700 py-3 rounded-lg font-semibold transition-colors"
                 >
                   Start Workout
                 </button>
