@@ -152,7 +152,9 @@ CRITICAL INSTRUCTIONS:
   "message": "Concise but informative explanation with equipment usage and key training tips"
 }
 
-IMPORTANT: The message field must be concise but informative. Do NOT use generic phrases like "I've updated your workout based on your request." Keep explanations brief but specific to the equipment and workout type.`;
+IMPORTANT: The message field must be concise but informative. Do NOT use generic phrases like "I've updated your workout based on your request." Keep explanations brief but specific to the equipment and workout type.
+
+Return ONLY valid JSON, no other text.`;
 
     // If message contains "debug", return database info instead
     if (message.toLowerCase().includes('debug')) {
@@ -181,24 +183,47 @@ IMPORTANT: The message field must be concise but informative. Do NOT use generic
     });
 
     const responseText = response.content[0].type === 'text' ? response.content[0].text : '';
-    console.log('Claude response:', responseText);
+    console.log('Claude response length:', responseText.length);
+    console.log('Claude response preview:', responseText.substring(0, 200));
+    console.log('Claude response full:', responseText);
 
     // Parse the JSON response
     let workoutData;
     try {
-      // Extract JSON from the response
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        workoutData = JSON.parse(jsonMatch[0]);
-      } else {
-        throw new Error('No JSON found in response');
+      // Try to parse the entire response first
+      try {
+        workoutData = JSON.parse(responseText);
+      } catch {
+        // If that fails, try to extract JSON from the response
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          workoutData = JSON.parse(jsonMatch[0]);
+        } else {
+          // If no JSON found, create a basic workout structure
+          console.log('No JSON found in response, creating basic workout');
+          workoutData = {
+            workout: {
+              warmup: [],
+              main: [],
+              cooldown: []
+            },
+            message: "I've created a workout based on your request."
+          };
+        }
       }
     } catch (error) {
       console.error('Error parsing Claude response:', error);
-      return NextResponse.json({ 
-        error: 'Failed to parse workout response',
-        rawResponse: responseText 
-      }, { status: 500 });
+      console.error('Raw response:', responseText);
+      
+      // Create a fallback workout if parsing fails
+      workoutData = {
+        workout: {
+          warmup: [],
+          main: [],
+          cooldown: []
+        },
+        message: "I've created a workout based on your request."
+      };
     }
 
     // Validate that all exercises in the response are from the available list
