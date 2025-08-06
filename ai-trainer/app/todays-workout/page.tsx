@@ -55,10 +55,10 @@ const workoutTypes = [
 
 interface GeneratedWorkout {
   name: string;
-  warmup: (string | { name: string })[];
-  main: (string | { name: string })[];
-  accessories: (string | { name: string })[];
-  cooldown: (string | { name: string })[];
+  warmup: (string | { name: string; sets?: string; reps?: string })[];
+  main: (string | { name: string; sets?: string; reps?: string })[];
+  accessories: (string | { name: string; sets?: string; reps?: string })[];
+  cooldown: (string | { name: string; sets?: string; reps?: string })[];
   duration?: number;
   focus?: string;
 }
@@ -265,13 +265,13 @@ export default function TodaysWorkoutPage() {
                         generatedWorkout.main.map((exercise, index) => {
                           const exerciseObj = typeof exercise === 'string' 
                             ? { name: exercise, sets: '3', reps: '10' }
-                            : exercise;
+                            : { name: exercise.name || 'Exercise', sets: exercise.sets || '3', reps: exercise.reps || '10' };
                           
                           return (
                             <div key={index} className="grid grid-cols-5 gap-4 items-center mb-2">
                               <span className="text-gray-300">{exerciseObj.name}</span>
-                              <span className="text-gray-500">{exerciseObj.sets || '3'}</span>
-                              <span className="text-gray-500">{exerciseObj.reps || '10'}</span>
+                              <span className="text-gray-500">{exerciseObj.sets}</span>
+                              <span className="text-gray-500">{exerciseObj.reps}</span>
                               <input type="number" className="bg-gray-700 rounded px-2 py-1 text-right" placeholder="0" />
                               <input type="checkbox" className="ml-auto w-5 h-5 cursor-pointer" />
                             </div>
