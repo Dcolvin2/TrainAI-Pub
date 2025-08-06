@@ -163,12 +163,13 @@ export async function POST(request: Request) {
       cooldown: workout.cooldown
     });
 
+    // TEMPORARY - Just to test the display
     return Response.json({
       name: `${type.toUpperCase()} Workout`,
-      warmup: workout.warmup || [],
-      main: workout.mainLift ? [workout.mainLift] : [],
-      accessories: workout.accessories || [],
-      cooldown: workout.cooldown || []
+      warmup: ['Arm Circles', 'Push-up Progression', 'Shoulder Rolls'],
+      main: ['Barbell Bench Press', 'Dumbbell Shoulder Press', 'Incline Dumbbell Press'],
+      accessories: ['Tricep Dips', 'Lateral Raises', 'Cable Flyes'],
+      cooldown: ['Chest Stretch', 'Shoulder Stretch', 'Tricep Stretch']
     });
   } catch (error) {
     console.error('Error generating workout:', error);
