@@ -149,10 +149,10 @@ CRITICAL INSTRUCTIONS:
       {"name": "Exercise Name", "duration": "30s"}
     ]
   },
-  "message": "DETAILED explanation with equipment usage, training tips, and specific instructions"
+  "message": "Concise but informative explanation with equipment usage and key training tips"
 }
 
-IMPORTANT: The message field must be detailed and specific to the equipment and workout type. Do NOT use generic phrases like "I've updated your workout based on your request."`;
+IMPORTANT: The message field must be concise but informative. Do NOT use generic phrases like "I've updated your workout based on your request." Keep explanations brief but specific to the equipment and workout type.`;
 
     // If message contains "debug", return database info instead
     if (message.toLowerCase().includes('debug')) {
@@ -241,18 +241,16 @@ IMPORTANT: The message field must be detailed and specific to the equipment and 
       let detailedMessage = `I've created a ${workoutType} workout using ${detectedEquipment}. `;
       
       if (mentionedEquipment.includes('Superbands')) {
-        detailedMessage += `Superbands add resistance to bodyweight exercises - wrap them around your back for push-ups, use for assisted pull-ups, or add resistance to squats. Focus on controlled movements and gradually increase band tension.`;
+        detailedMessage += `Superbands add resistance to bodyweight exercises - wrap around your back for push-ups or use for assisted pull-ups.`;
       } else if (mentionedEquipment.includes('Kettlebells')) {
-        detailedMessage += `Kettlebell exercises build explosive power and functional strength. Focus on proper form, especially for swings and cleans. Start with lighter weights and gradually increase load.`;
+        detailedMessage += `Kettlebell exercises build explosive power and functional strength. Focus on proper form for swings and cleans.`;
       } else if (mentionedEquipment.includes('Barbells')) {
-        detailedMessage += `Barbell exercises are excellent for building strength and muscle mass. Focus on compound movements and proper form. Start with lighter weights to perfect technique.`;
+        detailedMessage += `Barbell exercises are excellent for building strength and muscle mass. Focus on compound movements.`;
       } else if (mentionedEquipment.includes('Dumbbells')) {
-        detailedMessage += `Dumbbell exercises provide unilateral training and better range of motion. Focus on controlled movements and proper breathing throughout each exercise.`;
+        detailedMessage += `Dumbbell exercises provide unilateral training and better range of motion.`;
       } else {
-        detailedMessage += `The exercises are specifically chosen to match your equipment and fitness goals. Focus on proper form and gradually increase intensity as you progress.`;
+        detailedMessage += `The exercises are specifically chosen to match your equipment and fitness goals.`;
       }
-      
-      detailedMessage += ` Rest 60-90 seconds between sets and listen to your body.`;
       
       workoutData.message = detailedMessage;
     }
