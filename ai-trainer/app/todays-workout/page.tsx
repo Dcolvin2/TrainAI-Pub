@@ -5,6 +5,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { generateWorkoutForType, getWorkoutSuggestions, saveWorkout } from '@/lib/workoutGenerator';
 import { WorkoutDisplay } from '../components/WorkoutDisplay';
+import { WorkoutCard } from '../components/WorkoutCard';
 
 // Simple icon components
 const ChevronRight = ({ className, ...props }: any) => (
@@ -541,95 +542,141 @@ export default function TodaysWorkout() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950">
-      {/* Header */}
-      <div className="bg-gray-900 border-b border-gray-800">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-white">Today's Workout</h1>
-          <div className="text-gray-400">
-            <Clock className="w-5 h-5 inline mr-2" />
-            <span>{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-          </div>
+    <div className="min-h-screen bg-primary">
+      {/* Clean Header */}
+      <div className="bg-secondary border-b border-border">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+          <h1 className="text-xl font-semibold text-primary">TrainAI</h1>
+          <h2 className="text-lg font-medium text-primary">Dashboard</h2>
+          <button className="text-primary hover:text-secondary transition-colors">Profile</button>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Top Section: Quick Workouts and Workout Chat */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-          {/* Quick Workouts */}
-          <div className="bg-gray-900 rounded-lg p-6">
-            <h2 className="text-xl font-bold text-white mb-6">Quick Workouts</h2>
-            <div className="grid grid-cols-2 gap-4">
-              {[
-                { label: 'Push', color: 'bg-blue-600' },
-                { label: 'Pull', color: 'bg-green-600' },
-                { label: 'Upper Body', color: 'bg-purple-600' },
-                { label: 'Lower Body', color: 'bg-orange-600' },
-                { label: 'HIIT', color: 'bg-red-600' },
-                { label: '15 Min', color: 'bg-purple-600' }
-              ].map((workout, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => handleWorkoutSelect({
-                    type: workout.label.toLowerCase().replace(' ', ''),
-                    id: workout.label.toLowerCase().replace(' ', ''),
-                    label: workout.label,
-                    timeAvailable: timeAvailable
-                  })}
-                  className={`${workout.color} hover:opacity-90 text-white font-bold py-4 px-6 rounded-lg transition-colors`}
-                >
-                  {workout.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Workout Chat */}
-          <div className="bg-gray-900 rounded-lg p-6">
-            <div className="flex items-center mb-4">
-              <h2 className="text-xl font-bold text-white">Workout Chat</h2>
-              <span className="ml-2 text-2xl">💪</span>
-            </div>
-            <div className="bg-gray-800 rounded-lg p-4 mb-4">
-              <p className="text-gray-300">Hi! I can help you create a custom workout. Tell me what you want to focus on today!</p>
-            </div>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="Tell me about your workout goals..."
-                className="flex-1 bg-gray-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-              />
+      <div className="max-w-7xl mx-auto px-6 py-8">
+        {/* Time Selection */}
+        <div className="mb-8">
+          <h3 className="text-lg font-medium text-primary mb-4">Time Available</h3>
+          <div className="flex gap-4">
+            {[15, 30, 45, 60].map((time) => (
               <button
-                onClick={() => setShowChat(true)}
-                className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+                key={time}
+                onClick={() => handleTimeChange(time)}
+                className={`px-6 py-3 rounded-lg font-medium transition-all ${
+                  timeAvailable === time
+                    ? 'bg-card text-primary border border-border'
+                    : 'bg-secondary text-secondary hover:bg-hover hover:text-primary'
+                }`}
               >
-                Send
+                {time === 60 ? '60+' : `${time} min`}
               </button>
-            </div>
+            ))}
           </div>
         </div>
 
-        {/* Time Selector */}
-        <TimeSelector 
-          timeAvailable={timeAvailable}
-          onTimeChange={handleTimeChange}
-        />
-
-        {/* Workout Type Selector */}
-        <div className="bg-gray-900 rounded-lg p-6 mb-8">
-          <WorkoutTypeSelector 
-            onSelect={handleWorkoutSelect} 
-            timeAvailable={timeAvailable}
-            suggestedType={suggestedType}
-            setShowChat={setShowChat}
-          />
+        {/* Workout Type Cards - Two Rows */}
+        <div className="mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* First Row */}
+            <WorkoutCard
+              type="PUSH"
+              primaryMuscles="Chest, Shoulders"
+              accentColor="var(--accent-push)"
+              onClick={() => handleWorkoutSelect({
+                type: 'push',
+                id: 'push',
+                label: 'Push',
+                timeAvailable: timeAvailable
+              })}
+            />
+            <WorkoutCard
+              type="PULL"
+              primaryMuscles="Back, Biceps"
+              accentColor="var(--accent-pull)"
+              onClick={() => handleWorkoutSelect({
+                type: 'pull',
+                id: 'pull',
+                label: 'Pull',
+                timeAvailable: timeAvailable
+              })}
+            />
+            <WorkoutCard
+              type="LEGS"
+              primaryMuscles="Quads, Glutes"
+              accentColor="var(--accent-legs)"
+              onClick={() => handleWorkoutSelect({
+                type: 'legs',
+                id: 'legs',
+                label: 'Legs',
+                timeAvailable: timeAvailable
+              })}
+            />
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+            {/* Second Row */}
+            <WorkoutCard
+              type="UPPER"
+              primaryMuscles="Body"
+              accentColor="var(--accent-upper)"
+              onClick={() => handleWorkoutSelect({
+                type: 'upper',
+                id: 'upper',
+                label: 'Upper',
+                timeAvailable: timeAvailable
+              })}
+            />
+            <WorkoutCard
+              type="FULL"
+              primaryMuscles="Body"
+              accentColor="var(--accent-full)"
+              onClick={() => handleWorkoutSelect({
+                type: 'full',
+                id: 'full',
+                label: 'Full',
+                timeAvailable: timeAvailable
+              })}
+            />
+            <WorkoutCard
+              type="HIIT"
+              primaryMuscles="Intervals"
+              accentColor="var(--accent-hiit)"
+              onClick={() => handleWorkoutSelect({
+                type: 'hiit',
+                id: 'hiit',
+                label: 'HIIT',
+                timeAvailable: timeAvailable
+              })}
+            />
+          </div>
         </div>
-        
+
+        {/* Separator */}
+        <div className="border-t border-border mb-8"></div>
+
+        {/* AI Workout Assistant */}
+        <div className="bg-card rounded-lg p-6">
+          <h3 className="text-lg font-medium text-primary mb-4">AI Workout Assistant</h3>
+          <div className="flex gap-4">
+            <input
+              type="text"
+              placeholder="Describe your workout goals or say \"Nike workouts\"..."
+              className="flex-1 bg-secondary text-primary px-4 py-3 rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-accent-push focus:border-transparent"
+              onKeyPress={(e) => e.key === 'Enter' && setShowChat(true)}
+            />
+            <button
+              onClick={() => setShowChat(true)}
+              className="bg-accent-push hover:bg-accent-push/90 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+            >
+              Send
+            </button>
+          </div>
+        </div>
+
         {/* Loading State */}
         {isGenerating && (
           <div className="flex flex-col items-center justify-center py-20">
-            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-green-400 mb-4"></div>
-            <p className="text-xl text-white">Generating your {selectedType?.label} workout...</p>
+            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-accent-push mb-4"></div>
+            <p className="text-xl text-primary">Generating your {selectedType?.label} workout...</p>
           </div>
         )}
 

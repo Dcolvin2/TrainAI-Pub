@@ -49,6 +49,31 @@ body {
 }
 
 :root {
+  /* Professional Color System */
+  --bg-primary: #0F0F10;      /* Deep black */
+  --bg-secondary: #18181B;    /* Subtle gray */
+  --bg-card: #27272A;         /* Card surface */
+  --bg-hover: #3F3F46;        /* Hover state */
+  
+  /* Accent Colors - Subtle but distinct */
+  --accent-push: #3B82F6;     /* Professional blue */
+  --accent-pull: #059669;     /* Forest green */
+  --accent-legs: #7C3AED;     /* Deep purple */
+  --accent-upper: #DC2626;    /* Strong red */
+  --accent-full: #EA580C;     /* Deep orange */
+  --accent-hiit: #CA8A04;     /* Muted yellow */
+  
+  /* Text */
+  --text-primary: #FAFAFA;    /* Crisp white */
+  --text-secondary: #A1A1AA;  /* Muted gray */
+  --text-tertiary: #71717A;   /* Subtle gray */
+  
+  /* Functional */
+  --border: #27272A;          /* Subtle borders */
+  --success: #059669;         /* Green */
+  --warning: #D97706;         /* Amber */
+  --error: #DC2626;           /* Red */
+  
   /* Brand Colors */
   --primary: #22C55E;
   --primary-dark: #16a34a;
