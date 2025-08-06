@@ -167,16 +167,13 @@ function ExerciseCard({ exercise, onStartRest }: ExerciseCardProps) {
               onChange={(e) => updateSet(idx, 'reps', e.target.value)}
               className="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-right"
             />
-            <button
-              onClick={() => completeSet(idx)}
-              className={`w-8 h-8 rounded-full border-2 ${
-                set.completed 
-                  ? 'bg-green-500 border-green-500' 
-                  : 'border-gray-600 hover:border-green-500'
-              }`}
-            >
-              {set.completed && '✓'}
-            </button>
+            <input
+              type="checkbox"
+              checked={set.completed || false}
+              onChange={(e) => completeSet(idx)}
+              className="w-5 h-5 cursor-pointer text-green-500 bg-gray-800 border-gray-600 rounded focus:ring-green-500 focus:ring-2"
+              disabled={false}
+            />
           </div>
         ))}
       </div>
