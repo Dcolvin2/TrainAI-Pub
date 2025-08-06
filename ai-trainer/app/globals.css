@@ -30,6 +30,18 @@ body {
   font-size: 16px !important;
 }
 
+/* Chat-specific styles */
+.chat-message {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  max-width: 100%;
+}
+
+.chat-container {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
 /* Mobile zoom prevention for workout inputs */
 .workout-form input[type="number"],
 .workout-form input[type="text"] {

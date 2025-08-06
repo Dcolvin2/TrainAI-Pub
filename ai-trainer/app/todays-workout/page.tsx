@@ -293,15 +293,15 @@ const ChatPanel = ({ workout, onClose, onUpdate }: ChatPanelProps) => {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-4">
+      <div className="flex-1 overflow-y-auto p-6 space-y-4 chat-container">
         {messages.map((msg, i) => (
           <div key={i} className={`${
             msg.role === 'user' ? 'ml-8' : 'mr-8'
           }`}>
-            <div className={`p-4 rounded-lg ${
+            <div className={`p-4 rounded-lg chat-message ${
               msg.role === 'user' ? 'bg-blue-900/50 text-white' : 'bg-gray-800 text-gray-300'
             }`}>
-              <div className="whitespace-pre-wrap break-words">
+              <div className="whitespace-pre-wrap break-words max-w-full">
                 {msg.content}
               </div>
             </div>
