@@ -81,21 +81,44 @@ export default function TodaysWorkoutPage() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/chat-test', {
+      const response = await fetch('/api/chat-workout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMessage })
+        body: JSON.stringify({ 
+          message: userMessage,
+          sessionId: null // TODO: Implement session management
+        })
       });
 
       const data = await response.json();
-      setChatMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
       
-      // If workout data is returned, update the display
-      if (data.workout) {
+      // Handle different response types
+      if (data.type === 'nike_prompt') {
+        // Store pending Nike workout in session context
+        // TODO: Implement proper session storage
+        setChatMessages(prev => [...prev, { 
+          role: 'assistant', 
+          content: data.message,
+          nikeWorkout: {
+            number: data.workoutNumber,
+            name: data.workoutName,
+            requiresConfirmation: data.requiresConfirmation
+          }
+        }]);
+      } else if (data.type === 'workout') {
+        // Display the workout
         setGeneratedWorkout(data.workout);
+        setChatMessages(prev => [...prev, { role: 'assistant', content: data.message }]);
+      } else {
+        // General response
+        setChatMessages(prev => [...prev, { role: 'assistant', content: data.message }]);
       }
     } catch (error) {
       console.error('Chat error:', error);
+      setChatMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: 'Sorry, I encountered an error. Please try again.' 
+      }]);
     } finally {
       setIsLoading(false);
     }
