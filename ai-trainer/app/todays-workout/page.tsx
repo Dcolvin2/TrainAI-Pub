@@ -53,6 +53,14 @@ const workoutTypes = [
   }
 ];
 
+interface GeneratedWorkout {
+  name: string;
+  warmup: string[];
+  main: any[];
+  accessories: string[];
+  cooldown: string[];
+}
+
 export default function TodaysWorkoutPage() {
   const { user } = useAuth();
   const router = useRouter();
@@ -60,7 +68,7 @@ export default function TodaysWorkoutPage() {
   const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [generatedWorkout, setGeneratedWorkout] = useState(null);
+  const [generatedWorkout, setGeneratedWorkout] = useState<GeneratedWorkout | null>(null);
 
   const handleSendMessage = async () => {
     if (!inputMessage.trim() || isLoading) return;
@@ -103,9 +111,16 @@ export default function TodaysWorkoutPage() {
           focus: workoutType
         })
       });
-
       const data = await response.json();
-      setGeneratedWorkout(data);
+      
+      // Set the generated workout to display
+      setGeneratedWorkout({
+        name: `${workoutType.toUpperCase()} Workout`,
+        warmup: data.warmup || [],
+        main: data.workout || data.main || [],
+        accessories: data.accessories || [],
+        cooldown: data.cooldown || []
+      });
       
       // Add to chat
       setChatMessages(prev => [...prev, {
@@ -138,19 +153,8 @@ export default function TodaysWorkoutPage() {
 
   return (
     <div className="min-h-screen bg-black text-white">
-      {/* Header */}
-      <header className="border-b border-gray-800 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <h1 className="text-2xl font-bold">TrainAI</h1>
-          <nav className="hidden md:flex space-x-6">
-            <Link href="/dashboard" className="hover:text-gray-300">Dashboard</Link>
-            <Link href="/profile" className="hover:text-gray-300">Profile</Link>
-          </nav>
-        </div>
-      </header>
-
-      <div className="max-w-7xl mx-auto px-6 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="max-w-7xl mx-auto px-6 py-8 h-full">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
           {/* Left side - Workout Selection */}
           <div className="lg:col-span-2 space-y-8">
             {/* Time Selection */}
@@ -196,7 +200,55 @@ export default function TodaysWorkoutPage() {
             {generatedWorkout && (
               <div className="bg-gray-900 rounded-lg p-6">
                 <h3 className="text-lg font-semibold mb-4">Your Workout</h3>
-                {/* Workout details here */}
+                
+                {/* Warmup */}
+                {generatedWorkout.warmup?.length > 0 && (
+                  <div className="mb-4">
+                    <h4 className="font-medium text-gray-400 mb-2">Warm-up</h4>
+                    {generatedWorkout.warmup.map((exercise, idx) => (
+                      <div key={idx} className="text-sm text-gray-300 mb-1">
+                        {idx + 1}. {exercise}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                {/* Main Workout */}
+                {generatedWorkout.main?.length > 0 && (
+                  <div className="mb-4">
+                    <h4 className="font-medium text-gray-400 mb-2">Main Workout</h4>
+                    {generatedWorkout.main.map((exercise, idx) => (
+                      <div key={idx} className="text-sm text-gray-300 mb-1">
+                        {idx + 1}. {typeof exercise === 'string' ? exercise : exercise.name}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                {/* Accessories */}
+                {generatedWorkout.accessories?.length > 0 && (
+                  <div className="mb-4">
+                    <h4 className="font-medium text-gray-400 mb-2">Accessories</h4>
+                    {generatedWorkout.accessories.map((exercise, idx) => (
+                      <div key={idx} className="text-sm text-gray-300 mb-1">
+                        {idx + 1}. {exercise}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                {/* Cooldown */}
+                {generatedWorkout.cooldown?.length > 0 && (
+                  <div className="mb-4">
+                    <h4 className="font-medium text-gray-400 mb-2">Cool-down</h4>
+                    {generatedWorkout.cooldown.map((exercise, idx) => (
+                      <div key={idx} className="text-sm text-gray-300 mb-1">
+                        {idx + 1}. {exercise}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
                 <button className="mt-4 w-full bg-green-600 hover:bg-green-700 py-3 rounded-lg font-semibold">
                   Start Workout
                 </button>
