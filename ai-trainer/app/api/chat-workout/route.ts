@@ -8,7 +8,7 @@ const anthropic = new Anthropic({
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_KEY! // Use service role key for server-side operations
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
 export async function POST(request: Request) {
@@ -17,14 +17,23 @@ export async function POST(request: Request) {
     
     console.log('Chat request received:', { message, userId });
     
-    // Use userId from request body since we're using service role key
-    if (!userId) {
-      console.log('No user ID provided');
-      return NextResponse.json({ error: 'User ID required' }, { status: 400 });
-    }
+    // Get the authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
     
-    const actualUserId = userId;
-    console.log('Using user ID:', actualUserId);
+    console.log('Auth result:', { user: user?.id, authError, requestUserId: userId });
+    
+    // Use authenticated user if available, otherwise use userId from request body
+    let actualUserId;
+    if (user) {
+      actualUserId = user.id;
+      console.log('Using authenticated user ID:', actualUserId);
+    } else if (userId) {
+      actualUserId = userId;
+      console.log('Using request body user ID:', actualUserId);
+    } else {
+      console.log('No user ID available');
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     
     // CRITICAL: Get user's available equipment
     const { data: userEquipment } = await supabase
