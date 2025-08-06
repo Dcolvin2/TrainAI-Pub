@@ -13,18 +13,18 @@ const supabase = createClient(
 
 export async function POST(request: Request) {
   try {
-    const { message, currentWorkout, sessionId } = await request.json();
+    const { message, currentWorkout, sessionId, userId } = await request.json();
     
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // Use userId from request body instead of auth context
+    if (!userId) {
+      return NextResponse.json({ error: 'Missing userId' }, { status: 400 });
     }
 
     // CRITICAL: Get user's available equipment
     const { data: userEquipment } = await supabase
       .from('user_equipment')
       .select('equipment:equipment_id(name)')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .eq('is_available', true);
 
     const availableEquipment = userEquipment?.map((eq: any) => eq.equipment.name) || [];

@@ -165,7 +165,8 @@ export default function TodaysWorkoutPage() {
           body: JSON.stringify({ 
             message: userMessage,
             currentWorkout: generatedWorkout || null,
-            sessionId: null // We can add session tracking later if needed
+            sessionId: null, // We can add session tracking later if needed
+            userId: user?.id
           })
         });
 
