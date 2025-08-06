@@ -20,6 +20,105 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const messageLC = message.toLowerCase().trim();
+
+    // ONLY ADD THIS SECTION - Handle Nike workouts
+    if (messageLC === 'nike' || messageLC.includes('nike workout')) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('last_nike_workout')
+        .eq('user_id', user.id)
+        .single();
+
+      const nextWorkout = (profile?.last_nike_workout || 0) + 1;
+      
+      const { data: nikeWorkout } = await supabase
+        .from('nike_workouts')
+        .select('workout, workout_type')
+        .eq('workout', nextWorkout)
+        .limit(1)
+        .single();
+
+      if (nikeWorkout) {
+        // Store pending workout in session for confirmation
+        if (sessionId) {
+          await supabase
+            .from('chat_sessions')
+            .update({ context: { pendingNikeWorkout: nextWorkout } })
+            .eq('id', sessionId);
+        }
+
+        return NextResponse.json({
+          success: true,
+          message: `You previously completed workout ${profile?.last_nike_workout || 0}. Would you like to proceed with workout ${nextWorkout}: ${nikeWorkout.workout_type}?`,
+          requiresConfirmation: true
+        });
+      }
+    }
+
+    // Handle "yes" confirmation for Nike workout
+    if (messageLC === 'yes' && sessionId) {
+      // Check if there's a pending Nike workout
+      const { data: session } = await supabase
+        .from('chat_sessions')
+        .select('context')
+        .eq('id', sessionId)
+        .single();
+
+      if (session?.context?.pendingNikeWorkout) {
+        const workoutNum = session.context.pendingNikeWorkout;
+        
+        // Get exercises from nike_workouts
+        const { data: exercises } = await supabase
+          .from('nike_workouts')
+          .select('*')
+          .eq('workout', workoutNum);
+
+        if (exercises && exercises.length > 0) {
+          // Format exercises properly
+          const warmup = exercises
+            .filter(e => e.exercise_phase === 'warmup')
+            .map(e => ({ name: e.exercise, sets: e.sets, reps: e.reps }));
+          
+          const main = exercises
+            .filter(e => e.exercise_phase === 'main')
+            .map(e => ({ name: e.exercise, sets: e.sets, reps: e.reps }));
+          
+          const accessories = exercises
+            .filter(e => e.exercise_phase === 'accessory')
+            .map(e => ({ name: e.exercise, sets: e.sets, reps: e.reps }));
+          
+          const cooldown = exercises
+            .filter(e => e.exercise_phase === 'cooldown')
+            .map(e => ({ name: e.exercise, duration: e.reps }));
+
+          // Update user's progress
+          await supabase
+            .from('profiles')
+            .update({ last_nike_workout: workoutNum })
+            .eq('user_id', user.id);
+
+          // Clear pending workout
+          await supabase
+            .from('chat_sessions')
+            .update({ context: {} })
+            .eq('id', sessionId);
+
+          return NextResponse.json({
+            success: true,
+            workout: {
+              name: exercises[0]?.workout_type || `Nike Workout ${workoutNum}`,
+              warmup,
+              main,
+              accessories,
+              cooldown
+            },
+            message: `Starting ${exercises[0]?.workout_type}! 💪`
+          });
+        }
+      }
+    }
+
     // CRITICAL: Get user's available equipment
     const { data: userEquipment } = await supabase
       .from('user_equipment')
