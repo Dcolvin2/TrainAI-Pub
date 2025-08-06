@@ -289,8 +289,8 @@ export default function TodaysWorkoutPage() {
                       <div className="grid grid-cols-5 gap-4 text-sm text-gray-400 mb-4 pb-2 border-b border-gray-700">
                         <span>Set</span>
                         <span>Previous</span>
-                        <span className="text-right">Reps</span>
                         <span className="text-right">lbs</span>
+                        <span className="text-right">Reps</span>
                         <span className="text-right">Complete</span>
                       </div>
                       
@@ -344,13 +344,13 @@ export default function TodaysWorkoutPage() {
                                     <input
                                       type="number"
                                       className="bg-gray-700 rounded px-2 py-1 text-center text-white"
-                                      placeholder={targetReps.toString()}
-                                      defaultValue={targetReps}
+                                      placeholder="0"
                                     />
                                     <input
                                       type="number"
                                       className="bg-gray-700 rounded px-2 py-1 text-center text-white"
-                                      placeholder="0"
+                                      placeholder={targetReps.toString()}
+                                      defaultValue={targetReps}
                                     />
                                     <input type="checkbox" className="ml-auto w-5 h-5 cursor-pointer" />
                                   </div>
