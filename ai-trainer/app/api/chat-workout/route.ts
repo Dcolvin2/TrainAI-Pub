@@ -18,12 +18,15 @@ export async function POST(request: Request) {
     // Get the authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     
-    if (authError || !user) {
+    // Use authenticated user if available, otherwise use userId from request body
+    let actualUserId;
+    if (user) {
+      actualUserId = user.id;
+    } else if (userId) {
+      actualUserId = userId;
+    } else {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
-
-    // Use the authenticated user's ID
-    const actualUserId = user.id;
     
     // CRITICAL: Get user's available equipment
     const { data: userEquipment } = await supabase
