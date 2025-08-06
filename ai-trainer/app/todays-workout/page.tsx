@@ -314,13 +314,12 @@ export default function TodaysWorkoutPage() {
                                 <span className="ml-2 px-2 py-1 bg-green-600 text-xs text-white rounded">
                                   Main Lift
                                 </span>
-                                <span className="ml-8 text-sm text-gray-400">Previous</span>
                               </div>
                               <div className="bg-gray-800 rounded-lg p-4">
                                 {/* Column headers */}
                                 <div className="grid grid-cols-5 gap-4 text-sm text-gray-400 mb-2">
                                   <span>Set</span>
-                                  <span></span>
+                                  <span>Previous</span>
                                   <span>lbs</span>
                                   <span>Reps</span>
                                   <span>Complete</span>
@@ -368,12 +367,11 @@ export default function TodaysWorkoutPage() {
                             {typeof exercise === 'string' ? exercise : exercise.name || 'Exercise'}
                           </h4>
                           <span className="ml-2 px-2 py-1 bg-blue-600 text-xs text-white rounded">Accessory</span>
-                          <span className="ml-8 text-sm text-gray-400">Previous</span>
                         </div>
                         <div className="bg-gray-800 rounded-lg p-4">
                           <div className="grid grid-cols-5 gap-4 text-sm text-gray-400 mb-2">
                             <span>Set</span>
-                            <span></span>
+                            <span>Previous</span>
                             <span>lbs</span>
                             <span>Reps</span>
                             <span>Complete</span>
