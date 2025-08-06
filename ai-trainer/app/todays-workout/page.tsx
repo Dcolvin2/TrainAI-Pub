@@ -55,10 +55,10 @@ const workoutTypes = [
 
 interface GeneratedWorkout {
   name: string;
-  warmup: string[];
-  main: any[];
-  accessories: string[];
-  cooldown: string[];
+  warmup: (string | { name: string })[];
+  main: (string | { name: string })[];
+  accessories: (string | { name: string })[];
+  cooldown: (string | { name: string })[];
 }
 
 export default function TodaysWorkoutPage() {
@@ -231,7 +231,9 @@ export default function TodaysWorkoutPage() {
                           <span className="w-6 h-6 bg-gray-700 rounded-full flex items-center justify-center text-xs text-white mr-3">
                             {idx + 1}
                           </span>
-                          <span className="text-gray-200">{exercise.name || exercise}</span>
+                          <span className="text-gray-200">
+                            {typeof exercise === 'string' ? exercise : exercise.name || 'Exercise'}
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -242,7 +244,11 @@ export default function TodaysWorkoutPage() {
                 {generatedWorkout.main?.length > 0 && (
                   <div className="mb-6">
                     <div className="flex items-center mb-3">
-                      <h4 className="text-md font-semibold text-gray-300">{generatedWorkout.main[0]?.name || 'Main Lift'}</h4>
+                      <h4 className="text-md font-semibold text-gray-300">
+                        {typeof generatedWorkout.main[0] === 'string' 
+                          ? generatedWorkout.main[0] 
+                          : generatedWorkout.main[0]?.name || 'Main Lift'}
+                      </h4>
                       <span className="ml-2 px-2 py-1 bg-green-600 text-xs text-white rounded">Main Lift</span>
                     </div>
                     <div className="bg-gray-800 rounded-lg p-4">
@@ -280,7 +286,9 @@ export default function TodaysWorkoutPage() {
                     {generatedWorkout.accessories.map((exercise, idx) => (
                       <div key={idx} className="mb-4">
                         <div className="flex items-center mb-3">
-                          <h4 className="text-md font-semibold text-gray-300">{exercise.name || exercise}</h4>
+                          <h4 className="text-md font-semibold text-gray-300">
+                            {typeof exercise === 'string' ? exercise : exercise.name || 'Exercise'}
+                          </h4>
                           <span className="ml-2 px-2 py-1 bg-blue-600 text-xs text-white rounded">Accessory</span>
                         </div>
                         <div className="bg-gray-800 rounded-lg p-4">
@@ -324,7 +332,9 @@ export default function TodaysWorkoutPage() {
                           <span className="w-6 h-6 bg-gray-700 rounded-full flex items-center justify-center text-xs text-white mr-3">
                             {idx + 1}
                           </span>
-                          <span className="text-gray-200">{exercise.name || exercise}</span>
+                          <span className="text-gray-200">
+                            {typeof exercise === 'string' ? exercise : exercise.name || 'Exercise'}
+                          </span>
                         </div>
                       ))}
                     </div>
