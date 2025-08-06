@@ -100,9 +100,9 @@ ${availableExercises.map((e: any) => `- ${e.name} (${e.category}, ${e.primary_mu
 
 CRITICAL INSTRUCTIONS:
 1. You MUST return a MODIFIED workout, not suggestions
-2. Replace exercises the user can't do with ones from AVAILABLE EXERCISES list
-3. ONLY use exercises from the AVAILABLE EXERCISES list
-4. If the user mentions specific equipment (like "superbands"), prioritize exercises using that equipment
+2. ONLY use exercises from the AVAILABLE EXERCISES list above - DO NOT invent new exercises
+3. If the user mentions specific equipment (like "kettlebells"), ONLY use exercises that are tagged with that equipment
+4. If no exercises are available for the mentioned equipment, use bodyweight alternatives
 5. Return exercises as a clean array without workout instructions. Each exercise should be:
    {
      "name": "Exercise Name",  // Just the name, no numbers or instructions
@@ -110,7 +110,8 @@ CRITICAL INSTRUCTIONS:
      "reps": "15"
    }
 6. Do NOT include items like 'Perform 3 rounds of:' in the exercise list
-7. Return the COMPLETE modified workout in this exact JSON format:
+7. IMPORTANT: Only use exercise names that EXACTLY match the AVAILABLE EXERCISES list
+8. Return the COMPLETE modified workout in this exact JSON format:
 
 {
   "workout": {
@@ -150,25 +151,72 @@ Return ONLY valid JSON, no other text.`;
     }
 
     const response = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20241022",
-      max_tokens: 2000,
-      temperature: 0.7,
-      messages: [{ role: "user", content: prompt }]
+      model: 'claude-3-5-sonnet-20241022',
+      max_tokens: 4000,
+      messages: [{ role: 'user', content: prompt }]
     });
 
     const responseText = response.content[0].type === 'text' ? response.content[0].text : '';
-    const modifiedWorkout = JSON.parse(responseText);
+    console.log('Claude response:', responseText);
+
+    // Parse the JSON response
+    let workoutData;
+    try {
+      // Extract JSON from the response
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        workoutData = JSON.parse(jsonMatch[0]);
+      } else {
+        throw new Error('No JSON found in response');
+      }
+    } catch (error) {
+      console.error('Error parsing Claude response:', error);
+      return NextResponse.json({ 
+        error: 'Failed to parse workout response',
+        rawResponse: responseText 
+      }, { status: 500 });
+    }
+
+    // Validate that all exercises in the response are from the available list
+    const availableExerciseNames = availableExercises.map((e: any) => e.name);
+    const allExercisesInResponse = [
+      ...(workoutData.workout?.warmup || []),
+      ...(workoutData.workout?.main || []),
+      ...(workoutData.workout?.cooldown || [])
+    ].map((e: any) => e.name);
+
+    const invalidExercises = allExercisesInResponse.filter((name: string) => 
+      !availableExerciseNames.includes(name)
+    );
+
+    if (invalidExercises.length > 0) {
+      console.log('Invalid exercises found:', invalidExercises);
+      console.log('Available exercises:', availableExerciseNames);
+      
+      // Filter out invalid exercises and replace with available ones
+      const filterExercises = (exerciseList: any[]) => {
+        return exerciseList.filter((exercise: any) => 
+          availableExerciseNames.includes(exercise.name)
+        );
+      };
+
+      if (workoutData.workout) {
+        workoutData.workout.warmup = filterExercises(workoutData.workout.warmup || []);
+        workoutData.workout.main = filterExercises(workoutData.workout.main || []);
+        workoutData.workout.cooldown = filterExercises(workoutData.workout.cooldown || []);
+      }
+    }
 
     // UPDATE the workout session in database
     if (sessionId) {
       await supabase
         .from('workout_sessions')
         .update({
-          planned_exercises: modifiedWorkout.workout,
+          planned_exercises: workoutData.workout,
           modifications: { 
             timestamp: new Date().toISOString(),
             reason: message,
-            changes: modifiedWorkout.changes
+            changes: workoutData.changes
           }
         })
         .eq('id', sessionId);
@@ -176,8 +224,8 @@ Return ONLY valid JSON, no other text.`;
 
     return NextResponse.json({
       success: true,
-      workout: modifiedWorkout.workout,
-      message: modifiedWorkout.changes
+      workout: workoutData.workout,
+      message: workoutData.changes
     });
 
   } catch (error) {
