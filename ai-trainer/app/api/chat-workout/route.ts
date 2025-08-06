@@ -74,10 +74,10 @@ export async function POST(request: Request) {
 
     // Filter exercises by available equipment (including mentioned equipment)
     const availableExercises = exercises?.filter((exercise: any) => {
-      if (!exercise.equipment_required || exercise.equipment_required.length === 0) {
+      if (!exercise.required_equipment || exercise.required_equipment.length === 0) {
         return true; // Bodyweight exercises
       }
-      return exercise.equipment_required.every((req: string) => 
+      return exercise.required_equipment.every((req: string) => 
         allAvailableEquipment.includes(req)
       );
     }) || [];
