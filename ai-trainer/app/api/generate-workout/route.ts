@@ -1,12 +1,17 @@
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
+import { supabase } from '@/lib/supabaseClient';
 import { NextResponse } from 'next/server';
 
 export async function POST(request: Request) {
   try {
     const { workoutType, timeAvailable = 45 } = await request.json();
     
-    const supabase = createRouteHandlerClient({ cookies });
+    // Get user from request headers (you'll need to pass user ID from frontend)
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader) {
+      return NextResponse.json({ error: 'No authorization header' }, { status: 401 });
+    }
+    
+    // For now, let's use a simple approach - you can enhance this later
     const { data: { user } } = await supabase.auth.getUser();
     
     if (!user) {
@@ -24,7 +29,7 @@ export async function POST(request: Request) {
       .eq('user_id', user.id)
       .eq('is_available', true);
 
-    const equipment = userEquipment?.map(eq => eq.equipment.name) || [];
+    const equipment = userEquipment?.map((eq: any) => eq.equipment.name) || [];
 
     // Get exercises from database
     const { data: exercises } = await supabase
@@ -32,9 +37,9 @@ export async function POST(request: Request) {
       .select('*');
 
     // Filter exercises by equipment
-    const availableExercises = exercises?.filter(ex => {
+    const availableExercises = exercises?.filter((ex: any) => {
       if (!ex.equipment_required || ex.equipment_required.length === 0) return true;
-      return ex.equipment_required.some(req => equipment.includes(req));
+      return ex.equipment_required.some((req: string) => equipment.includes(req));
     }) || [];
 
     // Build workout based on type
@@ -59,7 +64,7 @@ export async function POST(request: Request) {
       workout: workout
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('API Error:', error);
     return NextResponse.json(
       { error: 'Failed to generate workout', details: error.message },
@@ -72,7 +77,7 @@ function buildWorkout(type: string, exercises: any[], time: number) {
   const workoutType = type.toLowerCase();
   
   // Define muscle groups for each workout type
-  const muscleGroups = {
+  const muscleGroups: { [key: string]: string[] } = {
     push: ['chest', 'shoulders', 'triceps'],
     pull: ['back', 'biceps', 'rear delts'],
     legs: ['quads', 'hamstrings', 'glutes', 'calves'],
@@ -84,21 +89,21 @@ function buildWorkout(type: string, exercises: any[], time: number) {
   const targetMuscles = muscleGroups[workoutType] || muscleGroups['full body'];
 
   // Categorize exercises
-  const warmupExercises = exercises.filter(e => 
+  const warmupExercises = exercises.filter((e: any) => 
     e.category === 'mobility' || e.exercise_phase === 'warmup'
   );
   
-  const mainExercises = exercises.filter(e => 
+  const mainExercises = exercises.filter((e: any) => 
     (e.category === 'strength' || e.is_compound) &&
-    targetMuscles.some(muscle => e.primary_muscle?.toLowerCase().includes(muscle))
+    targetMuscles.some((muscle: string) => e.primary_muscle?.toLowerCase().includes(muscle))
   );
   
-  const accessoryExercises = exercises.filter(e => 
+  const accessoryExercises = exercises.filter((e: any) => 
     e.category === 'hypertrophy' &&
-    targetMuscles.some(muscle => e.primary_muscle?.toLowerCase().includes(muscle))
+    targetMuscles.some((muscle: string) => e.primary_muscle?.toLowerCase().includes(muscle))
   );
   
-  const cooldownExercises = exercises.filter(e => 
+  const cooldownExercises = exercises.filter((e: any) => 
     e.category === 'mobility' && e.exercise_phase === 'cooldown'
   );
 

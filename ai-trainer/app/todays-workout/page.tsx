@@ -62,7 +62,7 @@ export default function TodaysWorkoutPage() {
         accessories: workout.accessories || []
       });
 
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error generating workout:', err);
       setError(err.message || 'Failed to generate workout');
     } finally {
