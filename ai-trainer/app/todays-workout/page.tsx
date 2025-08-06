@@ -59,6 +59,8 @@ interface GeneratedWorkout {
   main: (string | { name: string })[];
   accessories: (string | { name: string })[];
   cooldown: (string | { name: string })[];
+  duration?: number;
+  focus?: string;
 }
 
 export default function TodaysWorkoutPage() {
