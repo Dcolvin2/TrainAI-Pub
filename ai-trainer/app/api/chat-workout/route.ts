@@ -13,18 +13,23 @@ const supabase = createClient(
 
 export async function POST(request: Request) {
   try {
-    const { message, currentWorkout, sessionId, userId } = await request.json();
+    const { message, currentWorkout, sessionId } = await request.json();
     
-    // Use userId from request body instead of auth context
-    if (!userId) {
-      return NextResponse.json({ error: 'Missing userId' }, { status: 400 });
+    // Get the authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
 
+    // Use the authenticated user's ID
+    const actualUserId = user.id;
+    
     // CRITICAL: Get user's available equipment
     const { data: userEquipment } = await supabase
       .from('user_equipment')
       .select('equipment:equipment_id(name), custom_name')
-      .eq('user_id', userId);
+      .eq('user_id', actualUserId);
 
     const availableEquipment = userEquipment?.map((eq: any) => 
       eq.equipment?.name || eq.custom_name
