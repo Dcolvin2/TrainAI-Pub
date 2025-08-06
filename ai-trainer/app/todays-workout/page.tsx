@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { generateWorkoutForType, getWorkoutSuggestions, saveWorkout } from '@/lib/workoutGenerator';
 import { WorkoutDisplay } from '../components/WorkoutDisplay';
 import Link from 'next/link';
+import { supabase } from '@/lib/supabaseClient';
 
 // Define workout types with proper text
 const workoutTypes = [
@@ -71,6 +72,36 @@ export default function TodaysWorkoutPage() {
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [generatedWorkout, setGeneratedWorkout] = useState<GeneratedWorkout | null>(null);
+  const [previousWorkoutData, setPreviousWorkoutData] = useState<any>({});
+
+  // Fetch previous workout data
+  useEffect(() => {
+    const fetchPreviousWorkout = async () => {
+      if (!user) return;
+      
+      const { data: previousSets } = await supabase
+        .from('workout_sets')
+        .select('exercise_name, actual_weight, reps')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      
+      // Group by exercise name to get most recent
+      const previousData: Record<string, { weight: number; reps: number }> = {};
+      previousSets?.forEach(set => {
+        if (!previousData[set.exercise_name]) {
+          previousData[set.exercise_name] = {
+            weight: set.actual_weight,
+            reps: set.reps
+          };
+        }
+      });
+      
+      setPreviousWorkoutData(previousData);
+    };
+    
+    fetchPreviousWorkout();
+  }, [user]);
 
   const handleSendMessage = async () => {
     if (!inputMessage.trim() || isLoading) return;
@@ -242,7 +273,7 @@ export default function TodaysWorkoutPage() {
                   </div>
                 )}
                 
-                {/* Main Lift Section */}
+                {/* Main Exercises Section */}
                 {generatedWorkout.main?.length > 0 && (
                   <div className="mb-6">
                     <div className="flex items-center mb-3">
@@ -254,81 +285,85 @@ export default function TodaysWorkoutPage() {
                       </span>
                     </div>
                     <div className="bg-gray-800 rounded-lg p-4">
-                      <div className="grid grid-cols-5 gap-4 text-sm text-gray-400 mb-2">
-                        <span>Exercise</span>
-                        <span>Sets</span>
-                        <span>Reps</span>
-                        <span className="text-right">lbs</span>
-                        <span className="text-right">Complete</span>
+                      {/* Column headers */}
+                      <div className="grid grid-cols-5 gap-4 text-sm text-gray-400 mb-4 pb-2 border-b border-gray-700">
+                        <span className="col-span-2">Exercise / Set</span>
+                        <span className="text-center">Previous</span>
+                        <span className="text-center">Reps</span>
+                        <span className="text-center">lbs</span>
+                        <span className="text-center">Complete</span>
                       </div>
-                      {Array.isArray(generatedWorkout.main) ? (
+                      
+                      {/* Exercises */}
+                      {Array.isArray(generatedWorkout.main) && 
                         generatedWorkout.main
-                          .map((exercise, index) => {
-                            // Parse exercise name and clean up formatting
+                          .filter(exercise => {
+                            // Filter out instruction text
+                            const name = typeof exercise === 'string' ? exercise : exercise.name;
+                            return !name.toLowerCase().includes('perform') && 
+                                   !name.toLowerCase().includes('rounds') &&
+                                   name.length > 3;
+                          })
+                          .map((exercise, exerciseIndex) => {
+                            // Parse exercise details
                             let exerciseName = typeof exercise === 'string' ? exercise : exercise.name;
-                            let sets = '3';
-                            let reps = '10';
-
-                            // Remove workout instructions like "Perform 3 rounds of:"
-                            if (exerciseName.toLowerCase().includes('perform') || 
-                                exerciseName.toLowerCase().includes('rounds') ||
-                                exerciseName.toLowerCase().includes('complete')) {
-                              // Skip this as it's an instruction, not an exercise
-                              return null;
-                            }
-
-                            // Clean up numbered exercises (e.g., "1. Exercise Name")
+                            let targetSets = typeof exercise === 'object' && exercise.sets ? 
+                              parseInt(exercise.sets) : 3;
+                            let targetReps = typeof exercise === 'object' && exercise.reps ? 
+                              exercise.reps : '10';
+                            
+                            // Clean exercise name
                             exerciseName = exerciseName.replace(/^\d+\.\s*/, '');
-
-                            // Extract reps from patterns like "Exercise - 15 reps"
                             const repsMatch = exerciseName.match(/(.+?)\s*-\s*(\d+)\s*reps?/i);
                             if (repsMatch) {
                               exerciseName = repsMatch[1].trim();
-                              reps = repsMatch[2];
+                              targetReps = repsMatch[2];
                             }
-
-                            // Parse patterns like "Exercise Name - 3 x 12" or "3 x 12 each"
-                            const match = exerciseName.match(/(.+?)\s*-\s*(\d+)\s*x\s*(\d+)/);
-                            if (match) {
-                              exerciseName = match[1].trim();
-                              sets = match[2];
-                              reps = match[3];
-                            } else {
-                              // Also check for "3 x 12" at the beginning
-                              const matchStart = exerciseName.match(/^(\d+)\s*x\s*(\d+)\s+(.+)/);
-                              if (matchStart) {
-                                sets = matchStart[1];
-                                reps = matchStart[2];
-                                exerciseName = matchStart[3].trim();
-                              }
-                            }
-
-                            // Remove parenthetical instructions
                             exerciseName = exerciseName.replace(/\s*\([^)]*\)\s*/g, '').trim();
-
-                            // Only create exerciseObj if we have a valid exercise name
-                            if (!exerciseName || exerciseName.length < 3) return null;
-
-                            const exerciseObj = {
-                              name: exerciseName,
-                              sets: typeof exercise === 'object' && exercise.sets ? exercise.sets : sets,
-                              reps: typeof exercise === 'object' && exercise.reps ? exercise.reps : reps
-                            };
+                            
+                            // Get previous workout data
+                            const previous = previousWorkoutData[exerciseName];
                             
                             return (
-                              <div key={index} className="grid grid-cols-5 gap-4 items-center mb-2">
-                                <span className="text-gray-300">{exerciseObj.name}</span>
-                                <span className="text-gray-500">{exerciseObj.sets}</span>
-                                <span className="text-gray-500">{exerciseObj.reps}</span>
-                                <input type="number" className="bg-gray-700 rounded px-2 py-1 text-right" placeholder="0" />
-                                <input type="checkbox" className="ml-auto w-5 h-5 cursor-pointer" />
+                              <div key={exerciseIndex} className="mb-6">
+                                {/* Exercise Name Header */}
+                                <div className="text-white font-medium mb-2">
+                                  {exerciseName}
+                                </div>
+                                
+                                {/* Sets */}
+                                {[...Array(targetSets)].map((_, setIndex) => (
+                                  <div key={setIndex} className="grid grid-cols-5 gap-4 items-center mb-2">
+                                    <span className="col-span-2 text-gray-400 text-sm pl-4">
+                                      Set {setIndex + 1}
+                                    </span>
+                                    <span className="text-gray-500 text-sm text-center">
+                                      {/* Previous weight x reps - from DB or default */}
+                                      {previous ? `${previous.weight} lbs × ${previous.reps}` : 'N/A'}
+                                    </span>
+                                    <input
+                                      type="number"
+                                      className="bg-gray-700 rounded px-2 py-1 text-center text-white"
+                                      placeholder={targetReps.toString()}
+                                      defaultValue={targetReps}
+                                    />
+                                    <input
+                                      type="number"
+                                      className="bg-gray-700 rounded px-2 py-1 text-center text-white"
+                                      placeholder="0"
+                                    />
+                                    <div className="flex justify-center">
+                                      <input
+                                        type="checkbox"
+                                        className="w-5 h-5 cursor-pointer"
+                                      />
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
                             );
                           })
-                          .filter(Boolean) // Remove null entries
-                      ) : (
-                        <div className="text-gray-500">No exercises found</div>
-                      )}
+                      }
                     </div>
                   </div>
                 )}
