@@ -8,25 +8,23 @@ const anthropic = new Anthropic({
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.SUPABASE_SERVICE_KEY! // Use service role key for server-side operations
 );
 
 export async function POST(request: Request) {
   try {
     const { message, currentWorkout, sessionId, userId } = await request.json();
     
-    // Get the authenticated user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    console.log('Chat request received:', { message, userId });
     
-    // Use authenticated user if available, otherwise use userId from request body
-    let actualUserId;
-    if (user) {
-      actualUserId = user.id;
-    } else if (userId) {
-      actualUserId = userId;
-    } else {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    // Use userId from request body since we're using service role key
+    if (!userId) {
+      console.log('No user ID provided');
+      return NextResponse.json({ error: 'User ID required' }, { status: 400 });
     }
+    
+    const actualUserId = userId;
+    console.log('Using user ID:', actualUserId);
     
     // CRITICAL: Get user's available equipment
     const { data: userEquipment } = await supabase
