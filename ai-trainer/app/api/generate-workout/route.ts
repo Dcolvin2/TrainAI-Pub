@@ -166,7 +166,7 @@ export async function POST(request: Request) {
     return Response.json({
       name: `${type.toUpperCase()} Workout`,
       warmup: workout.warmup || [],
-      main: [workout.mainLift] || [],
+      main: workout.mainLift ? [workout.mainLift] : [],
       accessories: workout.accessories || [],
       cooldown: workout.cooldown || []
     });
