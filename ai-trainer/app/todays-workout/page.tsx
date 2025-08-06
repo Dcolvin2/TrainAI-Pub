@@ -81,44 +81,21 @@ export default function TodaysWorkoutPage() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/chat-workout', {
+      const response = await fetch('/api/chat-test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          message: userMessage,
-          sessionId: null // TODO: Implement session management
-        })
+        body: JSON.stringify({ message: userMessage })
       });
 
       const data = await response.json();
+      setChatMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
       
-      // Handle different response types
-      if (data.type === 'nike_prompt') {
-        // Store pending Nike workout in session context
-        // TODO: Implement proper session storage
-        setChatMessages(prev => [...prev, { 
-          role: 'assistant', 
-          content: data.message,
-          nikeWorkout: {
-            number: data.workoutNumber,
-            name: data.workoutName,
-            requiresConfirmation: data.requiresConfirmation
-          }
-        }]);
-      } else if (data.type === 'workout') {
-        // Display the workout
+      // If workout data is returned, update the display
+      if (data.workout) {
         setGeneratedWorkout(data.workout);
-        setChatMessages(prev => [...prev, { role: 'assistant', content: data.message }]);
-      } else {
-        // General response
-        setChatMessages(prev => [...prev, { role: 'assistant', content: data.message }]);
       }
     } catch (error) {
       console.error('Chat error:', error);
-      setChatMessages(prev => [...prev, { 
-        role: 'assistant', 
-        content: 'Sorry, I encountered an error. Please try again.' 
-      }]);
     } finally {
       setIsLoading(false);
     }
@@ -142,7 +119,7 @@ export default function TodaysWorkoutPage() {
           userId: user?.id
         })
       });
-      
+
       console.log('Response status:', response.status);
       
       if (!response.ok) {
@@ -227,7 +204,7 @@ export default function TodaysWorkoutPage() {
               <h2 className="text-xl font-semibold mb-4">Choose Your Workout</h2>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 {workoutTypes.map((workout) => (
-                  <button
+          <button
                     key={workout.id}
                     onClick={() => handleWorkoutSelect(workout.id)}
                     className={`p-6 rounded-lg bg-gray-900 border-t-4 ${workout.color} 
@@ -236,10 +213,10 @@ export default function TodaysWorkoutPage() {
                   >
                     <h3 className="text-lg font-bold mb-2">{workout.title}</h3>
                     <p className="text-sm text-gray-400">{workout.subtitle}</p>
-                  </button>
+          </button>
                 ))}
               </div>
-            </div>
+        </div>
 
             {/* Generated Workout Display */}
             {generatedWorkout && (
@@ -285,44 +262,70 @@ export default function TodaysWorkoutPage() {
                         <span className="text-right">Complete</span>
                       </div>
                       {Array.isArray(generatedWorkout.main) ? (
-                        generatedWorkout.main.map((exercise, index) => {
-                          // Parse exercise name that might contain sets/reps info
-                          let exerciseName = typeof exercise === 'string' ? exercise : exercise.name;
-                          let sets = '3';
-                          let reps = '10';
+                        generatedWorkout.main
+                          .map((exercise, index) => {
+                            // Parse exercise name and clean up formatting
+                            let exerciseName = typeof exercise === 'string' ? exercise : exercise.name;
+                            let sets = '3';
+                            let reps = '10';
 
-                          // Parse patterns like "Exercise Name - 3 x 12" or "3 x 12 each"
-                          const match = exerciseName.match(/(.+?)\s*-\s*(\d+)\s*x\s*(\d+)/);
-                          if (match) {
-                            exerciseName = match[1].trim();
-                            sets = match[2];
-                            reps = match[3];
-                          } else {
-                            // Also check for "3 x 12" at the beginning
-                            const matchStart = exerciseName.match(/^(\d+)\s*x\s*(\d+)\s+(.+)/);
-                            if (matchStart) {
-                              sets = matchStart[1];
-                              reps = matchStart[2];
-                              exerciseName = matchStart[3].trim();
+                            // Remove workout instructions like "Perform 3 rounds of:"
+                            if (exerciseName.toLowerCase().includes('perform') || 
+                                exerciseName.toLowerCase().includes('rounds') ||
+                                exerciseName.toLowerCase().includes('complete')) {
+                              // Skip this as it's an instruction, not an exercise
+                              return null;
                             }
-                          }
 
-                          const exerciseObj = {
-                            name: exerciseName,
-                            sets: typeof exercise === 'object' && exercise.sets ? exercise.sets : sets,
-                            reps: typeof exercise === 'object' && exercise.reps ? exercise.reps : reps
-                          };
-                          
-                          return (
-                            <div key={index} className="grid grid-cols-5 gap-4 items-center mb-2">
-                              <span className="text-gray-300">{exerciseObj.name}</span>
-                              <span className="text-gray-500">{exerciseObj.sets}</span>
-                              <span className="text-gray-500">{exerciseObj.reps}</span>
-                              <input type="number" className="bg-gray-700 rounded px-2 py-1 text-right" placeholder="0" />
-                              <input type="checkbox" className="ml-auto w-5 h-5 cursor-pointer" />
-                            </div>
-                          );
-                        })
+                            // Clean up numbered exercises (e.g., "1. Exercise Name")
+                            exerciseName = exerciseName.replace(/^\d+\.\s*/, '');
+
+                            // Extract reps from patterns like "Exercise - 15 reps"
+                            const repsMatch = exerciseName.match(/(.+?)\s*-\s*(\d+)\s*reps?/i);
+                            if (repsMatch) {
+                              exerciseName = repsMatch[1].trim();
+                              reps = repsMatch[2];
+                            }
+
+                            // Parse patterns like "Exercise Name - 3 x 12" or "3 x 12 each"
+                            const match = exerciseName.match(/(.+?)\s*-\s*(\d+)\s*x\s*(\d+)/);
+                            if (match) {
+                              exerciseName = match[1].trim();
+                              sets = match[2];
+                              reps = match[3];
+                            } else {
+                              // Also check for "3 x 12" at the beginning
+                              const matchStart = exerciseName.match(/^(\d+)\s*x\s*(\d+)\s+(.+)/);
+                              if (matchStart) {
+                                sets = matchStart[1];
+                                reps = matchStart[2];
+                                exerciseName = matchStart[3].trim();
+                              }
+                            }
+
+                            // Remove parenthetical instructions
+                            exerciseName = exerciseName.replace(/\s*\([^)]*\)\s*/g, '').trim();
+
+                            // Only create exerciseObj if we have a valid exercise name
+                            if (!exerciseName || exerciseName.length < 3) return null;
+
+                            const exerciseObj = {
+                              name: exerciseName,
+                              sets: typeof exercise === 'object' && exercise.sets ? exercise.sets : sets,
+                              reps: typeof exercise === 'object' && exercise.reps ? exercise.reps : reps
+                            };
+                            
+                            return (
+                              <div key={index} className="grid grid-cols-5 gap-4 items-center mb-2">
+                                <span className="text-gray-300">{exerciseObj.name}</span>
+                                <span className="text-gray-500">{exerciseObj.sets}</span>
+                                <span className="text-gray-500">{exerciseObj.reps}</span>
+                                <input type="number" className="bg-gray-700 rounded px-2 py-1 text-right" placeholder="0" />
+                                <input type="checkbox" className="ml-auto w-5 h-5 cursor-pointer" />
+                              </div>
+                            );
+                          })
+                          .filter(Boolean) // Remove null entries
                       ) : (
                         <div className="text-gray-500">No exercises found</div>
                       )}
@@ -358,8 +361,8 @@ export default function TodaysWorkoutPage() {
                                 className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-right text-gray-200"
                                 placeholder="0"
                               />
-                              <input
-                                type="number"
+          <input
+            type="number"
                                 className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-right text-gray-200"
                                 placeholder="0"
                               />
@@ -369,7 +372,7 @@ export default function TodaysWorkoutPage() {
                         </div>
                       </div>
                     ))}
-                  </div>
+        </div>
                 )}
                 
                 {/* Cool-down Section */}
@@ -400,7 +403,7 @@ export default function TodaysWorkoutPage() {
               </div>
             )}
           </div>
-
+          
           {/* Right side - Chat */}
           <div className="lg:col-span-1">
             <div className="bg-gray-900 rounded-lg h-[500px] flex flex-col">
@@ -430,7 +433,7 @@ export default function TodaysWorkoutPage() {
                     >
                       <p className="whitespace-pre-wrap break-words">{msg.content}</p>
                     </div>
-                  </div>
+                </div>
                 ))}
                 
                 {isLoading && (
@@ -438,15 +441,15 @@ export default function TodaysWorkoutPage() {
                     <div className="bg-gray-800 rounded-lg px-4 py-2">
                       <span className="text-gray-400 animate-pulse">Thinking...</span>
                     </div>
-                  </div>
-                )}
-              </div>
-              
+                </div>
+              )}
+            </div>
+
               {/* Chat Input */}
               <div className="p-4 border-t border-gray-800">
                 <div className="flex gap-2">
-                  <input
-                    type="text"
+              <input
+                type="text"
                     value={inputMessage}
                     onChange={(e) => setInputMessage(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
@@ -464,8 +467,8 @@ export default function TodaysWorkoutPage() {
               </div>
             </div>
           </div>
-        </div>
-      </div>
+            </div>
+          </div>
     </div>
   );
 } 
