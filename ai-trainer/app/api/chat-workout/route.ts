@@ -36,15 +36,15 @@ export async function POST(request: Request) {
     
     // Common equipment keywords
     const equipmentKeywords: Record<string, string[]> = {
-      'superband': ['superband', 'resistance band', 'band'],
-      'kettlebell': ['kettlebell', 'kb'],
-      'dumbbell': ['dumbbell', 'db'],
-      'barbell': ['barbell', 'bb'],
-      'bench': ['bench'],
-      'pull-up bar': ['pull-up bar', 'pullup bar', 'bar'],
-      'cable': ['cable'],
-      'machine': ['machine'],
-      'bodyweight': ['bodyweight', 'no equipment', 'no weights']
+      'Resistance Bands': ['superband', 'resistance band', 'band', 'resistance bands'],
+      'Kettlebells': ['kettlebell', 'kb', 'kettlebells'],
+      'Dumbbells': ['dumbbell', 'db', 'dumbbells'],
+      'Barbell': ['barbell', 'bb'],
+      'Bench': ['bench'],
+      'Pull-up Bar': ['pull-up bar', 'pullup bar', 'bar', 'pull up bar'],
+      'Cable Machine': ['cable', 'cable machine'],
+      'Machine': ['machine'],
+      'Bodyweight': ['bodyweight', 'no equipment', 'no weights']
     };
     
     // Check for mentioned equipment
@@ -69,7 +69,7 @@ export async function POST(request: Request) {
     console.log('Total exercises in database:', exercises?.length || 0);
     console.log('Sample exercises with equipment:', exercises?.slice(0, 5).map((e: any) => ({
       name: e.name,
-      equipment: e.equipment_required
+      equipment: e.required_equipment
     })));
 
     // Filter exercises by available equipment (including mentioned equipment)
@@ -141,7 +141,7 @@ Return ONLY valid JSON, no other text.`;
           availableExercisesCount: availableExercises.length,
           sampleExercises: exercises?.slice(0, 5).map((e: any) => ({
             name: e.name,
-            equipment: e.equipment_required,
+            equipment: e.required_equipment,
             category: e.category
           })),
           sampleAvailableExercises: availableExercises.slice(0, 5).map((e: any) => e.name)
