@@ -286,7 +286,7 @@ export default function TodaysWorkoutPage() {
                     </div>
                     <div className="bg-gray-800 rounded-lg p-4">
                       {/* Column headers */}
-                      <div className="grid grid-cols-5 gap-4 text-sm text-gray-400 mb-4 pb-2 border-b border-gray-700">
+                      <div className="grid grid-cols-5 gap-4 text-sm text-gray-400 mb-2">
                         <span>Set</span>
                         <span>Previous</span>
                         <span className="text-right">lbs</span>
@@ -501,4 +501,3 @@ export default function TodaysWorkoutPage() {
           </div>
     </div>
   );
-} // Force redeploy
