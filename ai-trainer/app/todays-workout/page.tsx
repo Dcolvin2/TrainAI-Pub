@@ -128,14 +128,20 @@ export default function TodaysWorkoutPage() {
       
       const data = await response.json();
       console.log('API Response:', data);
+      console.log('API Response data:', data);        // Add this
+      console.log('data.main:', data.main);           // Add this
+      console.log('data.warmup:', data.warmup);       // Add this
+      console.log('data.accessories:', data.accessories); // Add this
       
       // Set the generated workout to display
       setGeneratedWorkout({
         name: `${workoutType.toUpperCase()} Workout`,
         warmup: data.warmup || [],
-        main: data.mainLift ? [data.mainLift] : [],
+        main: data.main || [],  // ← FIXED: Use data.main not data.mainLift
         accessories: data.accessories || [],
-        cooldown: data.cooldown || []
+        cooldown: data.cooldown || [],
+        duration: data.duration || selectedTime,
+        focus: data.focus || workoutType
       });
     } catch (error) {
       console.error('Error generating workout:', error);
@@ -254,16 +260,37 @@ export default function TodaysWorkoutPage() {
                         <span className="text-right">Complete</span>
                       </div>
                       {Array.isArray(generatedWorkout.main) ? (
-                        generatedWorkout.main.map((exercise, index) => (
-                          <div key={index} className="grid grid-cols-5 gap-4 items-center mb-2">
-                            <span className="text-gray-300">
-                              {typeof exercise === 'string' ? exercise : exercise.name}
-                            </span>
-                            <span className="text-gray-500">
-                              {exercise.sets || '3'}
-                            </span>
-                            <span className="text-gray-500">
-                              {exercise.reps || '10'}
+                        {Array.isArray(generatedWorkout.main) ? (
+                          generatedWorkout.main.map((exercise, index) => {
+                            // Normalize exercise to always be an object
+                            const exerciseObj = typeof exercise === 'string' 
+                              ? { name: exercise, sets: '3', reps: '10' }
+                              : exercise;
+                            
+                            return (
+                              <div key={index} className="grid grid-cols-5 gap-4 items-center mb-2">
+                                <span className="text-gray-300">
+                                  {exerciseObj.name}
+                                </span>
+                                <span className="text-gray-500">
+                                  {exerciseObj.sets || '3'}
+                                </span>
+                                <span className="text-gray-500">
+                                  {exerciseObj.reps || '10'}
+                                </span>
+                                <input 
+                                  type="number" 
+                                  className="bg-gray-700 rounded px-2 py-1 text-right"
+                                  placeholder="0"
+                                />
+                                <input 
+                                  type="checkbox"
+                                  className="ml-auto w-5 h-5 cursor-pointer"
+                                />
+                              </div>
+                            );
+                          })
+                        ) : (
                             </span>
                             <input 
                               type="number" 
