@@ -154,6 +154,14 @@ CRITICAL INSTRUCTIONS:
 
 IMPORTANT: The message field must be concise but informative. Do NOT use generic phrases like "I've updated your workout based on your request." Keep explanations brief but specific to the equipment and workout type.
 
+CRITICAL: Your response message must be specific and informative. DO NOT use generic phrases like:
+- "I've updated your workout based on your request"
+- "I've updated your workout"
+- "based on your request"
+- Any other generic response
+
+Instead, provide specific information about the equipment and workout type.
+
 Return ONLY valid JSON, no other text.`;
 
     // If message contains "debug", return database info instead
@@ -257,7 +265,40 @@ Return ONLY valid JSON, no other text.`;
     }
 
     // Ensure we have a proper message
-    if (!workoutData.message || workoutData.message === "Brief description of what was changed" || workoutData.message.includes("updated your workout based on your request")) {
+    if (!workoutData.message || 
+        workoutData.message === "Brief description of what was changed" || 
+        workoutData.message.includes("updated your workout based on your request") ||
+        workoutData.message.includes("I've updated your workout") ||
+        workoutData.message.includes("based on your request")) {
+      
+      const detectedEquipment = mentionedEquipment.length > 0 ? mentionedEquipment.join(', ') : 'your available equipment';
+      const workoutType = message.toLowerCase().includes('strength') ? 'strength' : 
+                         message.toLowerCase().includes('cardio') ? 'cardio' : 
+                         message.toLowerCase().includes('hiit') ? 'HIIT' : 'general fitness';
+      
+      let detailedMessage = `I've created a ${workoutType} workout using ${detectedEquipment}. `;
+      
+      if (mentionedEquipment.includes('Superbands')) {
+        detailedMessage += `Superbands add resistance to bodyweight exercises - wrap around your back for push-ups or use for assisted pull-ups.`;
+      } else if (mentionedEquipment.includes('Kettlebells')) {
+        detailedMessage += `Kettlebell exercises build explosive power and functional strength. Focus on proper form for swings and cleans.`;
+      } else if (mentionedEquipment.includes('Barbells')) {
+        detailedMessage += `Barbell exercises are excellent for building strength and muscle mass. Focus on compound movements.`;
+      } else if (mentionedEquipment.includes('Dumbbells')) {
+        detailedMessage += `Dumbbell exercises provide unilateral training and better range of motion.`;
+      } else {
+        detailedMessage += `The exercises are specifically chosen to match your equipment and fitness goals.`;
+      }
+      
+      workoutData.message = detailedMessage;
+    }
+    
+    // Additional check: if the message is still too generic, replace it
+    if (workoutData.message && (
+        workoutData.message.includes("updated your workout") ||
+        workoutData.message.includes("based on your request") ||
+        workoutData.message.length < 50
+    )) {
       const detectedEquipment = mentionedEquipment.length > 0 ? mentionedEquipment.join(', ') : 'your available equipment';
       const workoutType = message.toLowerCase().includes('strength') ? 'strength' : 
                          message.toLowerCase().includes('cardio') ? 'cardio' : 
