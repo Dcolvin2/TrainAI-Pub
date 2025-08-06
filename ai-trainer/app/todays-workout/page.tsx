@@ -74,6 +74,23 @@ export default function TodaysWorkoutPage() {
   const [generatedWorkout, setGeneratedWorkout] = useState<GeneratedWorkout | null>(null);
   const [previousWorkoutData, setPreviousWorkoutData] = useState<any>({});
 
+  // Test Nike workout function
+  const testNikeWorkout = async () => {
+    try {
+      const response = await fetch('/api/nike-workout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      const data = await response.json();
+      console.log('Nike workout:', data);
+      alert(JSON.stringify(data, null, 2));
+    } catch (error) {
+      console.error('Error testing Nike workout:', error);
+      alert('Error testing Nike workout: ' + error);
+    }
+  };
+
   // Fetch previous workout data
   useEffect(() => {
     const fetchPreviousWorkout = async () => {
@@ -246,6 +263,16 @@ export default function TodaysWorkoutPage() {
                     <p className="text-sm text-gray-400">{workout.subtitle}</p>
           </button>
                 ))}
+              </div>
+              
+              {/* Nike Test Button */}
+              <div className="mt-4">
+                <button
+                  onClick={testNikeWorkout}
+                  className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
+                >
+                  Test Nike Workout
+                </button>
               </div>
         </div>
 
