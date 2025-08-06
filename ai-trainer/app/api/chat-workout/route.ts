@@ -124,10 +124,30 @@ CRITICAL INSTRUCTIONS:
       {"name": "Exercise Name", "duration": "30s"}
     ]
   },
-  "changes": "Brief description of what was changed"
+  "message": "Brief description of what was changed"
 }
 
 Return ONLY valid JSON, no other text.`;
+
+    // If message contains "debug", return database info instead
+    if (message.toLowerCase().includes('debug')) {
+      return NextResponse.json({
+        success: true,
+        debug: {
+          userEquipment: availableEquipment,
+          mentionedEquipment: mentionedEquipment,
+          allAvailableEquipment: allAvailableEquipment,
+          totalExercises: exercises?.length || 0,
+          availableExercisesCount: availableExercises.length,
+          sampleExercises: exercises?.slice(0, 5).map((e: any) => ({
+            name: e.name,
+            equipment: e.equipment_required,
+            category: e.category
+          })),
+          sampleAvailableExercises: availableExercises.slice(0, 5).map((e: any) => e.name)
+        }
+      });
+    }
 
     const response = await anthropic.messages.create({
       model: "claude-3-5-sonnet-20241022",
