@@ -113,16 +113,14 @@ export default function TodaysWorkoutPage() {
       });
       const data = await response.json();
       
-      // Transform the data to match our interface
-      const workoutData: GeneratedWorkout = {
+      // Set the generated workout to display
+      setGeneratedWorkout({
         name: `${workoutType.toUpperCase()} Workout`,
         warmup: data.warmup || [],
         main: data.workout || data.main || [],
         accessories: data.accessories || [],
         cooldown: data.cooldown || []
-      };
-      
-      setGeneratedWorkout(workoutData);
+      });
       
       // Add to chat
       setChatMessages(prev => [...prev, {
@@ -131,10 +129,6 @@ export default function TodaysWorkoutPage() {
       }]);
     } catch (error) {
       console.error('Error:', error);
-      setChatMessages(prev => [...prev, {
-        role: 'assistant',
-        content: 'Sorry, there was an error generating your workout. Please try again.'
-      }]);
     } finally {
       setIsLoading(false);
     }
@@ -205,71 +199,19 @@ export default function TodaysWorkoutPage() {
             {/* Generated Workout Display */}
             {generatedWorkout && (
               <div className="bg-gray-900 rounded-lg p-6">
-                <h3 className="text-xl font-semibold mb-6">{generatedWorkout.name}</h3>
+                <h3 className="text-lg font-semibold mb-4">Your Workout</h3>
                 
-                {/* Warmup Section */}
-                {generatedWorkout.warmup && generatedWorkout.warmup.length > 0 && (
-                  <div className="mb-6">
-                    <h4 className="font-medium text-gray-400 mb-3 text-sm uppercase tracking-wider">Warm-up</h4>
-                    <div className="space-y-2">
-                      {generatedWorkout.warmup.map((exercise, idx) => (
-                        <div key={idx} className="flex items-center text-gray-300">
-                          <span className="text-gray-500 mr-3 w-6">{idx + 1}.</span>
-                          <span>{exercise}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                {/* Display the raw workout data */}
+                <div className="text-sm text-gray-300 mb-4">
+                  <pre className="whitespace-pre-wrap">
+                    {JSON.stringify(generatedWorkout, null, 2)}
+                  </pre>
+                </div>
                 
-                {/* Main Workout Section */}
-                {generatedWorkout.main && generatedWorkout.main.length > 0 && (
-                  <div className="mb-6">
-                    <h4 className="font-medium text-gray-400 mb-3 text-sm uppercase tracking-wider">Main Workout</h4>
-                    <div className="space-y-2">
-                      {generatedWorkout.main.map((exercise, idx) => (
-                        <div key={idx} className="flex items-center text-gray-300">
-                          <span className="text-gray-500 mr-3 w-6">{idx + 1}.</span>
-                          <span className="font-medium">
-                            {typeof exercise === 'string' ? exercise : exercise.name || exercise}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                {/* Accessories Section */}
-                {generatedWorkout.accessories && generatedWorkout.accessories.length > 0 && (
-                  <div className="mb-6">
-                    <h4 className="font-medium text-gray-400 mb-3 text-sm uppercase tracking-wider">Accessories</h4>
-                    <div className="space-y-2">
-                      {generatedWorkout.accessories.map((exercise, idx) => (
-                        <div key={idx} className="flex items-center text-gray-300">
-                          <span className="text-gray-500 mr-3 w-6">{idx + 1}.</span>
-                          <span>{exercise}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                {/* Cooldown Section */}
-                {generatedWorkout.cooldown && generatedWorkout.cooldown.length > 0 && (
-                  <div className="mb-6">
-                    <h4 className="font-medium text-gray-400 mb-3 text-sm uppercase tracking-wider">Cool-down</h4>
-                    <div className="space-y-2">
-                      {generatedWorkout.cooldown.map((exercise, idx) => (
-                        <div key={idx} className="flex items-center text-gray-300">
-                          <span className="text-gray-500 mr-3 w-6">{idx + 1}.</span>
-                          <span>{exercise}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                <button className="mt-6 w-full bg-green-600 hover:bg-green-700 py-3 rounded-lg font-semibold transition-colors">
+                <button 
+                  onClick={() => console.log('Starting workout:', generatedWorkout)}
+                  className="mt-4 w-full bg-green-600 hover:bg-green-700 py-3 rounded-lg font-semibold"
+                >
                   Start Workout
                 </button>
               </div>
@@ -278,7 +220,7 @@ export default function TodaysWorkoutPage() {
 
           {/* Right side - Chat */}
           <div className="lg:col-span-1">
-            <div className="bg-gray-900 rounded-lg h-[600px] flex flex-col">
+            <div className="bg-gray-900 rounded-lg h-[500px] flex flex-col">
               <div className="p-4 border-b border-gray-800">
                 <h3 className="text-lg font-semibold">AI Workout Assistant</h3>
               </div>
