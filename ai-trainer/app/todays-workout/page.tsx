@@ -162,15 +162,31 @@ export default function TodaysWorkoutPage() {
         const response = await fetch('/api/chat-workout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: userMessage })
+          body: JSON.stringify({ 
+            message: userMessage,
+            currentWorkout: generatedWorkout || null,
+            sessionId: null // We can add session tracking later if needed
+          })
         });
 
         const data = await response.json();
-        setChatMessages(prev => [...prev, { role: 'assistant', content: data.message || data.response }]);
         
-        // If workout data is returned, update the display
-        if (data.workout) {
-          setGeneratedWorkout(data.workout);
+        // Handle error responses
+        if (data.error) {
+          setChatMessages(prev => [...prev, { 
+            role: 'assistant', 
+            content: `Error: ${data.error}` 
+          }]);
+        } else {
+          setChatMessages(prev => [...prev, { 
+            role: 'assistant', 
+            content: data.message || data.response || data.changes || "I've updated your workout based on your request." 
+          }]);
+          
+          // If workout data is returned, update the display
+          if (data.workout) {
+            setGeneratedWorkout(data.workout);
+          }
         }
       }
     } catch (error) {
