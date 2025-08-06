@@ -242,9 +242,9 @@ const ChatPanel = ({ workout, onClose, onUpdate }: ChatPanelProps) => {
 
       const data = await response.json();
       
+      // Only add the assistant response, user message is already added in handleSend
       setMessages(prev => [
         ...prev,
-        { role: 'user', content: message },
         { role: 'assistant', content: data.response }
       ]);
     } catch (error) {
