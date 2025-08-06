@@ -115,11 +115,23 @@ export default function TodaysWorkoutPage() {
       // Check if user is requesting a Nike workout
       const messageLower = userMessage.toLowerCase();
       if (messageLower.includes('nike') || messageLower.includes('nike workout') || messageLower.includes('nike wod')) {
-        // Call Nike API directly
+        // Extract workout number from message (e.g., "Nike 23" -> 23)
+        let workoutNumber = 1; // Default to workout 1
+        
+        // Look for patterns like "nike 23", "nike workout 5", "nike wod 12"
+        const nikeMatch = userMessage.match(/nike\s+(?:workout\s+)?(?:wod\s+)?(\d+)/i);
+        if (nikeMatch) {
+          workoutNumber = parseInt(nikeMatch[1]);
+          // Ensure workout number is within valid range (1-24)
+          if (workoutNumber < 1) workoutNumber = 1;
+          if (workoutNumber > 24) workoutNumber = 24;
+        }
+        
+        // Call Nike API with specific workout number
         const nikeResponse = await fetch('/api/nike-workout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({})
+          body: JSON.stringify({ workout: workoutNumber })
         });
         
         if (nikeResponse.ok) {

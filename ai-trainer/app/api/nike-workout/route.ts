@@ -15,8 +15,9 @@ export async function POST(request: Request) {
       },
     });
     
-    // For now, we'll start with workout 1 (you can add user tracking later)
-    const nextWorkout = 1;
+    // Get workout number from request body, default to 1
+    const { workout: requestedWorkout } = await request.json();
+    const nextWorkout = requestedWorkout || 1;
     
     console.log('Fetching Nike workout #', nextWorkout);
     
