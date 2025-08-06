@@ -3,11 +3,17 @@ import { NextResponse } from 'next/server';
 
 export async function POST(request: Request) {
   try {
-    // Use the public URL and anon key for server-side operations
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
+    // Use the same pattern as supabaseClient.ts
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
+    const supabaseAnonKey = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY) as string;
+    
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true,
+      },
+    });
     
     // For now, we'll start with workout 1 (you can add user tracking later)
     const nextWorkout = 1;
