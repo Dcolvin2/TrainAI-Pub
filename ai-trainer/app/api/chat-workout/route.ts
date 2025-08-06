@@ -13,7 +13,7 @@ const supabase = createClient(
 
 export async function POST(request: Request) {
   try {
-    const { message, currentWorkout, sessionId } = await request.json();
+    const { message, currentWorkout, sessionId, userId } = await request.json();
     
     // Get the authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -74,7 +74,7 @@ export async function POST(request: Request) {
     console.log('Total exercises in database:', exercises?.length || 0);
     console.log('Sample exercises with equipment:', exercises?.slice(0, 5).map((e: any) => ({
       name: e.name,
-      equipment: e.required_equipment
+      equipment: e.equipment_required
     })));
 
     // Filter exercises by available equipment (including mentioned equipment)
