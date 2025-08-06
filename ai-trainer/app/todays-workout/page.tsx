@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { generateWorkoutForType, getWorkoutSuggestions, saveWorkout } from '@/lib/workoutGenerator';
+import { WorkoutDisplay } from '../components/WorkoutDisplay';
 
 // Simple icon components
 const ChevronRight = ({ className, ...props }: any) => (
@@ -553,41 +554,104 @@ export default function TodaysWorkout() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="max-w-3xl mx-auto">
-          {/* Time Selector */}
-          <TimeSelector 
-            timeAvailable={timeAvailable}
-            onTimeChange={handleTimeChange}
-          />
-
-          {/* Workout Type Selector */}
+        {/* Top Section: Quick Workouts and Workout Chat */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+          {/* Quick Workouts */}
           <div className="bg-gray-900 rounded-lg p-6">
-            <WorkoutTypeSelector 
-              onSelect={handleWorkoutSelect} 
-              timeAvailable={timeAvailable}
-              suggestedType={suggestedType}
-              setShowChat={setShowChat}
-            />
-          </div>
-          
-          {/* Loading State */}
-          {isGenerating && (
-            <div className="flex flex-col items-center justify-center py-20">
-              <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-green-400 mb-4"></div>
-              <p className="text-xl text-white">Generating your {selectedType?.label} workout...</p>
+            <h2 className="text-xl font-bold text-white mb-6">Quick Workouts</h2>
+            <div className="grid grid-cols-2 gap-4">
+              {[
+                { label: 'Push', color: 'bg-blue-600' },
+                { label: 'Pull', color: 'bg-green-600' },
+                { label: 'Upper Body', color: 'bg-purple-600' },
+                { label: 'Lower Body', color: 'bg-orange-600' },
+                { label: 'HIIT', color: 'bg-red-600' },
+                { label: '15 Min', color: 'bg-purple-600' }
+              ].map((workout, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => handleWorkoutSelect({
+                    type: workout.label.toLowerCase().replace(' ', ''),
+                    id: workout.label.toLowerCase().replace(' ', ''),
+                    label: workout.label,
+                    timeAvailable: timeAvailable
+                  })}
+                  className={`${workout.color} hover:opacity-90 text-white font-bold py-4 px-6 rounded-lg transition-colors`}
+                >
+                  {workout.label}
+                </button>
+              ))}
             </div>
-          )}
+          </div>
 
-          {/* Generated Workout Summary */}
-          {generatedWorkout && selectedType && !isGenerating && (
-            <WorkoutSummary 
-              workout={generatedWorkout}
-              selectedType={selectedType}
-              timeAvailable={timeAvailable}
-              setShowChat={setShowChat}
-            />
-          )}
+          {/* Workout Chat */}
+          <div className="bg-gray-900 rounded-lg p-6">
+            <div className="flex items-center mb-4">
+              <h2 className="text-xl font-bold text-white">Workout Chat</h2>
+              <span className="ml-2 text-2xl">💪</span>
+            </div>
+            <div className="bg-gray-800 rounded-lg p-4 mb-4">
+              <p className="text-gray-300">Hi! I can help you create a custom workout. Tell me what you want to focus on today!</p>
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Tell me about your workout goals..."
+                className="flex-1 bg-gray-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+              <button
+                onClick={() => setShowChat(true)}
+                className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+              >
+                Send
+              </button>
+            </div>
+          </div>
         </div>
+
+        {/* Time Selector */}
+        <TimeSelector 
+          timeAvailable={timeAvailable}
+          onTimeChange={handleTimeChange}
+        />
+
+        {/* Workout Type Selector */}
+        <div className="bg-gray-900 rounded-lg p-6 mb-8">
+          <WorkoutTypeSelector 
+            onSelect={handleWorkoutSelect} 
+            timeAvailable={timeAvailable}
+            suggestedType={suggestedType}
+            setShowChat={setShowChat}
+          />
+        </div>
+        
+        {/* Loading State */}
+        {isGenerating && (
+          <div className="flex flex-col items-center justify-center py-20">
+            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-green-400 mb-4"></div>
+            <p className="text-xl text-white">Generating your {selectedType?.label} workout...</p>
+          </div>
+        )}
+
+        {/* Generated Workout Display */}
+        {generatedWorkout && selectedType && !isGenerating && (
+          <WorkoutDisplay 
+            workout={{
+              name: selectedType.label,
+              warmup: generatedWorkout.warmup.map((ex: any) => ex.name || ex),
+              main: generatedWorkout.accessories.map((ex: any) => ({
+                name: ex.name || ex,
+                previous: ex.previous || 'N/A'
+              })),
+              cooldown: generatedWorkout.cooldown.map((ex: any) => ex.name || ex)
+            }}
+            onFinish={() => {
+              console.log('Workout finished!');
+              setGeneratedWorkout(null);
+              setSelectedType(null);
+            }}
+          />
+        )}
       </div>
 
       {/* Chat Panel */}
