@@ -137,12 +137,6 @@ export default function TodaysWorkoutPage() {
         accessories: data.accessories || [],
         cooldown: data.cooldown || []
       });
-      
-      // Add to chat
-      setChatMessages(prev => [...prev, {
-        role: 'assistant',
-        content: `I've generated a ${selectedTime}-minute ${workoutType} workout for you. Click "Start Workout" when you're ready!`
-      }]);
     } catch (error) {
       console.error('Error generating workout:', error);
       setChatMessages(prev => [...prev, {
@@ -245,37 +239,46 @@ export default function TodaysWorkoutPage() {
                   <div className="mb-6">
                     <div className="flex items-center mb-3">
                       <h4 className="text-md font-semibold text-gray-300">
-                        {typeof generatedWorkout.main[0] === 'string' 
-                          ? generatedWorkout.main[0] 
-                          : generatedWorkout.main[0]?.name || 'Main Lift'}
+                        Main Exercises
                       </h4>
-                      <span className="ml-2 px-2 py-1 bg-green-600 text-xs text-white rounded">Main Lift</span>
+                      <span className="ml-2 px-2 py-1 bg-green-600 text-xs text-white rounded">
+                        Main Lift
+                      </span>
                     </div>
                     <div className="bg-gray-800 rounded-lg p-4">
                       <div className="grid grid-cols-5 gap-4 text-sm text-gray-400 mb-2">
-                        <span>Set</span>
-                        <span>Previous</span>
+                        <span>Exercise</span>
+                        <span>Sets</span>
+                        <span>Reps</span>
                         <span className="text-right">lbs</span>
-                        <span className="text-right">Reps</span>
-                        <span></span>
+                        <span className="text-right">Complete</span>
                       </div>
-                      {[1, 2, 3].map((setNum) => (
-                        <div key={setNum} className="grid grid-cols-5 gap-4 items-center mb-2">
-                          <span className="text-gray-300">{setNum}</span>
-                          <span className="text-gray-500">N/A</span>
-                          <input
-                            type="number"
-                            className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-right text-gray-200"
-                            placeholder="0"
-                          />
-                          <input
-                            type="number"
-                            className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-right text-gray-200"
-                            placeholder="0"
-                          />
-                          <div className="w-6 h-6 border-2 border-gray-600 rounded-full"></div>
-                        </div>
-                      ))}
+                      {Array.isArray(generatedWorkout.main) ? (
+                        generatedWorkout.main.map((exercise, index) => (
+                          <div key={index} className="grid grid-cols-5 gap-4 items-center mb-2">
+                            <span className="text-gray-300">
+                              {typeof exercise === 'string' ? exercise : exercise.name}
+                            </span>
+                            <span className="text-gray-500">
+                              {exercise.sets || '3'}
+                            </span>
+                            <span className="text-gray-500">
+                              {exercise.reps || '10'}
+                            </span>
+                            <input 
+                              type="number" 
+                              className="bg-gray-700 rounded px-2 py-1 text-right"
+                              placeholder="0"
+                            />
+                            <input 
+                              type="checkbox"
+                              className="ml-auto w-5 h-5 cursor-pointer"
+                            />
+                          </div>
+                        ))
+                      ) : (
+                        <div className="text-gray-500">No exercises found</div>
+                      )}
                     </div>
                   </div>
                 )}
