@@ -234,7 +234,7 @@ export default function TodaysWorkoutPage() {
                             {idx + 1}
                           </span>
                           <span className="text-gray-200">
-                            {typeof exercise === 'string' ? exercise : exercise.name || 'Exercise'}
+                            {(typeof exercise === 'string' ? exercise : exercise.name || 'Exercise').replace(/^-\s*/, '')}
                           </span>
                         </div>
                       ))}
@@ -324,7 +324,7 @@ export default function TodaysWorkoutPage() {
                             <span>Previous</span>
                             <span className="text-right">lbs</span>
                             <span className="text-right">Reps</span>
-                            <span></span>
+                            <span className="text-right">Complete</span>
                           </div>
                           {[1, 2, 3].map((setNum) => (
                             <div key={setNum} className="grid grid-cols-5 gap-4 items-center mb-2">
@@ -340,7 +340,7 @@ export default function TodaysWorkoutPage() {
                                 className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-right text-gray-200"
                                 placeholder="0"
                               />
-                              <div className="w-6 h-6 border-2 border-gray-600 rounded-full"></div>
+                              <input type="checkbox" className="ml-auto w-5 h-5 cursor-pointer" />
                             </div>
                           ))}
                         </div>
@@ -360,7 +360,7 @@ export default function TodaysWorkoutPage() {
                             {idx + 1}
                           </span>
                           <span className="text-gray-200">
-                            {typeof exercise === 'string' ? exercise : exercise.name || 'Exercise'}
+                            {(typeof exercise === 'string' ? exercise : exercise.name || 'Exercise').replace(/^-\s*/, '')}
                           </span>
                         </div>
                       ))}
