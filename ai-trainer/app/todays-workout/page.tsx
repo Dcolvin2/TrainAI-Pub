@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { generateWorkoutForType, getWorkoutSuggestions, saveWorkout } from '@/lib/workoutGenerator';
@@ -226,27 +226,45 @@ const ChatPanel = ({ workout, onClose, onUpdate }: ChatPanelProps) => {
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
   const handleSendMessage = async (message: string) => {
-    if (!message.trim()) return;
-
-    setIsLoading(true);
+    if (!message.trim() || isLoading) return;
     
+    // Clear input immediately to prevent double-send
+    const userMessage = message;
+    setInput(''); // Clear input field
+    
+    // Add user message only once
+    setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
+    setIsLoading(true);
+
     try {
-      // Change this to use our working endpoint
       const response = await fetch('/api/chat-test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message })
+        body: JSON.stringify({ message: userMessage })
       });
 
       const data = await response.json();
       
-      // Only add the assistant response, user message is already added in handleSend
-      setMessages(prev => [
-        ...prev,
-        { role: 'assistant', content: data.response }
-      ]);
+      // Add assistant response
+      setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
+      
+      // Parse workout from response and update the workout display
+      if (userMessage.toLowerCase().includes('workout')) {
+        // You can add workout parsing logic here if needed
+        console.log('Workout-related message detected');
+      }
+      
     } catch (error) {
       console.error('Chat error:', error);
       setMessages(prev => [...prev, { 
@@ -262,10 +280,7 @@ const ChatPanel = ({ workout, onClose, onUpdate }: ChatPanelProps) => {
     if (!input.trim() || isLoading) return;
     
     const userMessage = input.trim();
-    setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
-    setInput('');
-    
-    // Call the modify workout API
+    // Don't add user message here - handleSendMessage will do it
     handleSendMessage(userMessage);
   };
 
@@ -286,7 +301,9 @@ const ChatPanel = ({ workout, onClose, onUpdate }: ChatPanelProps) => {
             <div className={`p-4 rounded-lg ${
               msg.role === 'user' ? 'bg-blue-900/50 text-white' : 'bg-gray-800 text-gray-300'
             }`}>
-              {msg.content}
+              <div className="whitespace-pre-wrap break-words">
+                {msg.content}
+              </div>
             </div>
           </div>
         ))}
@@ -301,6 +318,7 @@ const ChatPanel = ({ workout, onClose, onUpdate }: ChatPanelProps) => {
             </div>
           </div>
         )}
+        <div ref={messagesEndRef} />
       </div>
 
       <div className="p-6 border-t border-gray-800">
