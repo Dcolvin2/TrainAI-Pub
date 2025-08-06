@@ -14,6 +14,21 @@ export async function POST(request: Request) {
     
     console.log('Fetching Nike workout #', nextWorkout);
     
+    // First, let's check if the nike_workouts table exists
+    const { data: tableCheck, error: tableError } = await supabase
+      .from('nike_workouts')
+      .select('count')
+      .limit(1);
+    
+    if (tableError) {
+      console.error('Table access error:', tableError);
+      return NextResponse.json({ 
+        error: 'Database table not accessible',
+        details: tableError.message,
+        suggestion: 'Check if nike_workouts table exists and RLS policies are set up'
+      }, { status: 500 });
+    }
+    
     // Get Nike workout from database
     const { data: exercises, error } = await supabase
       .from('nike_workouts')
@@ -23,13 +38,17 @@ export async function POST(request: Request) {
     
     if (error) {
       console.error('Database error:', error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ 
+        error: 'Failed to fetch Nike workout',
+        details: error.message 
+      }, { status: 500 });
     }
     
     if (!exercises || exercises.length === 0) {
       return NextResponse.json({ 
-        error: 'No exercises found',
-        workout: nextWorkout 
+        error: 'No Nike workout found',
+        workout: nextWorkout,
+        suggestion: 'Check if Nike workout data exists in the database'
       }, { status: 404 });
     }
     
