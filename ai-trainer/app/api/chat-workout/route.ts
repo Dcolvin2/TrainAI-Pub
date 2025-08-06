@@ -36,13 +36,13 @@ export async function POST(request: Request) {
     
     // Common equipment keywords
     const equipmentKeywords: Record<string, string[]> = {
-      'Resistance Bands': ['superband', 'resistance band', 'band', 'resistance bands'],
+      'Superbands': ['superband', 'resistance band', 'band', 'resistance bands', 'superbands'],
       'Kettlebells': ['kettlebell', 'kb', 'kettlebells'],
       'Dumbbells': ['dumbbell', 'db', 'dumbbells'],
-      'Barbell': ['barbell', 'bb'],
+      'Barbells': ['barbell', 'bb'],
       'Bench': ['bench'],
-      'Pull-up Bar': ['pull-up bar', 'pullup bar', 'bar', 'pull up bar'],
-      'Cable Machine': ['cable', 'cable machine'],
+      'Pull Up Bar': ['pull-up bar', 'pullup bar', 'bar', 'pull up bar'],
+      'Cables': ['cable', 'cable machine', 'cables'],
       'Machine': ['machine'],
       'Bodyweight': ['bodyweight', 'no equipment', 'no weights']
     };
@@ -74,10 +74,10 @@ export async function POST(request: Request) {
 
     // Filter exercises by available equipment (including mentioned equipment)
     const availableExercises = exercises?.filter((exercise: any) => {
-      if (!exercise.required_equipment || exercise.required_equipment.length === 0) {
+      if (!exercise.equipment_required || exercise.equipment_required.length === 0) {
         return true; // Bodyweight exercises
       }
-      return exercise.required_equipment.every((req: string) => 
+      return exercise.equipment_required.every((req: string) => 
         allAvailableEquipment.includes(req)
       );
     }) || [];
@@ -141,7 +141,7 @@ Return ONLY valid JSON, no other text.`;
           availableExercisesCount: availableExercises.length,
           sampleExercises: exercises?.slice(0, 5).map((e: any) => ({
             name: e.name,
-            equipment: e.required_equipment,
+            equipment: e.equipment_required,
             category: e.category
           })),
           sampleAvailableExercises: availableExercises.slice(0, 5).map((e: any) => e.name)
