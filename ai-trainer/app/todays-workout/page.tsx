@@ -219,14 +219,117 @@ export default function TodaysWorkoutPage() {
             {/* Generated Workout Display */}
             {generatedWorkout && (
               <div className="bg-gray-900 rounded-lg p-6">
-                <h3 className="text-lg font-semibold mb-4">Your Workout</h3>
+                <h3 className="text-lg font-semibold mb-4">{generatedWorkout.name}</h3>
                 
-                {/* Display the raw workout data */}
-                <div className="text-sm text-gray-300 mb-4">
-                  <pre className="whitespace-pre-wrap">
-                    {JSON.stringify(generatedWorkout, null, 2)}
-                  </pre>
-                </div>
+                {/* Warm-up Section */}
+                {generatedWorkout.warmup?.length > 0 && (
+                  <div className="mb-6">
+                    <h4 className="text-md font-semibold text-gray-300 mb-3">Warm-up</h4>
+                    <div className="space-y-2">
+                      {generatedWorkout.warmup.map((exercise, idx) => (
+                        <div key={idx} className="flex items-center">
+                          <span className="w-6 h-6 bg-gray-700 rounded-full flex items-center justify-center text-xs text-white mr-3">
+                            {idx + 1}
+                          </span>
+                          <span className="text-gray-200">{exercise.name || exercise}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Main Lift Section */}
+                {generatedWorkout.main?.length > 0 && (
+                  <div className="mb-6">
+                    <div className="flex items-center mb-3">
+                      <h4 className="text-md font-semibold text-gray-300">{generatedWorkout.main[0]?.name || 'Main Lift'}</h4>
+                      <span className="ml-2 px-2 py-1 bg-green-600 text-xs text-white rounded">Main Lift</span>
+                    </div>
+                    <div className="bg-gray-800 rounded-lg p-4">
+                      <div className="grid grid-cols-5 gap-4 text-sm text-gray-400 mb-2">
+                        <span>Set</span>
+                        <span>Previous</span>
+                        <span className="text-right">lbs</span>
+                        <span className="text-right">Reps</span>
+                        <span></span>
+                      </div>
+                      {[1, 2, 3].map((setNum) => (
+                        <div key={setNum} className="grid grid-cols-5 gap-4 items-center mb-2">
+                          <span className="text-gray-300">{setNum}</span>
+                          <span className="text-gray-500">N/A</span>
+                          <input
+                            type="number"
+                            className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-right text-gray-200"
+                            placeholder="0"
+                          />
+                          <input
+                            type="number"
+                            className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-right text-gray-200"
+                            placeholder="0"
+                          />
+                          <div className="w-6 h-6 border-2 border-gray-600 rounded-full"></div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Accessories Section */}
+                {generatedWorkout.accessories?.length > 0 && (
+                  <div className="mb-6">
+                    {generatedWorkout.accessories.map((exercise, idx) => (
+                      <div key={idx} className="mb-4">
+                        <div className="flex items-center mb-3">
+                          <h4 className="text-md font-semibold text-gray-300">{exercise.name || exercise}</h4>
+                          <span className="ml-2 px-2 py-1 bg-blue-600 text-xs text-white rounded">Accessory</span>
+                        </div>
+                        <div className="bg-gray-800 rounded-lg p-4">
+                          <div className="grid grid-cols-5 gap-4 text-sm text-gray-400 mb-2">
+                            <span>Set</span>
+                            <span>Previous</span>
+                            <span className="text-right">lbs</span>
+                            <span className="text-right">Reps</span>
+                            <span></span>
+                          </div>
+                          {[1, 2, 3].map((setNum) => (
+                            <div key={setNum} className="grid grid-cols-5 gap-4 items-center mb-2">
+                              <span className="text-gray-300">{setNum}</span>
+                              <span className="text-gray-500">N/A</span>
+                              <input
+                                type="number"
+                                className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-right text-gray-200"
+                                placeholder="0"
+                              />
+                              <input
+                                type="number"
+                                className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-right text-gray-200"
+                                placeholder="0"
+                              />
+                              <div className="w-6 h-6 border-2 border-gray-600 rounded-full"></div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                {/* Cool-down Section */}
+                {generatedWorkout.cooldown?.length > 0 && (
+                  <div className="mb-6">
+                    <h4 className="text-md font-semibold text-gray-300 mb-3">Cool-down</h4>
+                    <div className="space-y-2">
+                      {generatedWorkout.cooldown.map((exercise, idx) => (
+                        <div key={idx} className="flex items-center">
+                          <span className="w-6 h-6 bg-gray-700 rounded-full flex items-center justify-center text-xs text-white mr-3">
+                            {idx + 1}
+                          </span>
+                          <span className="text-gray-200">{exercise.name || exercise}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 
                 <button 
                   onClick={() => console.log('Starting workout:', generatedWorkout)}

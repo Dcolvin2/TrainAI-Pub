@@ -1,43 +1,51 @@
+import { createClient } from '@supabase/supabase-js';
+import { buildCoreLiftPool } from '@/lib/buildCoreLiftPool';
+import { getUserEquipment } from '@/lib/getUserEquipment';
+import Anthropic from '@anthropic-ai/sdk';
+
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+});
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
 // Exercise database for different workout types
 const exerciseDatabase = {
   push: {
-    mainLifts: ['Barbell Bench Press', 'Dumbbell Bench Press', 'Push-Ups', 'Dips'],
-    accessories: ['Dumbbell Flyes', 'Overhead Press', 'Lateral Raises', 'Tricep Dips', 'Push-Ups', 'Chest Press'],
+    mainLifts: ['Barbell Bench Press', 'Dumbbell Bench Press', 'Barbell Overhead Press', 'Dumbbell Shoulder Press', 'Barbell Incline Press', 'Dumbbell Incline Press'],
+    accessories: ['Dumbbell Flyes', 'Lateral Raises', 'Tricep Dips', 'Push-Ups', 'Chest Press', 'Overhead Tricep Extension'],
     warmup: ['Arm Circles', 'Push-up to T', 'Shoulder Rotations', 'Light Push-Ups', 'Chest Stretch'],
     cooldown: ['Chest Stretch', 'Shoulder Stretch', 'Tricep Stretch', 'Foam Roll Chest']
   },
   pull: {
-    mainLifts: ['Barbell Rows', 'Pull-Ups', 'Lat Pulldowns', 'Dumbbell Rows'],
-    accessories: ['Face Pulls', 'Bicep Curls', 'Hammer Curls', 'Preacher Curls', 'Cable Rows', 'Reverse Flyes'],
+    mainLifts: ['Barbell Bent-Over Row', 'Pull-Ups', 'Dumbbell Row', 'Cable Row', 'Barbell Deadlift', 'Barbell Upright Row'],
+    accessories: ['Face Pulls', 'Bicep Curls', 'Hammer Curls', 'Preacher Curls', 'Reverse Flyes', 'Lat Pulldowns'],
     warmup: ['Arm Circles', 'Shoulder Rotations', 'Light Rows', 'Back Stretch', 'Lat Pulldown Warmup'],
     cooldown: ['Back Stretch', 'Bicep Stretch', 'Shoulder Stretch', 'Foam Roll Back']
   },
   legs: {
-    mainLifts: ['Barbell Squats', 'Deadlifts', 'Leg Press', 'Lunges'],
-    accessories: ['Leg Extensions', 'Leg Curls', 'Calf Raises', 'Romanian Deadlifts', 'Split Squats', 'Glute Bridges'],
+    mainLifts: ['Barbell Back Squat', 'Barbell Deadlift', 'Barbell Front Squat', 'Dumbbell Goblet Squat', 'Dumbbell Split Squat', 'Romanian Deadlift'],
+    accessories: ['Leg Extensions', 'Leg Curls', 'Calf Raises', 'Split Squats', 'Glute Bridges', 'Lunges'],
     warmup: ['Bodyweight Squats', 'Leg Swings', 'Hip Circles', 'Light Lunges', 'Quad Stretch'],
     cooldown: ['Quad Stretch', 'Hamstring Stretch', 'Calf Stretch', 'Foam Roll Legs']
   },
   upper: {
-    mainLifts: ['Barbell Bench Press', 'Pull-Ups', 'Overhead Press', 'Barbell Rows'],
+    mainLifts: ['Barbell Overhead Press', 'Dumbbell Shoulder Press', 'Barbell Bench Press', 'Dumbbell Bench Press', 'Pull-Ups', 'Barbell Bent-Over Row'],
     accessories: ['Dumbbell Flyes', 'Lateral Raises', 'Bicep Curls', 'Tricep Dips', 'Face Pulls', 'Push-Ups'],
     warmup: ['Arm Circles', 'Shoulder Rotations', 'Light Push-Ups', 'Light Rows', 'Chest Stretch'],
     cooldown: ['Chest Stretch', 'Back Stretch', 'Shoulder Stretch', 'Bicep Stretch', 'Tricep Stretch']
   },
-  lower: {
-    mainLifts: ['Barbell Squats', 'Deadlifts', 'Leg Press', 'Lunges'],
-    accessories: ['Leg Extensions', 'Leg Curls', 'Calf Raises', 'Romanian Deadlifts', 'Split Squats', 'Glute Bridges'],
-    warmup: ['Bodyweight Squats', 'Leg Swings', 'Hip Circles', 'Light Lunges', 'Quad Stretch'],
-    cooldown: ['Quad Stretch', 'Hamstring Stretch', 'Calf Stretch', 'Foam Roll Legs']
-  },
   full_body: {
-    mainLifts: ['Barbell Squats', 'Deadlifts', 'Bench Press', 'Pull-Ups'],
+    mainLifts: ['Barbell Deadlift', 'Barbell Clean and Press', 'Dumbbell Thrusters', 'Barbell Squat', 'Kettlebell Swing'],
     accessories: ['Overhead Press', 'Rows', 'Lunges', 'Push-Ups', 'Planks', 'Calf Raises'],
     warmup: ['Bodyweight Squats', 'Arm Circles', 'Light Push-Ups', 'Light Rows', 'Full Body Stretch'],
     cooldown: ['Full Body Stretch', 'Foam Roll', 'Static Stretches', 'Deep Breathing']
   },
   hiit: {
-    mainLifts: ['Burpees', 'Mountain Climbers', 'Jump Squats', 'High Knees'],
+    mainLifts: ['Kettlebell Swing', 'Box Jump', 'Battle Rope Waves', 'Medicine Ball Slam', 'Burpee'],
     accessories: ['Push-Ups', 'Planks', 'Jumping Jacks', 'Lunges', 'Mountain Climbers', 'Burpees'],
     warmup: ['Light Jogging', 'Arm Circles', 'Leg Swings', 'High Knees', 'Dynamic Stretches'],
     cooldown: ['Light Walking', 'Static Stretches', 'Deep Breathing', 'Foam Rolling']
@@ -51,8 +59,44 @@ function getRandomExercises(exercises: string[], count: number): any[] {
 }
 
 function getMainLiftForType(type: string): string {
-  const lifts = exerciseDatabase[type as keyof typeof exerciseDatabase]?.mainLifts || ['Bench Press'];
+  const lifts = exerciseDatabase[type as keyof typeof exerciseDatabase]?.mainLifts || ['Dumbbell Bench Press'];
   return lifts[Math.floor(Math.random() * lifts.length)];
+}
+
+async function generateExercisesWithClaude(workoutType: string, equipment: string[], exerciseType: 'mainLifts' | 'accessories' | 'warmup' | 'cooldown', count: number): Promise<any[]> {
+  try {
+    const prompt = `Generate ${count} ${exerciseType} exercises for a ${workoutType} workout. 
+    
+Available equipment: ${equipment.join(', ')}
+Exercise type: ${exerciseType}
+
+Requirements:
+- ${exerciseType === 'mainLifts' ? 'These should be compound movements that can be the primary focus of the workout (e.g., Bench Press, Squats, Deadlifts, Pull-ups)' : ''}
+- ${exerciseType === 'accessories' ? 'These should be isolation or secondary movements to complement the main lifts' : ''}
+- ${exerciseType === 'warmup' ? 'These should be light movements to prepare the body for the workout' : ''}
+- ${exerciseType === 'cooldown' ? 'These should be stretching or recovery movements' : ''}
+- Use only equipment that is available
+- Return as a JSON array of exercise names
+
+Example response: ["Exercise 1", "Exercise 2", "Exercise 3"]`;
+
+    const response = await anthropic.messages.create({
+      model: "claude-3-5-sonnet-20241022",
+      max_tokens: 500,
+      temperature: 0.7,
+      messages: [{ role: "user", content: prompt }]
+    });
+
+    const responseText = response.content[0].type === 'text' ? response.content[0].text : '';
+    const exercises = JSON.parse(responseText);
+    
+    return exercises.map((name: string) => ({ name }));
+  } catch (error) {
+    console.error('Claude exercise generation error:', error);
+    // Fallback to database exercises
+    const exercises = exerciseDatabase[workoutType as keyof typeof exerciseDatabase]?.[exerciseType] || [];
+    return getRandomExercises(exercises, count);
+  }
 }
 
 function generateWarmupExercises(type: string, count: number): any[] {
@@ -83,19 +127,10 @@ function generateCooldownExercises(type: string, count: number): any[] {
   }));
 }
 
-import { createClient } from '@supabase/supabase-js';
-import { buildCoreLiftPool } from '@/lib/buildCoreLiftPool';
-import { getUserEquipment } from '@/lib/getUserEquipment';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    console.log('Received workout request:', body); // See what's being sent
+    console.log('Received workout request:', body);
     
     const { type, category, timeMinutes, userId } = body;
     
@@ -117,9 +152,18 @@ export async function POST(request: Request) {
     // pick strongest candidate (later: weight progression logic)
     const coreLift = corePool[0];
 
-    // Fail-loud guardrail
-    if (coreLift.name === 'Push-up') {
-      console.warn('⚠️  Fallback core-lift used – user lacks equipment for focus:', type);
+    // Ensure we never use push-ups as a main lift
+    if (coreLift.name.toLowerCase().includes('push-up') || coreLift.name.toLowerCase().includes('pushup')) {
+      console.warn('⚠️  Push-up detected as main lift, replacing with proper compound movement');
+      const fallbackLifts = {
+        push: 'Dumbbell Bench Press',
+        pull: 'Dumbbell Row',
+        legs: 'Dumbbell Goblet Squat',
+        upper: 'Dumbbell Shoulder Press',
+        full: 'Dumbbell Thrusters',
+        hiit: 'Burpee'
+      };
+      coreLift.name = fallbackLifts[type as keyof typeof fallbackLifts] || 'Dumbbell Bench Press';
     }
 
     console.log(`[generate-workout] Selected core lift: ${coreLift.name}`);
@@ -134,17 +178,21 @@ export async function POST(request: Request) {
     
     const counts = exerciseCounts[timeMinutes as keyof typeof exerciseCounts] || exerciseCounts[45];
     
-    // Generate the workout
+    // Generate the workout with Claude for better exercise selection
+    const warmup = await generateExercisesWithClaude(type, userEquip, 'warmup', counts.warmup);
+    const accessories = await generateExercisesWithClaude(type, userEquip, 'accessories', counts.accessories);
+    const cooldown = await generateExercisesWithClaude(type, userEquip, 'cooldown', counts.cooldown);
+    
     const workout = {
-      warmup: generateWarmupExercises(type, counts.warmup),
+      warmup,
       mainLift: { 
         name: coreLift.name, 
         sets: counts.mainSets, 
         reps: "8-10", 
         rest: "2-3 min" 
       },
-      accessories: generateAccessoryExercises(type, counts.accessories),
-      cooldown: generateCooldownExercises(type, counts.cooldown)
+      accessories,
+      cooldown
     };
 
     console.table({ 

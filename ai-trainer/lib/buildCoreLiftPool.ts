@@ -23,53 +23,73 @@ export function getCoreLiftForWorkoutType(workoutType: string, equipment: string
   // Define proper core lifts for each workout type
   const coreLiftMap: Record<string, (string | null)[]> = {
     push: [
-      equipment.includes('Barbell') ? 'Barbell Bench Press' : null,
-      equipment.includes('Dumbbells') ? 'Dumbbell Bench Press' : null,
-      equipment.includes('Cables') ? 'Cable Chest Press' : null,
-      'Push-Up' // Last resort only
+      equipment.includes('barbell') ? 'Barbell Bench Press' : null,
+      equipment.includes('dumbbells') ? 'Dumbbell Bench Press' : null,
+      equipment.includes('cables') ? 'Cable Chest Press' : null,
+      equipment.includes('barbell') ? 'Barbell Overhead Press' : null,
+      equipment.includes('dumbbells') ? 'Dumbbell Shoulder Press' : null,
+      equipment.includes('barbell') ? 'Barbell Incline Press' : null,
+      equipment.includes('dumbbells') ? 'Dumbbell Incline Press' : null,
     ],
     
     pull: [
-      equipment.includes('Pull Up Bar') ? 'Pull-Up' : null,
-      equipment.includes('Barbell') ? 'Barbell Bent-Over Row' : null,
-      equipment.includes('Dumbbells') ? 'Dumbbell Row' : null,
-      equipment.includes('Cables') ? 'Cable Row' : null,
+      equipment.includes('pull up bar') ? 'Pull-Up' : null,
+      equipment.includes('barbell') ? 'Barbell Bent-Over Row' : null,
+      equipment.includes('dumbbells') ? 'Dumbbell Row' : null,
+      equipment.includes('cables') ? 'Cable Row' : null,
+      equipment.includes('barbell') ? 'Barbell Deadlift' : null,
+      equipment.includes('barbell') ? 'Barbell Upright Row' : null,
     ],
     
     legs: [
-      equipment.includes('Barbell') && equipment.includes('Squat Rack') ? 'Barbell Back Squat' : null,
-      equipment.includes('Barbell') ? 'Barbell Deadlift' : null,
-      equipment.includes('Dumbbells') ? 'Dumbbell Goblet Squat' : null,
-      equipment.includes('Kettlebells') ? 'Kettlebell Goblet Squat' : null,
-      'Bodyweight Squat' // Last resort
+      equipment.includes('barbell') && equipment.includes('squat rack') ? 'Barbell Back Squat' : null,
+      equipment.includes('barbell') ? 'Barbell Deadlift' : null,
+      equipment.includes('barbell') ? 'Barbell Front Squat' : null,
+      equipment.includes('dumbbells') ? 'Dumbbell Goblet Squat' : null,
+      equipment.includes('dumbbells') ? 'Dumbbell Split Squat' : null,
+      equipment.includes('kettlebells') ? 'Kettlebell Goblet Squat' : null,
+      equipment.includes('barbell') ? 'Romanian Deadlift' : null,
     ],
     
     upper: [
-      equipment.includes('Barbell') ? 'Barbell Overhead Press' : null,
-      equipment.includes('Dumbbells') ? 'Dumbbell Shoulder Press' : null,
-      equipment.includes('Barbell') ? 'Barbell Bench Press' : null,
-      equipment.includes('Pull Up Bar') ? 'Pull-Up' : null,
+      equipment.includes('barbell') ? 'Barbell Overhead Press' : null,
+      equipment.includes('dumbbells') ? 'Dumbbell Shoulder Press' : null,
+      equipment.includes('barbell') ? 'Barbell Bench Press' : null,
+      equipment.includes('dumbbells') ? 'Dumbbell Bench Press' : null,
+      equipment.includes('pull up bar') ? 'Pull-Up' : null,
+      equipment.includes('barbell') ? 'Barbell Bent-Over Row' : null,
     ],
     
     full: [
-      equipment.includes('Barbell') ? 'Barbell Deadlift' : null,
-      equipment.includes('Barbell') ? 'Barbell Clean and Press' : null,
-      equipment.includes('Dumbbells') ? 'Dumbbell Thrusters' : null,
-      equipment.includes('Kettlebells') ? 'Kettlebell Swing' : null,
-      'Burpee' // Last resort
+      equipment.includes('barbell') ? 'Barbell Deadlift' : null,
+      equipment.includes('barbell') ? 'Barbell Clean and Press' : null,
+      equipment.includes('dumbbells') ? 'Dumbbell Thrusters' : null,
+      equipment.includes('kettlebells') ? 'Kettlebell Swing' : null,
+      equipment.includes('barbell') ? 'Barbell Squat' : null,
     ],
     
     hiit: [
-      equipment.includes('Kettlebells') ? 'Kettlebell Swing' : null,
-      equipment.includes('Plyo Box') ? 'Box Jump' : null,
-      equipment.includes('Battle Rope') ? 'Battle Rope Waves' : null,
-      equipment.includes('Medicine Ball') ? 'Medicine Ball Slam' : null,
-      'Burpee'
+      equipment.includes('kettlebells') ? 'Kettlebell Swing' : null,
+      equipment.includes('plyo box') ? 'Box Jump' : null,
+      equipment.includes('battle rope') ? 'Battle Rope Waves' : null,
+      equipment.includes('medicine ball') ? 'Medicine Ball Slam' : null,
+      'Burpee',
     ],
   };
 
   const lifts = (coreLiftMap[workoutType.toLowerCase()] || []).filter((lift): lift is string => lift !== null);
-  return lifts[0] || 'Bodyweight Squat'; // Return first available, never push-up as default
+  
+  // Better fallbacks based on workout type
+  const fallbackLifts: Record<string, string> = {
+    push: 'Dumbbell Bench Press',
+    pull: 'Dumbbell Row', 
+    legs: 'Dumbbell Goblet Squat',
+    upper: 'Dumbbell Shoulder Press',
+    full: 'Dumbbell Thrusters',
+    hiit: 'Burpee'
+  };
+  
+  return lifts[0] || fallbackLifts[workoutType.toLowerCase()] || 'Dumbbell Bench Press';
 }
 
 export async function buildCoreLiftPool(
@@ -96,11 +116,28 @@ export async function buildCoreLiftPool(
 
     console.log(`[buildCoreLiftPool] Found ${data?.length || 0} exercises`);
 
-    // Guarantee at least one result
-    return data?.length ? data : [{ name: 'Push-up', equipment_required: ['bodyweight'] }];
+    // Better fallbacks that are actually main lifts
+    const fallbackLifts: Record<string, CoreLift> = {
+      push: { name: 'Dumbbell Bench Press', equipment_required: ['dumbbells'] },
+      pull: { name: 'Dumbbell Row', equipment_required: ['dumbbells'] },
+      legs: { name: 'Dumbbell Goblet Squat', equipment_required: ['dumbbells'] },
+      upper: { name: 'Dumbbell Shoulder Press', equipment_required: ['dumbbells'] },
+      full: { name: 'Dumbbell Thrusters', equipment_required: ['dumbbells'] },
+      hiit: { name: 'Burpee', equipment_required: ['bodyweight'] }
+    };
+
+    return data?.length ? data : [fallbackLifts[focus] || fallbackLifts.push];
 
   } catch (error) {
     console.error('[buildCoreLiftPool] Error:', error);
-    return [{ name: 'Push-up', equipment_required: ['bodyweight'] }];
+    const fallbackLifts: Record<string, CoreLift> = {
+      push: { name: 'Dumbbell Bench Press', equipment_required: ['dumbbells'] },
+      pull: { name: 'Dumbbell Row', equipment_required: ['dumbbells'] },
+      legs: { name: 'Dumbbell Goblet Squat', equipment_required: ['dumbbells'] },
+      upper: { name: 'Dumbbell Shoulder Press', equipment_required: ['dumbbells'] },
+      full: { name: 'Dumbbell Thrusters', equipment_required: ['dumbbells'] },
+      hiit: { name: 'Burpee', equipment_required: ['bodyweight'] }
+    };
+    return [fallbackLifts[focus] || fallbackLifts.push];
   }
 } 
