@@ -314,15 +314,16 @@ export default function TodaysWorkoutPage() {
                                 <span className="ml-2 px-2 py-1 bg-green-600 text-xs text-white rounded">
                                   Main Lift
                                 </span>
+                                <span className="ml-8 text-sm text-gray-400">Previous</span>
                               </div>
                               <div className="bg-gray-800 rounded-lg p-4">
                                 {/* Column headers */}
                                 <div className="grid grid-cols-5 gap-4 text-sm text-gray-400 mb-2">
                                   <span>Set</span>
-                                  <span>Previous</span>
-                                  <span className="text-right">lbs</span>
-                                  <span className="text-right">Reps</span>
-                                  <span className="text-right">Complete</span>
+                                  <span></span>
+                                  <span>lbs</span>
+                                  <span>Reps</span>
+                                  <span>Complete</span>
                                 </div>
                                 
                                 {/* Sets */}
@@ -331,22 +332,22 @@ export default function TodaysWorkoutPage() {
                                     <span className="text-gray-300">
                                       {setIndex + 1}
                                     </span>
-                                    <span className="text-gray-500 text-sm text-center">
+                                    <span className="text-gray-500 text-sm">
                                       {/* Previous weight x reps - from DB or default */}
                                       {previous ? `${previous.weight} lbs × ${previous.reps}` : 'N/A'}
                                     </span>
                                     <input
                                       type="number"
-                                      className="bg-gray-700 rounded px-2 py-1 text-center text-white"
+                                      className="bg-gray-700 rounded px-2 py-1 text-white"
                                       placeholder="0"
                                     />
                                     <input
                                       type="number"
-                                      className="bg-gray-700 rounded px-2 py-1 text-center text-white"
+                                      className="bg-gray-700 rounded px-2 py-1 text-white"
                                       placeholder={targetReps.toString()}
                                       defaultValue={targetReps}
                                     />
-                                    <input type="checkbox" className="ml-auto w-5 h-5 cursor-pointer" />
+                                    <input type="checkbox" className="w-5 h-5 cursor-pointer" />
                                   </div>
                                 ))}
                               </div>
@@ -367,14 +368,15 @@ export default function TodaysWorkoutPage() {
                             {typeof exercise === 'string' ? exercise : exercise.name || 'Exercise'}
                           </h4>
                           <span className="ml-2 px-2 py-1 bg-blue-600 text-xs text-white rounded">Accessory</span>
+                          <span className="ml-8 text-sm text-gray-400">Previous</span>
                         </div>
                         <div className="bg-gray-800 rounded-lg p-4">
                           <div className="grid grid-cols-5 gap-4 text-sm text-gray-400 mb-2">
                             <span>Set</span>
-                            <span>Previous</span>
-                            <span className="text-right">lbs</span>
-                            <span className="text-right">Reps</span>
-                            <span className="text-right">Complete</span>
+                            <span></span>
+                            <span>lbs</span>
+                            <span>Reps</span>
+                            <span>Complete</span>
                           </div>
                           {[1, 2, 3].map((setNum) => (
                             <div key={setNum} className="grid grid-cols-5 gap-4 items-center mb-2">
@@ -382,15 +384,15 @@ export default function TodaysWorkoutPage() {
                               <span className="text-gray-500">N/A</span>
                               <input
                                 type="number"
-                                className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-right text-gray-200"
+                                className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-gray-200"
                                 placeholder="0"
                               />
-          <input
-            type="number"
-                                className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-right text-gray-200"
+                              <input
+                                type="number"
+                                className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-gray-200"
                                 placeholder="0"
                               />
-                              <input type="checkbox" className="ml-auto w-5 h-5 cursor-pointer" />
+                              <input type="checkbox" className="w-5 h-5 cursor-pointer" />
                             </div>
                           ))}
                         </div>
