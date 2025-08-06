@@ -334,8 +334,8 @@ export default function TodaysWorkoutPage() {
                                 {/* Sets */}
                                 {[...Array(targetSets)].map((_, setIndex) => (
                                   <div key={setIndex} className="grid grid-cols-5 gap-4 items-center mb-2">
-                                    <span className="text-gray-400 text-sm">
-                                      Set {setIndex + 1}
+                                    <span className="text-gray-300">
+                                      {setIndex + 1}
                                     </span>
                                     <span className="text-gray-500 text-sm text-center">
                                       {/* Previous weight x reps - from DB or default */}
