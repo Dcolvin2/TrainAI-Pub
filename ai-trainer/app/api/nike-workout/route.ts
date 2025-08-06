@@ -3,16 +3,13 @@ import { NextResponse } from 'next/server';
 
 export async function POST(request: Request) {
   try {
+    // Use the public URL and anon key for server-side operations
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     );
     
-    // Get user from request headers or session
-    // For now, we'll assume the user is authenticated
-    // You may need to adjust this based on your auth setup
-    
-    // Get user's last Nike workout number (for now, start with workout 1)
+    // For now, we'll start with workout 1 (you can add user tracking later)
     const nextWorkout = 1;
     
     console.log('Fetching Nike workout #', nextWorkout);
