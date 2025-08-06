@@ -1,290 +1,196 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { useAuth } from '@/context/AuthContext';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { generateWorkoutForType, getWorkoutSuggestions, saveWorkout } from '@/lib/workoutGenerator';
-import { WorkoutDisplay } from '../components/WorkoutDisplay';
-import Link from 'next/link';
-
-// Define workout types with proper text
-const workoutTypes = [
-  {
-    id: 'push',
-    title: 'PUSH',
-    subtitle: 'Chest, Shoulders, Triceps',
-    color: 'border-blue-500',
-    bgHover: 'hover:bg-blue-500/10'
-  },
-  {
-    id: 'pull',
-    title: 'PULL',
-    subtitle: 'Back, Biceps',
-    color: 'border-green-500',
-    bgHover: 'hover:bg-green-500/10'
-  },
-  {
-    id: 'legs',
-    title: 'LEGS',
-    subtitle: 'Quads, Hamstrings, Glutes',
-    color: 'border-purple-500',
-    bgHover: 'hover:bg-purple-500/10'
-  },
-  {
-    id: 'upper',
-    title: 'UPPER BODY',
-    subtitle: 'Chest, Back, Shoulders, Arms',
-    color: 'border-orange-500',
-    bgHover: 'hover:bg-orange-500/10'
-  },
-  {
-    id: 'full',
-    title: 'FULL BODY',
-    subtitle: 'Total Body Workout',
-    color: 'border-red-500',
-    bgHover: 'hover:bg-red-500/10'
-  },
-  {
-    id: 'hiit',
-    title: 'HIIT',
-    subtitle: 'High Intensity Intervals',
-    color: 'border-yellow-500',
-    bgHover: 'hover:bg-yellow-500/10'
-  }
-];
-
-interface GeneratedWorkout {
-  name: string;
-  warmup: string[];
-  main: any[];
-  accessories: string[];
-  cooldown: string[];
-}
+import { useWorkoutStore } from '@/lib/workoutStore';
 
 export default function TodaysWorkoutPage() {
-  const { user } = useAuth();
   const router = useRouter();
+  const { setPending } = useWorkoutStore();
   const [selectedTime, setSelectedTime] = useState(45);
-  const [chatMessages, setChatMessages] = useState<any[]>([]);
-  const [inputMessage, setInputMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [generatedWorkout, setGeneratedWorkout] = useState<GeneratedWorkout | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [selectedType, setSelectedType] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [workoutData, setWorkoutData] = useState<any>(null);
 
-  const handleSendMessage = async () => {
-    if (!inputMessage.trim() || isLoading) return;
-    
-    const userMessage = inputMessage;
-    setInputMessage('');
-    setChatMessages(prev => [...prev, { role: 'user', content: userMessage }]);
-    setIsLoading(true);
+  const workoutTypes = [
+    { id: 'push', label: 'PUSH', description: 'Chest, Shoulders, Triceps' },
+    { id: 'pull', label: 'PULL', description: 'Back, Biceps' },
+    { id: 'legs', label: 'LEGS', description: 'Quads, Hamstrings, Glutes' },
+    { id: 'upper body', label: 'UPPER BODY', description: 'Chest, Back, Shoulders, Arms' },
+    { id: 'full body', label: 'FULL BODY', description: 'Total Body Workout' },
+    { id: 'hiit', label: 'HIIT', description: 'High Intensity Intervals' }
+  ];
 
-    try {
-      const response = await fetch('/api/chat-test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMessage })
-      });
+  const handleWorkoutSelect = async (type: string) => {
+    setError(null);
+    setIsGenerating(true);
+    setSelectedType(type);
 
-      const data = await response.json();
-      setChatMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
-      
-      // If workout data is returned, update the display
-      if (data.workout) {
-        setGeneratedWorkout(data.workout);
-      }
-    } catch (error) {
-      console.error('Chat error:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleWorkoutSelect = async (workoutType: string) => {
-    setIsLoading(true);
     try {
       const response = await fetch('/api/generate-workout', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
-          timeAvailable: selectedTime,
-          workoutType,
-          focus: workoutType
+          workoutType: type,
+          timeAvailable: selectedTime
         })
       });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       const data = await response.json();
       
-      // Set the generated workout to display
-      setGeneratedWorkout({
-        name: `${workoutType.toUpperCase()} Workout`,
-        warmup: data.warmup || [],
-        main: data.workout || data.main || [],
-        accessories: data.accessories || [],
-        cooldown: data.cooldown || []
-      });
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      // Store the workout data
+      const workout = data.workout;
+      setWorkoutData(workout);
       
-      // Add to chat
-      setChatMessages(prev => [...prev, {
-        role: 'assistant',
-        content: `I've generated a ${selectedTime}-minute ${workoutType} workout for you. Click "Start Workout" when you're ready!`
-      }]);
-    } catch (error) {
-      console.error('Error:', error);
+      // Set in workout store
+      setPending({
+        planId: data.sessionId,
+        warmup: workout.warmup || [],
+        workout: workout.main || [],
+        cooldown: workout.cooldown || [],
+        accessories: workout.accessories || []
+      });
+
+    } catch (err) {
+      console.error('Error generating workout:', err);
+      setError(err.message || 'Failed to generate workout');
     } finally {
-      setIsLoading(false);
+      setIsGenerating(false);
     }
   };
 
-  // Redirect if not authenticated
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-white text-xl mb-4">Please log in to access your workout</div>
-          <button
-            onClick={() => router.push('/login')}
-            className="bg-green-600 px-6 py-3 rounded-xl text-white font-semibold hover:bg-green-700 transition-colors"
-          >
-            Go to Login
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const handleStartWorkout = () => {
+    if (workoutData) {
+      router.push('/workout/active');
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-black text-white">
-      <div className="max-w-7xl mx-auto px-6 py-8 h-full">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-          {/* Left side - Workout Selection */}
-          <div className="lg:col-span-2 space-y-8">
-            {/* Time Selection */}
-            <div>
-              <h2 className="text-xl font-semibold mb-4">Time Available</h2>
-              <div className="flex gap-3">
-                {[15, 30, 45, 60].map((time) => (
-                  <button
-                    key={time}
-                    onClick={() => setSelectedTime(time)}
-                    className={`px-6 py-3 rounded-lg transition-all ${
-                      selectedTime === time
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-                    }`}
-                  >
-                    {time === 60 ? '60+' : time} min
-                  </button>
-                ))}
-              </div>
-            </div>
+    <div className="min-h-screen bg-gray-900 text-white p-4">
+      <div className="max-w-4xl mx-auto">
+        <h1 className="text-3xl font-bold mb-8">Today's Workout</h1>
 
-            {/* Workout Type Cards */}
-            <div>
-              <h2 className="text-xl font-semibold mb-4">Choose Your Workout</h2>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {workoutTypes.map((workout) => (
-                  <button
-                    key={workout.id}
-                    onClick={() => handleWorkoutSelect(workout.id)}
-                    className={`p-6 rounded-lg bg-gray-900 border-t-4 ${workout.color} 
-                      ${workout.bgHover} transition-all hover:scale-105 text-left`}
-                    disabled={isLoading}
-                  >
-                    <h3 className="text-lg font-bold mb-2">{workout.title}</h3>
-                    <p className="text-sm text-gray-400">{workout.subtitle}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Generated Workout Display */}
-            {generatedWorkout && (
-              <div className="bg-gray-900 rounded-lg p-6">
-                <h3 className="text-lg font-semibold mb-4">{generatedWorkout.name || 'Your Workout'}</h3>
-                
-                {/* Show a message since arrays are empty */}
-                <div className="text-gray-400 mb-4">
-                  <p className="mb-2">Workout generated! The exercises are being loaded...</p>
-                  <p className="text-sm">Debug info: warmup={generatedWorkout.warmup?.length || 0}, main={generatedWorkout.main?.length || 0}</p>
-                </div>
-                
-                <button 
-                  onClick={() => {
-                    // For now, just navigate to a workout page or show an alert
-                    alert('Start Workout clicked! (Feature coming soon)');
-                    console.log('Workout data:', generatedWorkout);
-                  }}
-                  className="mt-4 w-full bg-green-600 hover:bg-green-700 py-3 rounded-lg font-semibold transition-colors"
-                >
-                  Start Workout
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Right side - Chat */}
-          <div className="lg:col-span-1">
-            <div className="bg-gray-900 rounded-lg h-[500px] flex flex-col">
-              <div className="p-4 border-b border-gray-800">
-                <h3 className="text-lg font-semibold">AI Workout Assistant</h3>
-              </div>
-              
-              {/* Chat Messages */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                {chatMessages.length === 0 && (
-                  <div className="text-gray-500 text-center mt-8">
-                    Ask me anything about workouts or say "Nike workouts" for your program
-                  </div>
-                )}
-                
-                {chatMessages.map((msg, idx) => (
-                  <div
-                    key={idx}
-                    className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div
-                      className={`max-w-[80%] rounded-lg px-4 py-2 ${
-                        msg.role === 'user'
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-800 text-gray-100'
-                      }`}
-                    >
-                      <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-                    </div>
-                  </div>
-                ))}
-                
-                {isLoading && (
-                  <div className="flex justify-start">
-                    <div className="bg-gray-800 rounded-lg px-4 py-2">
-                      <span className="text-gray-400 animate-pulse">Thinking...</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-              
-              {/* Chat Input */}
-              <div className="p-4 border-t border-gray-800">
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={inputMessage}
-                    onChange={(e) => setInputMessage(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                    placeholder="Ask me anything..."
-                    className="flex-1 bg-gray-800 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <button
-                    onClick={handleSendMessage}
-                    disabled={isLoading || !inputMessage.trim()}
-                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Send
-                  </button>
-                </div>
-              </div>
-            </div>
+        {/* Time Selection */}
+        <div className="mb-8">
+          <h2 className="text-xl mb-4">Time Available</h2>
+          <div className="flex gap-4">
+            {[15, 30, 45, 60].map(time => (
+              <button
+                key={time}
+                onClick={() => setSelectedTime(time)}
+                className={`px-6 py-3 rounded-lg ${
+                  selectedTime === time
+                    ? 'bg-green-600 text-white'
+                    : 'bg-gray-800 text-gray-300'
+                }`}
+              >
+                {time} min
+              </button>
+            ))}
           </div>
         </div>
+
+        {/* Workout Type Selection */}
+        <div className="mb-8">
+          <h2 className="text-xl mb-4">Choose Your Workout</h2>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            {workoutTypes.map(type => (
+              <button
+                key={type.id}
+                onClick={() => handleWorkoutSelect(type.id)}
+                disabled={isGenerating}
+                className={`p-6 rounded-lg text-center transition-all ${
+                  selectedType === type.id
+                    ? 'bg-blue-600 ring-2 ring-blue-400'
+                    : 'bg-gray-800 hover:bg-gray-700'
+                } ${isGenerating ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                <h3 className="font-bold text-lg">{type.label}</h3>
+                <p className="text-sm text-gray-400 mt-1">{type.description}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Error Display */}
+        {error && (
+          <div className="bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded mb-4">
+            {error}
+          </div>
+        )}
+
+        {/* Workout Display */}
+        {workoutData && selectedType && (
+          <div className="bg-gray-800 rounded-lg p-6 mb-8">
+            <h3 className="text-2xl font-bold mb-4">
+              {selectedType.toUpperCase()} Workout
+            </h3>
+            
+            <div className="space-y-4">
+              <div>
+                <h4 className="font-semibold text-green-400">Warmup ({workoutData.warmup?.length || 0} exercises)</h4>
+                <ul className="list-disc list-inside text-gray-300">
+                  {workoutData.warmup?.map((ex: string, i: number) => (
+                    <li key={i}>{ex}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div>
+                <h4 className="font-semibold text-blue-400">Main ({workoutData.main?.length || 0} exercises)</h4>
+                <ul className="list-disc list-inside text-gray-300">
+                  {workoutData.main?.map((ex: string, i: number) => (
+                    <li key={i}>{ex}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div>
+                <h4 className="font-semibold text-purple-400">Accessories ({workoutData.accessories?.length || 0} exercises)</h4>
+                <ul className="list-disc list-inside text-gray-300">
+                  {workoutData.accessories?.map((ex: string, i: number) => (
+                    <li key={i}>{ex}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div>
+                <h4 className="font-semibold text-orange-400">Cooldown ({workoutData.cooldown?.length || 0} exercises)</h4>
+                <ul className="list-disc list-inside text-gray-300">
+                  {workoutData.cooldown?.map((ex: string, i: number) => (
+                    <li key={i}>{ex}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+
+            <button
+              onClick={handleStartWorkout}
+              className="w-full mt-6 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+            >
+              Start Workout
+            </button>
+          </div>
+        )}
+
+        {/* Loading State */}
+        {isGenerating && (
+          <div className="text-center py-8">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+            <p className="mt-2">Generating your workout...</p>
+          </div>
+        )}
       </div>
     </div>
   );
