@@ -501,3 +501,4 @@ export default function TodaysWorkoutPage() {
           </div>
     </div>
   );
+}
