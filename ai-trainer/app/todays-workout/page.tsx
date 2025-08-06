@@ -260,49 +260,21 @@ export default function TodaysWorkoutPage() {
                         <span className="text-right">Complete</span>
                       </div>
                       {Array.isArray(generatedWorkout.main) ? (
-                        {Array.isArray(generatedWorkout.main) ? (
-                          generatedWorkout.main.map((exercise, index) => {
-                            // Normalize exercise to always be an object
-                            const exerciseObj = typeof exercise === 'string' 
-                              ? { name: exercise, sets: '3', reps: '10' }
-                              : exercise;
-                            
-                            return (
-                              <div key={index} className="grid grid-cols-5 gap-4 items-center mb-2">
-                                <span className="text-gray-300">
-                                  {exerciseObj.name}
-                                </span>
-                                <span className="text-gray-500">
-                                  {exerciseObj.sets || '3'}
-                                </span>
-                                <span className="text-gray-500">
-                                  {exerciseObj.reps || '10'}
-                                </span>
-                                <input 
-                                  type="number" 
-                                  className="bg-gray-700 rounded px-2 py-1 text-right"
-                                  placeholder="0"
-                                />
-                                <input 
-                                  type="checkbox"
-                                  className="ml-auto w-5 h-5 cursor-pointer"
-                                />
-                              </div>
-                            );
-                          })
-                        ) : (
-                            </span>
-                            <input 
-                              type="number" 
-                              className="bg-gray-700 rounded px-2 py-1 text-right"
-                              placeholder="0"
-                            />
-                            <input 
-                              type="checkbox"
-                              className="ml-auto w-5 h-5 cursor-pointer"
-                            />
-                          </div>
-                        ))
+                        generatedWorkout.main.map((exercise, index) => {
+                          const exerciseObj = typeof exercise === 'string' 
+                            ? { name: exercise, sets: '3', reps: '10' }
+                            : exercise;
+                          
+                          return (
+                            <div key={index} className="grid grid-cols-5 gap-4 items-center mb-2">
+                              <span className="text-gray-300">{exerciseObj.name}</span>
+                              <span className="text-gray-500">{exerciseObj.sets || '3'}</span>
+                              <span className="text-gray-500">{exerciseObj.reps || '10'}</span>
+                              <input type="number" className="bg-gray-700 rounded px-2 py-1 text-right" placeholder="0" />
+                              <input type="checkbox" className="ml-auto w-5 h-5 cursor-pointer" />
+                            </div>
+                          );
+                        })
                       ) : (
                         <div className="text-gray-500">No exercises found</div>
                       )}
