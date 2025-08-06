@@ -102,7 +102,7 @@ export async function POST(request: Request) {
 
     // Build prompt that MODIFIES the workout
     const prompt = `
-You are a fitness coach. The user said: "${message}"
+You are a knowledgeable fitness coach. The user said: "${message}"
 
 CURRENT WORKOUT:
 ${JSON.stringify(currentWorkout, null, 2)}
@@ -126,13 +126,15 @@ CRITICAL INSTRUCTIONS:
    }
 6. Do NOT include items like 'Perform 3 rounds of:' in the exercise list
 7. IMPORTANT: Only use exercise names that EXACTLY match the AVAILABLE EXERCISES list
-8. Provide a detailed explanation in the message field about:
-   - What equipment was detected and how it's being used
-   - Why specific exercises were chosen
-   - How to modify exercises with the mentioned equipment
-   - Training tips for the workout type
-   - Specific instructions for using the equipment effectively
-   - Progression tips and safety considerations
+8. CRITICAL: Provide a DETAILED and DYNAMIC explanation in the message field that includes:
+   - What specific equipment was detected and how it enhances the workout
+   - Why you chose each exercise and how it benefits the user
+   - Specific instructions for using the equipment (e.g., "Wrap the superband around your back for push-ups")
+   - Training tips and progression advice
+   - Safety considerations and form cues
+   - How to modify intensity or difficulty
+   - Expected benefits and muscle groups targeted
+   - Rest periods and workout structure explanation
 9. Return the COMPLETE modified workout in this exact JSON format:
 
 {
@@ -147,10 +149,10 @@ CRITICAL INSTRUCTIONS:
       {"name": "Exercise Name", "duration": "30s"}
     ]
   },
-  "message": "Detailed explanation of the workout, equipment usage, and training tips"
+  "message": "DETAILED explanation with equipment usage, training tips, and specific instructions"
 }
 
-Return ONLY valid JSON, no other text.`;
+IMPORTANT: The message field must be detailed and specific to the equipment and workout type. Do NOT use generic phrases like "I've updated your workout based on your request."`;
 
     // If message contains "debug", return database info instead
     if (message.toLowerCase().includes('debug')) {
@@ -230,9 +232,29 @@ Return ONLY valid JSON, no other text.`;
     }
 
     // Ensure we have a proper message
-    if (!workoutData.message || workoutData.message === "Brief description of what was changed") {
+    if (!workoutData.message || workoutData.message === "Brief description of what was changed" || workoutData.message.includes("updated your workout based on your request")) {
       const detectedEquipment = mentionedEquipment.length > 0 ? mentionedEquipment.join(', ') : 'your available equipment';
-      workoutData.message = `I've created a workout using ${detectedEquipment}. The exercises are specifically chosen to match your equipment and fitness goals. Focus on proper form and gradually increase intensity as you progress.`;
+      const workoutType = message.toLowerCase().includes('strength') ? 'strength' : 
+                         message.toLowerCase().includes('cardio') ? 'cardio' : 
+                         message.toLowerCase().includes('hiit') ? 'HIIT' : 'general fitness';
+      
+      let detailedMessage = `I've created a ${workoutType} workout using ${detectedEquipment}. `;
+      
+      if (mentionedEquipment.includes('Superbands')) {
+        detailedMessage += `Superbands add resistance to bodyweight exercises - wrap them around your back for push-ups, use for assisted pull-ups, or add resistance to squats. Focus on controlled movements and gradually increase band tension.`;
+      } else if (mentionedEquipment.includes('Kettlebells')) {
+        detailedMessage += `Kettlebell exercises build explosive power and functional strength. Focus on proper form, especially for swings and cleans. Start with lighter weights and gradually increase load.`;
+      } else if (mentionedEquipment.includes('Barbells')) {
+        detailedMessage += `Barbell exercises are excellent for building strength and muscle mass. Focus on compound movements and proper form. Start with lighter weights to perfect technique.`;
+      } else if (mentionedEquipment.includes('Dumbbells')) {
+        detailedMessage += `Dumbbell exercises provide unilateral training and better range of motion. Focus on controlled movements and proper breathing throughout each exercise.`;
+      } else {
+        detailedMessage += `The exercises are specifically chosen to match your equipment and fitness goals. Focus on proper form and gradually increase intensity as you progress.`;
+      }
+      
+      detailedMessage += ` Rest 60-90 seconds between sets and listen to your body.`;
+      
+      workoutData.message = detailedMessage;
     }
 
     // UPDATE the workout session in database
