@@ -276,59 +276,53 @@ export default function TodaysWorkoutPage() {
                 {/* Main Exercises Section */}
                 {generatedWorkout.main?.length > 0 && (
                   <div className="mb-6">
-                    <div className="flex items-center mb-3">
-                      <h4 className="text-md font-semibold text-gray-300">
-                        Main Exercises
-                      </h4>
-                      <span className="ml-2 px-2 py-1 bg-green-600 text-xs text-white rounded">
-                        Main Lift
-                      </span>
-                    </div>
-                    <div className="bg-gray-800 rounded-lg p-4">
-                      {/* Column headers */}
-                      <div className="grid grid-cols-5 gap-4 text-sm text-gray-400 mb-2">
-                        <span>Set</span>
-                        <span>Previous</span>
-                        <span className="text-right">lbs</span>
-                        <span className="text-right">Reps</span>
-                        <span className="text-right">Complete</span>
-                      </div>
-                      
-                      {/* Exercises */}
-                      {Array.isArray(generatedWorkout.main) && 
-                        generatedWorkout.main
-                          .filter(exercise => {
-                            // Filter out instruction text
-                            const name = typeof exercise === 'string' ? exercise : exercise.name;
-                            return !name.toLowerCase().includes('perform') && 
-                                   !name.toLowerCase().includes('rounds') &&
-                                   name.length > 3;
-                          })
-                          .map((exercise, exerciseIndex) => {
-                            // Parse exercise details
-                            let exerciseName = typeof exercise === 'string' ? exercise : exercise.name;
-                            let targetSets = typeof exercise === 'object' && exercise.sets ? 
-                              parseInt(exercise.sets) : 3;
-                            let targetReps = typeof exercise === 'object' && exercise.reps ? 
-                              exercise.reps : '10';
-                            
-                            // Clean exercise name
-                            exerciseName = exerciseName.replace(/^\d+\.\s*/, '');
-                            const repsMatch = exerciseName.match(/(.+?)\s*-\s*(\d+)\s*reps?/i);
-                            if (repsMatch) {
-                              exerciseName = repsMatch[1].trim();
-                              targetReps = repsMatch[2];
-                            }
-                            exerciseName = exerciseName.replace(/\s*\([^)]*\)\s*/g, '').trim();
-                            
-                            // Get previous workout data
-                            const previous = previousWorkoutData[exerciseName];
-                            
-                            return (
-                              <div key={exerciseIndex} className="mb-6">
-                                {/* Exercise Name Header */}
-                                <div className="text-white font-medium mb-2">
+                    {Array.isArray(generatedWorkout.main) && 
+                      generatedWorkout.main
+                        .filter(exercise => {
+                          // Filter out instruction text
+                          const name = typeof exercise === 'string' ? exercise : exercise.name;
+                          return !name.toLowerCase().includes('perform') && 
+                                 !name.toLowerCase().includes('rounds') &&
+                                 name.length > 3;
+                        })
+                        .map((exercise, exerciseIndex) => {
+                          // Parse exercise details
+                          let exerciseName = typeof exercise === 'string' ? exercise : exercise.name;
+                          let targetSets = typeof exercise === 'object' && exercise.sets ? 
+                            parseInt(exercise.sets) : 3;
+                          let targetReps = typeof exercise === 'object' && exercise.reps ? 
+                            exercise.reps : '10';
+                          
+                          // Clean exercise name
+                          exerciseName = exerciseName.replace(/^\d+\.\s*/, '');
+                          const repsMatch = exerciseName.match(/(.+?)\s*-\s*(\d+)\s*reps?/i);
+                          if (repsMatch) {
+                            exerciseName = repsMatch[1].trim();
+                            targetReps = repsMatch[2];
+                          }
+                          exerciseName = exerciseName.replace(/\s*\([^)]*\)\s*/g, '').trim();
+                          
+                          // Get previous workout data
+                          const previous = previousWorkoutData[exerciseName];
+                          
+                          return (
+                            <div key={exerciseIndex} className="mb-4">
+                              <div className="flex items-center mb-3">
+                                <h4 className="text-md font-semibold text-gray-300">
                                   {exerciseName}
+                                </h4>
+                                <span className="ml-2 px-2 py-1 bg-green-600 text-xs text-white rounded">
+                                  Main Lift
+                                </span>
+                              </div>
+                              <div className="bg-gray-800 rounded-lg p-4">
+                                {/* Column headers */}
+                                <div className="grid grid-cols-5 gap-4 text-sm text-gray-400 mb-2">
+                                  <span>Set</span>
+                                  <span>Previous</span>
+                                  <span className="text-right">lbs</span>
+                                  <span className="text-right">Reps</span>
+                                  <span className="text-right">Complete</span>
                                 </div>
                                 
                                 {/* Sets */}
@@ -356,10 +350,10 @@ export default function TodaysWorkoutPage() {
                                   </div>
                                 ))}
                               </div>
-                            );
-                          })
-                      }
-                    </div>
+                            </div>
+                          );
+                        })
+                    }
                   </div>
                 )}
                 
