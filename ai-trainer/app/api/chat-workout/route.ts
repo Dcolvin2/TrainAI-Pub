@@ -44,7 +44,7 @@ export async function POST(request: Request) {
       'Superbands': ['superband', 'resistance band', 'band', 'resistance bands', 'superbands'],
       'Kettlebells': ['kettlebell', 'kb', 'kettlebells'],
       'Dumbbells': ['dumbbell', 'db', 'dumbbells'],
-      'Barbells': ['barbell', 'bb', 'barbells'],
+      'Barbells': ['barbell', 'bb', 'barbells', 'barbell strength', 'barbell workout'],
       'Bench': ['bench'],
       'Pull Up Bar': ['pull-up bar', 'pullup bar', 'bar', 'pull up bar'],
       'Cables': ['cable', 'cable machine', 'cables'],
@@ -121,6 +121,8 @@ CRITICAL INSTRUCTIONS:
    - Why specific exercises were chosen
    - How to modify exercises with the mentioned equipment
    - Training tips for the workout type
+   - Specific instructions for using the equipment effectively
+   - Progression tips and safety considerations
 9. Return the COMPLETE modified workout in this exact JSON format:
 
 {
