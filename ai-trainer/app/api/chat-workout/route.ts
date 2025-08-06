@@ -44,7 +44,7 @@ export async function POST(request: Request) {
       'Superbands': ['superband', 'resistance band', 'band', 'resistance bands', 'superbands'],
       'Kettlebells': ['kettlebell', 'kb', 'kettlebells'],
       'Dumbbells': ['dumbbell', 'db', 'dumbbells'],
-      'Barbells': ['barbell', 'bb'],
+      'Barbells': ['barbell', 'bb', 'barbells'],
       'Bench': ['bench'],
       'Pull Up Bar': ['pull-up bar', 'pullup bar', 'bar', 'pull up bar'],
       'Cables': ['cable', 'cable machine', 'cables'],
@@ -116,7 +116,12 @@ CRITICAL INSTRUCTIONS:
    }
 6. Do NOT include items like 'Perform 3 rounds of:' in the exercise list
 7. IMPORTANT: Only use exercise names that EXACTLY match the AVAILABLE EXERCISES list
-8. Return the COMPLETE modified workout in this exact JSON format:
+8. Provide a detailed explanation in the message field about:
+   - What equipment was detected and how it's being used
+   - Why specific exercises were chosen
+   - How to modify exercises with the mentioned equipment
+   - Training tips for the workout type
+9. Return the COMPLETE modified workout in this exact JSON format:
 
 {
   "workout": {
@@ -130,7 +135,7 @@ CRITICAL INSTRUCTIONS:
       {"name": "Exercise Name", "duration": "30s"}
     ]
   },
-  "message": "Brief description of what was changed"
+  "message": "Detailed explanation of the workout, equipment usage, and training tips"
 }
 
 Return ONLY valid JSON, no other text.`;
@@ -210,6 +215,12 @@ Return ONLY valid JSON, no other text.`;
         workoutData.workout.main = filterExercises(workoutData.workout.main || []);
         workoutData.workout.cooldown = filterExercises(workoutData.workout.cooldown || []);
       }
+    }
+
+    // Ensure we have a proper message
+    if (!workoutData.message || workoutData.message === "Brief description of what was changed") {
+      const detectedEquipment = mentionedEquipment.length > 0 ? mentionedEquipment.join(', ') : 'your available equipment';
+      workoutData.message = `I've created a workout using ${detectedEquipment}. The exercises are specifically chosen to match your equipment and fitness goals. Focus on proper form and gradually increase intensity as you progress.`;
     }
 
     // UPDATE the workout session in database
