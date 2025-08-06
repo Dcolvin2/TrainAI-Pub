@@ -73,6 +73,12 @@ export default function TodaysWorkoutPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [generatedWorkout, setGeneratedWorkout] = useState<GeneratedWorkout | null>(null);
   const [previousWorkoutData, setPreviousWorkoutData] = useState<any>({});
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom when new messages are added
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
 
   // Fetch previous workout data
   useEffect(() => {
@@ -538,6 +544,9 @@ export default function TodaysWorkoutPage() {
                     </div>
                 </div>
               )}
+              
+              {/* Auto-scroll target */}
+              <div ref={chatEndRef} />
             </div>
 
               {/* Chat Input */}
