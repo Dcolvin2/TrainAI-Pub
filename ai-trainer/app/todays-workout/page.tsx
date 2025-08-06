@@ -287,11 +287,11 @@ export default function TodaysWorkoutPage() {
                     <div className="bg-gray-800 rounded-lg p-4">
                       {/* Column headers */}
                       <div className="grid grid-cols-5 gap-4 text-sm text-gray-400 mb-4 pb-2 border-b border-gray-700">
-                        <span className="col-span-2">Exercise / Set</span>
-                        <span className="text-center">Previous</span>
-                        <span className="text-center">Reps</span>
-                        <span className="text-center">lbs</span>
-                        <span className="text-center">Complete</span>
+                        <span>Set</span>
+                        <span>Previous</span>
+                        <span className="text-right">Reps</span>
+                        <span className="text-right">lbs</span>
+                        <span className="text-right">Complete</span>
                       </div>
                       
                       {/* Exercises */}
@@ -334,7 +334,7 @@ export default function TodaysWorkoutPage() {
                                 {/* Sets */}
                                 {[...Array(targetSets)].map((_, setIndex) => (
                                   <div key={setIndex} className="grid grid-cols-5 gap-4 items-center mb-2">
-                                    <span className="col-span-2 text-gray-400 text-sm pl-4">
+                                    <span className="text-gray-400 text-sm">
                                       Set {setIndex + 1}
                                     </span>
                                     <span className="text-gray-500 text-sm text-center">
@@ -352,12 +352,7 @@ export default function TodaysWorkoutPage() {
                                       className="bg-gray-700 rounded px-2 py-1 text-center text-white"
                                       placeholder="0"
                                     />
-                                    <div className="flex justify-center">
-                                      <input
-                                        type="checkbox"
-                                        className="w-5 h-5 cursor-pointer"
-                                      />
-                                    </div>
+                                    <input type="checkbox" className="ml-auto w-5 h-5 cursor-pointer" />
                                   </div>
                                 ))}
                               </div>
