@@ -23,11 +23,12 @@ export async function POST(request: Request) {
     // CRITICAL: Get user's available equipment
     const { data: userEquipment } = await supabase
       .from('user_equipment')
-      .select('equipment:equipment_id(name)')
-      .eq('user_id', userId)
-      .eq('is_available', true);
+      .select('equipment:equipment_id(name), custom_name')
+      .eq('user_id', userId);
 
-    const availableEquipment = userEquipment?.map((eq: any) => eq.equipment.name) || [];
+    const availableEquipment = userEquipment?.map((eq: any) => 
+      eq.equipment?.name || eq.custom_name
+    ).filter(Boolean) || [];
     
     // Detect equipment mentioned in the message
     const messageLower = message.toLowerCase();
@@ -65,6 +66,12 @@ export async function POST(request: Request) {
       .from('exercises')
       .select('*');
 
+    console.log('Total exercises in database:', exercises?.length || 0);
+    console.log('Sample exercises with equipment:', exercises?.slice(0, 5).map((e: any) => ({
+      name: e.name,
+      equipment: e.equipment_required
+    })));
+
     // Filter exercises by available equipment (including mentioned equipment)
     const availableExercises = exercises?.filter((exercise: any) => {
       if (!exercise.equipment_required || exercise.equipment_required.length === 0) {
@@ -74,6 +81,9 @@ export async function POST(request: Request) {
         allAvailableEquipment.includes(req)
       );
     }) || [];
+
+    console.log('Available exercises after filtering:', availableExercises.length);
+    console.log('Sample available exercises:', availableExercises.slice(0, 5).map((e: any) => e.name));
 
     // Build prompt that MODIFIES the workout
     const prompt = `
