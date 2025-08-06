@@ -542,20 +542,20 @@ export default function TodaysWorkout() {
   }
 
   return (
-    <div className="min-h-screen bg-primary">
+    <div className="min-h-screen bg-gray-950">
       {/* Clean Header */}
-      <div className="bg-secondary border-b border-border">
+      <div className="bg-gray-900 border-b border-gray-800">
         <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
-          <h1 className="text-xl font-semibold text-primary">TrainAI</h1>
-          <h2 className="text-lg font-medium text-primary">Dashboard</h2>
-          <button className="text-primary hover:text-secondary transition-colors">Profile</button>
+          <h1 className="text-xl font-semibold text-white">TrainAI</h1>
+          <h2 className="text-lg font-medium text-white">Dashboard</h2>
+          <button className="text-white hover:text-gray-300 transition-colors">Profile</button>
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
         {/* Time Selection */}
         <div className="mb-8">
-          <h3 className="text-lg font-medium text-primary mb-4">Time Available</h3>
+          <h3 className="text-lg font-medium text-white mb-4">Time Available</h3>
           <div className="flex gap-4">
             {[15, 30, 45, 60].map((time) => (
               <button
@@ -563,8 +563,8 @@ export default function TodaysWorkout() {
                 onClick={() => handleTimeChange(time)}
                 className={`px-6 py-3 rounded-lg font-medium transition-all ${
                   timeAvailable === time
-                    ? 'bg-card text-primary border border-border'
-                    : 'bg-secondary text-secondary hover:bg-hover hover:text-primary'
+                    ? 'bg-gray-800 text-white border border-gray-700'
+                    : 'bg-gray-900 text-gray-400 hover:bg-gray-800 hover:text-white'
                 }`}
               >
                 {time === 60 ? '60+' : `${time} min`}
@@ -580,7 +580,7 @@ export default function TodaysWorkout() {
             <WorkoutCard
               type="PUSH"
               primaryMuscles="Chest, Shoulders"
-              accentColor="var(--accent-push)"
+              accentColor="#3B82F6"
               onClick={() => handleWorkoutSelect({
                 type: 'push',
                 id: 'push',
@@ -591,7 +591,7 @@ export default function TodaysWorkout() {
             <WorkoutCard
               type="PULL"
               primaryMuscles="Back, Biceps"
-              accentColor="var(--accent-pull)"
+              accentColor="#059669"
               onClick={() => handleWorkoutSelect({
                 type: 'pull',
                 id: 'pull',
@@ -602,7 +602,7 @@ export default function TodaysWorkout() {
             <WorkoutCard
               type="LEGS"
               primaryMuscles="Quads, Glutes"
-              accentColor="var(--accent-legs)"
+              accentColor="#7C3AED"
               onClick={() => handleWorkoutSelect({
                 type: 'legs',
                 id: 'legs',
@@ -617,7 +617,7 @@ export default function TodaysWorkout() {
             <WorkoutCard
               type="UPPER"
               primaryMuscles="Body"
-              accentColor="var(--accent-upper)"
+              accentColor="#DC2626"
               onClick={() => handleWorkoutSelect({
                 type: 'upper',
                 id: 'upper',
@@ -628,7 +628,7 @@ export default function TodaysWorkout() {
             <WorkoutCard
               type="FULL"
               primaryMuscles="Body"
-              accentColor="var(--accent-full)"
+              accentColor="#EA580C"
               onClick={() => handleWorkoutSelect({
                 type: 'full',
                 id: 'full',
@@ -639,7 +639,7 @@ export default function TodaysWorkout() {
             <WorkoutCard
               type="HIIT"
               primaryMuscles="Intervals"
-              accentColor="var(--accent-hiit)"
+              accentColor="#CA8A04"
               onClick={() => handleWorkoutSelect({
                 type: 'hiit',
                 id: 'hiit',
@@ -651,21 +651,21 @@ export default function TodaysWorkout() {
         </div>
 
         {/* Separator */}
-        <div className="border-t border-border mb-8"></div>
+        <div className="border-t border-gray-800 mb-8"></div>
 
         {/* AI Workout Assistant */}
-        <div className="bg-card rounded-lg p-6">
-          <h3 className="text-lg font-medium text-primary mb-4">AI Workout Assistant</h3>
+        <div className="bg-gray-900 rounded-lg p-6">
+          <h3 className="text-lg font-medium text-white mb-4">AI Workout Assistant</h3>
           <div className="flex gap-4">
             <input
               type="text"
-              placeholder="Describe your workout goals or say \"Nike workouts\"..."
-              className="flex-1 bg-secondary text-primary px-4 py-3 rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-accent-push focus:border-transparent"
+              placeholder="Describe your workout goals or say 'Nike workouts'..."
+              className="flex-1 bg-gray-800 text-white px-4 py-3 rounded-lg border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               onKeyPress={(e) => e.key === 'Enter' && setShowChat(true)}
             />
             <button
               onClick={() => setShowChat(true)}
-              className="bg-accent-push hover:bg-accent-push/90 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors"
             >
               Send
             </button>
@@ -675,8 +675,8 @@ export default function TodaysWorkout() {
         {/* Loading State */}
         {isGenerating && (
           <div className="flex flex-col items-center justify-center py-20">
-            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-accent-push mb-4"></div>
-            <p className="text-xl text-primary">Generating your {selectedType?.label} workout...</p>
+            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500 mb-4"></div>
+            <p className="text-xl text-white">Generating your {selectedType?.label} workout...</p>
           </div>
         )}
 
