@@ -6,117 +6,113 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
 export async function POST(request: Request) {
   try {
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
-    const { message, context, sessionId } = await request.json();
+    const { message, currentWorkout, sessionId } = await request.json();
     
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get user profile
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('user_id', user.id)
-      .single();
-
-    // Get user equipment
+    // CRITICAL: Get user's available equipment
     const { data: userEquipment } = await supabase
       .from('user_equipment')
       .select('equipment:equipment_id(name)')
       .eq('user_id', user.id)
       .eq('is_available', true);
 
-    const equipment = userEquipment?.map((eq: any) => eq.equipment.name) || [];
+    const availableEquipment = userEquipment?.map((eq: any) => eq.equipment.name) || [];
 
-    // Check for Nike workout request
-    if (message.toLowerCase().includes('nike')) {
-      const nextNum = ((profile?.last_nike_workout || 0) % 24) + 1;
-      
-      const { data: workouts } = await supabase
-        .from('nike_workouts')
-        .select('workout, workout_type')
-        .gte('workout', nextNum)
-        .lte('workout', Math.min(nextNum + 4, 24))
-        .order('workout');
+    // CRITICAL: Get exercises that match available equipment
+    const { data: exercises } = await supabase
+      .from('exercises')
+      .select('*');
 
-      const uniqueWorkouts = Array.from(
-        new Map(workouts?.map((w: any) => [w.workout, w])).values()
+    // Filter exercises by available equipment
+    const availableExercises = exercises?.filter((exercise: any) => {
+      if (!exercise.equipment_required || exercise.equipment_required.length === 0) {
+        return true; // Bodyweight exercises
+      }
+      return exercise.equipment_required.every((req: string) => 
+        availableEquipment.includes(req)
       );
+    }) || [];
 
-      return NextResponse.json({
-        type: 'nike_list',
-        message: `Here are your upcoming Nike workouts (currently on #${nextNum}):`,
-        workouts: uniqueWorkouts.map((w: any) => ({
-          number: w.workout,
-          name: w.workout_type,
-          isCurrent: w.workout === nextNum
-        }))
-      });
-    }
-
-    // For ALL other messages, call Claude
+    // Build prompt that MODIFIES the workout
     const prompt = `
-You are a helpful fitness assistant. The user said: "${message}"
+You are a fitness coach. The user said: "${message}"
 
-Context:
-- User has access to: ${equipment.join(', ')}
-- Current weight: ${profile?.current_weight || 'unknown'} lbs
-- Goal weight: ${profile?.goal_weight || 'unknown'} lbs
-- Training goal: ${profile?.training_goal || 'general fitness'}
+CURRENT WORKOUT:
+${JSON.stringify(currentWorkout, null, 2)}
 
-${sessionId ? `They have an active workout session.` : ''}
+USER'S AVAILABLE EQUIPMENT:
+${availableEquipment.join(', ')}
 
-If they're asking about workouts, provide helpful suggestions.
-If they're asking general questions, answer them naturally.
-If they want to modify a workout, suggest specific changes.
+AVAILABLE EXERCISES (filtered by equipment):
+${availableExercises.map((e: any) => `- ${e.name} (${e.category}, ${e.primary_muscle})`).join('\n')}
 
-Keep responses concise and helpful.`;
+CRITICAL INSTRUCTIONS:
+1. You MUST return a MODIFIED workout, not suggestions
+2. Replace exercises the user can't do with ones from AVAILABLE EXERCISES list
+3. ONLY use exercises from the AVAILABLE EXERCISES list
+4. Return the COMPLETE modified workout in this exact JSON format:
 
-    // Call Claude
-    const claudeResponse = await anthropic.messages.create({
+{
+  "workout": {
+    "warmup": [
+      {"name": "Exercise Name", "sets": 1, "reps": "10", "duration": "30s"}
+    ],
+    "main": [
+      {"name": "Exercise Name", "sets": 3, "reps": "8-10", "rest": "60s", "weight": "moderate"}
+    ],
+    "cooldown": [
+      {"name": "Exercise Name", "duration": "30s"}
+    ]
+  },
+  "changes": "Brief description of what was changed"
+}
+
+Return ONLY valid JSON, no other text.`;
+
+    const response = await anthropic.messages.create({
       model: "claude-3-5-sonnet-20241022",
-      max_tokens: 1000,
+      max_tokens: 2000,
       temperature: 0.7,
-      messages: [
-        { 
-          role: "user", 
-          content: prompt 
-        }
-      ]
+      messages: [{ role: "user", content: prompt }]
     });
 
-    const responseText = claudeResponse.content[0].type === 'text' 
-      ? claudeResponse.content[0].text 
-      : 'I can help you with your workout!';
+    const responseText = response.content[0].type === 'text' ? response.content[0].text : '';
+    const modifiedWorkout = JSON.parse(responseText);
 
-    // Log the chat
+    // UPDATE the workout session in database
     if (sessionId) {
       await supabase
-        .from('workout_chat_log')
-        .insert({
-          workout_session_id: sessionId,
-          user_message: message,
-          ai_response: responseText
-        });
+        .from('workout_sessions')
+        .update({
+          planned_exercises: modifiedWorkout.workout,
+          modifications: { 
+            timestamp: new Date().toISOString(),
+            reason: message,
+            changes: modifiedWorkout.changes
+          }
+        })
+        .eq('id', sessionId);
     }
 
     return NextResponse.json({
-      type: 'assistant',
-      message: responseText
+      success: true,
+      workout: modifiedWorkout.workout,
+      message: modifiedWorkout.changes
     });
 
   } catch (error) {
-    console.error('Chat error:', error);
-    return NextResponse.json({
-      type: 'error',
-      message: 'I had trouble processing that. Could you try rephrasing?'
-    });
+    console.error('Chat workout error:', error);
+    return NextResponse.json({ error: 'Failed to modify workout' }, { status: 500 });
   }
 } 

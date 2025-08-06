@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { buildCoreLiftPool } from '@/lib/buildCoreLiftPool';
 import { getUserEquipment } from '@/lib/getUserEquipment';
+import { generateDynamicWarmup } from '@/lib/warmupGenerator';
 import Anthropic from '@anthropic-ai/sdk';
 
 const anthropic = new Anthropic({
@@ -179,7 +180,7 @@ export async function POST(request: Request) {
     const counts = exerciseCounts[timeMinutes as keyof typeof exerciseCounts] || exerciseCounts[45];
     
     // Generate the workout with Claude for better exercise selection
-    const warmup = await generateExercisesWithClaude(type, userEquip, 'warmup', counts.warmup);
+    const warmup = generateDynamicWarmup(type, []);
     const accessories = await generateExercisesWithClaude(type, userEquip, 'accessories', counts.accessories);
     const cooldown = await generateExercisesWithClaude(type, userEquip, 'cooldown', counts.cooldown);
     
