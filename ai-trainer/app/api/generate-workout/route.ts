@@ -186,12 +186,11 @@ export async function POST(request: Request) {
     
     const workout = {
       warmup,
-      mainLift: { 
+      main: [{ 
         name: coreLift.name, 
-        sets: counts.mainSets, 
-        reps: "8-10", 
-        rest: "2-3 min" 
-      },
+        sets: counts.mainSets.toString(), 
+        reps: "8-10"
+      }],
       accessories,
       cooldown
     };

@@ -263,9 +263,32 @@ export default function TodaysWorkoutPage() {
                       </div>
                       {Array.isArray(generatedWorkout.main) ? (
                         generatedWorkout.main.map((exercise, index) => {
-                          const exerciseObj = typeof exercise === 'string' 
-                            ? { name: exercise, sets: '3', reps: '10' }
-                            : { name: exercise.name || 'Exercise', sets: exercise.sets || '3', reps: exercise.reps || '10' };
+                          // Parse exercise name that might contain sets/reps info
+                          let exerciseName = typeof exercise === 'string' ? exercise : exercise.name;
+                          let sets = '3';
+                          let reps = '10';
+
+                          // Parse patterns like "Exercise Name - 3 x 12" or "3 x 12 each"
+                          const match = exerciseName.match(/(.+?)\s*-\s*(\d+)\s*x\s*(\d+)/);
+                          if (match) {
+                            exerciseName = match[1].trim();
+                            sets = match[2];
+                            reps = match[3];
+                          } else {
+                            // Also check for "3 x 12" at the beginning
+                            const matchStart = exerciseName.match(/^(\d+)\s*x\s*(\d+)\s+(.+)/);
+                            if (matchStart) {
+                              sets = matchStart[1];
+                              reps = matchStart[2];
+                              exerciseName = matchStart[3].trim();
+                            }
+                          }
+
+                          const exerciseObj = {
+                            name: exerciseName,
+                            sets: typeof exercise === 'object' && exercise.sets ? exercise.sets : sets,
+                            reps: typeof exercise === 'object' && exercise.reps ? exercise.reps : reps
+                          };
                           
                           return (
                             <div key={index} className="grid grid-cols-5 gap-4 items-center mb-2">
