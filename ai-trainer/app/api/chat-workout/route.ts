@@ -1,82 +1,59 @@
-import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 import Anthropic from '@anthropic-ai/sdk';
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
-});
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
+// Import core lift functions
+import { getMainLift, isCoreLift, coreLifts } from '../../../lib/coreLiftRotation';
+
 export async function POST(request: Request) {
   try {
-    const { message, currentWorkout, sessionId, userId } = await request.json();
+    const { message, currentWorkout, sessionId } = await request.json();
     
-    console.log('Chat request received:', { message, userId });
+    // Get user from auth context or request body
+    const user = { id: sessionId }; // Simplified for now
     
-    // Get the authenticated user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
-    console.log('Auth result:', { user: user?.id, authError, requestUserId: userId });
-    
-    // Use authenticated user if available, otherwise use userId from request body
-    let actualUserId;
-    if (user) {
-      actualUserId = user.id;
-      console.log('Using authenticated user ID:', actualUserId);
-    } else if (userId) {
-      actualUserId = userId;
-      console.log('Using request body user ID:', actualUserId);
-    } else {
-      console.log('No user ID available');
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
-    }
-    
-    // CRITICAL: Get user's available equipment
-    const { data: userEquipment } = await supabase
-      .from('user_equipment')
-      .select('equipment:equipment_id(name), custom_name')
-      .eq('user_id', actualUserId);
+    console.log('Chat request:', { message, hasCurrentWorkout: !!currentWorkout });
 
-    const availableEquipment = userEquipment?.map((eq: any) => 
-      eq.equipment?.name || eq.custom_name
-    ).filter(Boolean) || [];
-    
-    // Detect equipment mentioned in the message
-    const messageLower = message.toLowerCase();
-    const mentionedEquipment: string[] = [];
-    
-    // Common equipment keywords
-    const equipmentKeywords: Record<string, string[]> = {
-      'Superbands': ['superband', 'resistance band', 'band', 'resistance bands', 'superbands'],
-      'Kettlebells': ['kettlebell', 'kb', 'kettlebells'],
-      'Dumbbells': ['dumbbell', 'db', 'dumbbells'],
-      'Barbells': ['barbell', 'bb', 'barbells', 'barbell strength', 'barbell workout'],
-      'Bench': ['bench'],
-      'Pull Up Bar': ['pull-up bar', 'pullup bar', 'bar', 'pull up bar'],
-      'Cables': ['cable', 'cable machine', 'cables'],
-      'Machine': ['machine'],
-      'Bodyweight': ['bodyweight', 'no equipment', 'no weights']
-    };
-    
-    // Check for mentioned equipment
-    Object.entries(equipmentKeywords).forEach(([equipment, keywords]) => {
-      if (keywords.some(keyword => messageLower.includes(keyword))) {
-        mentionedEquipment.push(equipment);
+    // Check if this is a Nike workout request
+    if (message.toLowerCase().includes('nike')) {
+      const nikeMatch = message.match(/nike\s+(\d+)/i);
+      if (nikeMatch) {
+        const workoutNumber = parseInt(nikeMatch[1]);
+        const nikeResponse = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/nike_workouts?workout_number=eq.${workoutNumber}`, {
+          headers: {
+            'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`
+          }
+        });
+        
+        if (nikeResponse.ok) {
+          const nikeWorkout = await nikeResponse.json();
+          if (nikeWorkout && nikeWorkout.length > 0) {
+            return NextResponse.json({
+              success: true,
+              message: `Nike Workout #${workoutNumber}: ${nikeWorkout[0].workout_name}`,
+              workout: {
+                warmup: [],
+                main: [{ name: nikeWorkout[0].workout_name, sets: '1', reps: 'AMRAP', instruction: nikeWorkout[0].description }],
+                cooldown: []
+              }
+            });
+          }
+        }
       }
-    });
-    
-    // Combine user's equipment with mentioned equipment
-    const allAvailableEquipment = [...new Set([...availableEquipment, ...mentionedEquipment])];
-    
-    console.log('User equipment:', availableEquipment);
-    console.log('Mentioned equipment:', mentionedEquipment);
-    console.log('All available equipment:', allAvailableEquipment);
+    }
 
     // Check if this is a modification request
+    const messageLower = message.toLowerCase();
     const modificationKeywords = ['swap', 'replace', 'change', 'remove', 'different', 'instead', 'substitute', 'switch'];
     const isModificationRequest = modificationKeywords.some(keyword => messageLower.includes(keyword));
 
@@ -87,32 +64,26 @@ export async function POST(request: Request) {
       let requiredEquipment: string[] = [];
       
       // Check if current workout is kettlebell, dumbbell, etc.
-      if (messageLower.includes('kettlebell') || 
-          (currentWorkout.main && currentWorkout.main.some((ex: any) => ex.name?.toLowerCase().includes('kettlebell')))) {
+      if (messageLower.includes('kettlebell') || (currentWorkout.main && currentWorkout.main.some((ex: any) => ex.name?.toLowerCase().includes('kettlebell')))) {
         requiredEquipment = ['Kettlebells'];
-      } else if (messageLower.includes('dumbbell') || 
-                 (currentWorkout.main && currentWorkout.main.some((ex: any) => ex.name?.toLowerCase().includes('dumbbell')))) {
+      } else if (messageLower.includes('dumbbell') || (currentWorkout.main && currentWorkout.main.some((ex: any) => ex.name?.toLowerCase().includes('dumbbell')))) {
         requiredEquipment = ['Dumbbells'];
-      } else if (messageLower.includes('barbell') || 
-                 (currentWorkout.main && currentWorkout.main.some((ex: any) => ex.name?.toLowerCase().includes('barbell')))) {
+      } else if (messageLower.includes('barbell') || (currentWorkout.main && currentWorkout.main.some((ex: any) => ex.name?.toLowerCase().includes('barbell')))) {
         requiredEquipment = ['Barbells'];
-      } else if (messageLower.includes('superband') || 
-                 (currentWorkout.main && currentWorkout.main.some((ex: any) => ex.name?.toLowerCase().includes('band')))) {
-        requiredEquipment = ['Superbands'];
       }
-      
+
       // Find which exercise to replace
       let exerciseToReplace = null;
       let exerciseIndex = -1;
       let exercisePhase = 'main'; // default to main
-      
+
       // Try to identify the exercise from the message
       const allExercises = [
         ...(currentWorkout.warmup || []).map((ex: any, i: number) => ({...ex, phase: 'warmup', index: i})),
         ...(currentWorkout.main || []).map((ex: any, i: number) => ({...ex, phase: 'main', index: i})),
         ...(currentWorkout.cooldown || []).map((ex: any, i: number) => ({...ex, phase: 'cooldown', index: i}))
       ];
-      
+
       // Find exercise mentioned in message
       for (const ex of allExercises) {
         if (messageLower.includes(ex.name.toLowerCase())) {
@@ -122,52 +93,52 @@ export async function POST(request: Request) {
           break;
         }
       }
-      
+
       // If no specific exercise mentioned, replace the last mentioned or first main exercise
       if (!exerciseToReplace && currentWorkout.main && currentWorkout.main.length > 0) {
         exerciseToReplace = currentWorkout.main[0].name;
         exerciseIndex = 0;
         exercisePhase = 'main';
       }
-      
+
       // Get a replacement exercise WITH THE SAME EQUIPMENT
       let query = supabase
         .from('exercises')
         .select('*')
         .eq('exercise_phase', exercisePhase);
-      
+
       // Filter by equipment if specified
       if (requiredEquipment.length > 0) {
         query = query.contains('equipment_required', requiredEquipment);
       }
-      
+
       // Exclude the current exercise
       if (exerciseToReplace) {
         query = query.neq('name', exerciseToReplace);
       }
-      
+
       const { data: replacementExercises } = await query.limit(20);
-      
+
       if (replacementExercises && replacementExercises.length > 0) {
         // Pick a random replacement
         const replacement = replacementExercises[Math.floor(Math.random() * replacementExercises.length)];
-        
+
         // Create updated workout
         const updatedWorkout = { ...currentWorkout };
-        
+
         // Update the specific exercise in the workout
         if (exercisePhase === 'warmup' && updatedWorkout.warmup) {
           updatedWorkout.warmup[exerciseIndex] = {
             name: replacement.name,
-            sets: replacement.sets || '2',
-            reps: replacement.reps || '10',
+            sets: '2',
+            reps: '10-15',
             instruction: replacement.instruction
           };
         } else if (exercisePhase === 'main' && updatedWorkout.main) {
           updatedWorkout.main[exerciseIndex] = {
             name: replacement.name,
-            sets: replacement.sets || '3',
-            reps: replacement.reps || '8-12',
+            sets: '3',
+            reps: '8-12',
             instruction: replacement.instruction
           };
         } else if (exercisePhase === 'cooldown' && updatedWorkout.cooldown) {
@@ -177,12 +148,12 @@ export async function POST(request: Request) {
             instruction: replacement.instruction
           };
         }
-        
+
         return NextResponse.json({
           success: true,
           isModification: true,
           message: `Sure! Let's swap ${exerciseToReplace} with ${replacement.name}. ${replacement.instruction || 'This is a great alternative that targets the same muscle groups.'}`,
-          workout: updatedWorkout, // Return the UPDATED workout
+          workout: updatedWorkout,
           modification: {
             original: exerciseToReplace,
             replacement: replacement.name,
@@ -199,342 +170,301 @@ export async function POST(request: Request) {
       }
     }
 
-    // CRITICAL: Get exercises that match available equipment
-    const { data: exercises } = await supabase
-      .from('exercises')
-      .select('*');
+    // Get user's equipment
+    const { data: userEquipment } = await supabase
+      .from('user_equipment')
+      .select('equipment_name')
+      .eq('user_id', user.id);
 
-    console.log('Total exercises in database:', exercises?.length || 0);
-    console.log('Sample exercises with equipment:', exercises?.slice(0, 5).map((e: any) => ({
-      name: e.name,
-      equipment: e.equipment_required
-    })));
+    const availableEquipment = userEquipment?.map(e => e.equipment_name) || [];
 
-    // Filter exercises by available equipment (including mentioned equipment)
-    const availableExercises = exercises?.filter((exercise: any) => {
-      if (!exercise.equipment_required || exercise.equipment_required.length === 0) {
-        return true; // Bodyweight exercises
-      }
-      return exercise.equipment_required.every((req: string) => 
-        allAvailableEquipment.includes(req)
-      );
-    }) || [];
-
-    console.log('Available exercises after filtering:', availableExercises.length);
-    console.log('Sample available exercises:', availableExercises.slice(0, 5).map((e: any) => e.name));
-
-    // Check which type of workout is requested
-    let workoutType = null;
-    const workoutTypes = {
-      'kettlebell': ['kettlebell workout', 'kb workout', 'kettlebells', 'kettlebell session'],
-      'dumbbell': ['dumbbell workout', 'db workout', 'dumbbells', 'dumbbell session'],
-      'barbell': ['barbell workout', 'bb workout', 'barbells', 'barbell session'],
-      'bodyweight': ['bodyweight workout', 'no equipment', 'body weight', 'calisthenics'],
-      'push': ['push workout', 'push day', 'chest workout', 'chest and triceps'],
-      'pull': ['pull workout', 'pull day', 'back workout', 'back and biceps'],
-      'legs': ['leg workout', 'leg day', 'legs', 'lower body']
+    // Detect equipment mentioned in message
+    const mentionedEquipment: string[] = [];
+    const equipmentKeywords: Record<string, string[]> = {
+      'Superbands': ['superband', 'resistance band', 'band', 'resistance bands', 'superbands'],
+      'Kettlebells': ['kettlebell', 'kb', 'kettlebells'],
+      'Dumbbells': ['dumbbell', 'db', 'dumbbells'],
+      'Barbells': ['barbell', 'bb', 'barbells', 'barbell strength', 'barbell workout'],
+      'Bench': ['bench'],
+      'Pull Up Bar': ['pull-up bar', 'pullup bar', 'bar', 'pull up bar'],
+      'Cables': ['cable', 'cable machine', 'cables'],
+      'Machine': ['machine'],
+      'Bodyweight': ['bodyweight', 'no equipment', 'no weights']
     };
 
-    Object.entries(workoutTypes).forEach(([type, phrases]) => {
-      if (phrases.some(phrase => messageLower.includes(phrase))) {
-        workoutType = type;
+    Object.entries(equipmentKeywords).forEach(([equipment, keywords]) => {
+      if (keywords.some(keyword => messageLower.includes(keyword))) {
+        mentionedEquipment.push(equipment);
       }
     });
 
-    console.log('Detected workout type:', workoutType);
+    const allAvailableEquipment = [...new Set([...availableEquipment, ...mentionedEquipment])];
 
-    // Function to get appropriate warmups based on workout type
-    async function getSmartWarmups(supabase: any, workoutType: string, equipment: string[]) {
-      let query = supabase
-        .from('exercises')
-        .select('*')
-        .eq('exercise_phase', 'warmup');
-      
-      // Filter by relevant muscle groups for workout type
-      if (workoutType === 'push' || workoutType === 'chest') {
-        query = query.or('primary_muscle.in.(chest,shoulders,triceps)');
-      } else if (workoutType === 'pull' || workoutType === 'back') {
-        query = query.or('primary_muscle.in.(back,biceps,lats)');
-      } else if (workoutType === 'legs') {
-        query = query.or('primary_muscle.in.(quads,hamstrings,glutes,calves)');
+    // Get user's last 5 workouts to avoid repetition
+    const { data: recentWorkouts } = await supabase
+      .from('workout_sessions')
+      .select('planned_exercises')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    // Extract recently used exercises
+    const recentlyUsedExercises = new Set();
+    recentWorkouts?.forEach(workout => {
+      if (workout.planned_exercises) {
+        ['warmup', 'main', 'cooldown'].forEach(phase => {
+          workout.planned_exercises[phase]?.forEach((ex: any) => {
+            if (ex.name && !isCoreLift(ex.name)) {
+              recentlyUsedExercises.add(ex.name);
+            }
+          });
+        });
       }
-      
-      const { data } = await query.limit(20);
-      
-      // Randomly select 3-4 varied warmups
-      return data
-        ?.sort(() => 0.5 - Math.random())
-        .slice(0, 3);
-    }
-
-    // Function to get appropriate cooldowns
-    async function getSmartCooldowns(supabase: any, workoutType: string) {
-      let query = supabase
-        .from('exercises')
-        .select('*')
-        .eq('exercise_phase', 'cooldown');
-      
-      // Filter by muscle groups that need stretching
-      if (workoutType === 'push') {
-        query = query.or('primary_muscle.in.(chest,shoulders,triceps)');
-      } else if (workoutType === 'pull') {
-        query = query.or('primary_muscle.in.(back,biceps,lats)');
-      } else if (workoutType === 'legs') {
-        query = query.or('primary_muscle.in.(quads,hamstrings,glutes,calves)');
-      }
-      
-      const { data } = await query.limit(20);
-      
-      return data
-        ?.sort(() => 0.5 - Math.random())
-        .slice(0, 3);
-    }
-
-    // Get dynamic warmups and cooldowns from database
-    const smartWarmups = await getSmartWarmups(supabase, workoutType || 'general', allAvailableEquipment);
-    const smartCooldowns = await getSmartCooldowns(supabase, workoutType || 'general');
-
-    console.log('Smart warmups found:', smartWarmups?.length || 0);
-    console.log('Smart cooldowns found:', smartCooldowns?.length || 0);
-
-    // Build prompt that MODIFIES the workout
-    const prompt = `
-You are a knowledgeable fitness coach. The user said: "${message}"
-
-CURRENT WORKOUT:
-${JSON.stringify(currentWorkout, null, 2)}
-
-USER'S AVAILABLE EQUIPMENT:
-${allAvailableEquipment.join(', ')}
-
-AVAILABLE EXERCISES (filtered by equipment):
-${availableExercises.map((e: any) => `- ${e.name} (${e.category}, ${e.primary_muscle})`).join('\n')}
-
-SUGGESTED WARMUPS (from database):
-${smartWarmups?.map((e: any) => `- ${e.name} (${e.primary_muscle})`).join('\n') || 'No warmups found'}
-
-SUGGESTED COOLDOWNS (from database):
-${smartCooldowns?.map((e: any) => `- ${e.name} (${e.primary_muscle})`).join('\n') || 'No cooldowns found'}
-
-CRITICAL INSTRUCTIONS:
-1. You MUST return a MODIFIED workout, not suggestions
-2. ONLY use exercises from the AVAILABLE EXERCISES list above - DO NOT invent new exercises
-3. If the user mentions specific equipment (like "kettlebells"), ONLY use exercises that are tagged with that equipment
-4. If no exercises are available for the mentioned equipment, use bodyweight alternatives
-5. Use the SUGGESTED WARMUPS and SUGGESTED COOLDOWNS from the database when possible
-6. Return exercises as a clean array without workout instructions. Each exercise should be:
-   {
-     "name": "Exercise Name",  // Just the name, no numbers or instructions
-     "sets": "3",
-     "reps": "15"
-   }
-7. Do NOT include items like 'Perform 3 rounds of:' in the exercise list
-8. IMPORTANT: Only use exercise names that EXACTLY match the AVAILABLE EXERCISES list
-9. CRITICAL: Provide a DETAILED and DYNAMIC explanation in the message field that includes:
-   - What specific equipment was detected and how it enhances the workout
-   - Why you chose each exercise and how it benefits the user
-   - Specific instructions for using the equipment (e.g., "Wrap the superband around your back for push-ups")
-   - Training tips and progression advice
-   - Safety considerations and form cues
-   - How to modify intensity or difficulty
-   - Expected benefits and muscle groups targeted
-   - Rest periods and workout structure explanation
-10. Return the COMPLETE modified workout in this exact JSON format:
-
-{
-  "workout": {
-    "warmup": [
-      {"name": "Exercise Name", "sets": 1, "reps": "10", "duration": "30s"}
-    ],
-    "main": [
-      {"name": "Exercise Name", "sets": 3, "reps": "8-10", "rest": "60s", "weight": "moderate"}
-    ],
-    "cooldown": [
-      {"name": "Exercise Name", "duration": "30s"}
-    ]
-  },
-  "message": "Concise but informative explanation with equipment usage and key training tips"
-}
-
-IMPORTANT: The message field must be concise but informative. Do NOT use generic phrases like "I've updated your workout based on your request." Keep explanations brief but specific to the equipment and workout type.
-
-Return ONLY valid JSON, no other text.`;
-
-    // If message contains "debug", return database info instead
-    if (message.toLowerCase().includes('debug')) {
-      return NextResponse.json({
-        success: true,
-        debug: {
-          userEquipment: availableEquipment,
-          mentionedEquipment: mentionedEquipment,
-          allAvailableEquipment: allAvailableEquipment,
-          totalExercises: exercises?.length || 0,
-          availableExercisesCount: availableExercises.length,
-          sampleExercises: exercises?.slice(0, 5).map((e: any) => ({
-            name: e.name,
-            equipment: e.equipment_required,
-            category: e.category
-          })),
-          sampleAvailableExercises: availableExercises.slice(0, 5).map((e: any) => e.name)
-        }
-      });
-    }
-
-    const response = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 4000,
-      messages: [{ role: 'user', content: prompt }]
     });
 
-    const responseText = response.content[0].type === 'text' ? response.content[0].text : '';
-    console.log('Claude response length:', responseText.length);
-    console.log('Claude response preview:', responseText.substring(0, 200));
-    console.log('Claude response full:', responseText);
+    console.log('Recently used exercises to avoid:', Array.from(recentlyUsedExercises));
 
-    // Parse the JSON response
-    let workoutData;
-    try {
-      // Try to parse the entire response first
-      try {
-        workoutData = JSON.parse(responseText);
-      } catch {
-        // If that fails, try to extract JSON from the response
-        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          workoutData = JSON.parse(jsonMatch[0]);
-        } else {
-          // If no JSON found, create a basic workout structure
-          console.log('No JSON found in response, creating basic workout');
-          workoutData = {
-            workout: {
-              warmup: [],
-              main: [],
-              cooldown: []
-            },
-            message: "I've created a workout based on your request."
-          };
-        }
-      }
-    } catch (error) {
-      console.error('Error parsing Claude response:', error);
-      console.error('Raw response:', responseText);
-      
-      // Create a fallback workout if parsing fails
-      workoutData = {
-        workout: {
-          warmup: [],
-          main: [],
-          cooldown: []
-        },
-        message: "I've created a workout based on your request."
-      };
-    }
+    // Determine workout type from message
+    let workoutType = 'upper'; // default
+    if (messageLower.includes('push')) workoutType = 'push';
+    else if (messageLower.includes('pull') || messageLower.includes('back')) workoutType = 'pull';
+    else if (messageLower.includes('leg') || messageLower.includes('lower')) workoutType = 'legs';
+    else if (messageLower.includes('upper')) workoutType = 'upper';
+    else if (messageLower.includes('lower')) workoutType = 'lower';
+    else if (messageLower.includes('full body') || messageLower.includes('fullbody')) workoutType = 'upper';
 
-    // Validate that all exercises in the response are from the available list
-    const availableExerciseNames = availableExercises.map((e: any) => e.name);
-    const allExercisesInResponse = [
-      ...(workoutData.workout?.warmup || []),
-      ...(workoutData.workout?.main || []),
-      ...(workoutData.workout?.cooldown || [])
-    ].map((e: any) => e.name);
+    // Get ONE main compound lift (the focus of progressive overload)
+    const mainLift = getMainLift(workoutType, allAvailableEquipment);
 
-    const invalidExercises = allExercisesInResponse.filter((name: string) => 
-      !availableExerciseNames.includes(name)
-    );
+    // Get the main lift details
+    const { data: mainLiftData } = await supabase
+      .from('exercises')
+      .select('*')
+      .eq('name', mainLift)
+      .single();
 
-    if (invalidExercises.length > 0) {
-      console.log('Invalid exercises found:', invalidExercises);
-      console.log('Available exercises:', availableExerciseNames);
-      
-      // Filter out invalid exercises and replace with available ones
-      const filterExercises = (exerciseList: any[]) => {
-        return exerciseList.filter((exercise: any) => 
-          availableExerciseNames.includes(exercise.name)
-        );
-      };
+    // Define what accessories to include based on workout type
+    let accessoryExerciseNames: string[] = [];
+    let accessoryMuscles: string[] = [];
 
-      if (workoutData.workout) {
-        workoutData.workout.warmup = filterExercises(workoutData.workout.warmup || []);
-        workoutData.workout.main = filterExercises(workoutData.workout.main || []);
-        workoutData.workout.cooldown = filterExercises(workoutData.workout.cooldown || []);
-      }
-    }
-
-    // Ensure we have a proper message
-    if (!workoutData.message || workoutData.message === "Brief description of what was changed" || workoutData.message.includes("updated your workout based on your request")) {
-      const detectedEquipment = mentionedEquipment.length > 0 ? mentionedEquipment.join(', ') : 'your available equipment';
-      const workoutType = message.toLowerCase().includes('strength') ? 'strength' : 
-                         message.toLowerCase().includes('cardio') ? 'cardio' : 
-                         message.toLowerCase().includes('hiit') ? 'HIIT' : 'general fitness';
-      
-      let detailedMessage = `I've created a ${workoutType} workout using ${detectedEquipment}. `;
-      
-      if (mentionedEquipment.includes('Superbands')) {
-        detailedMessage += `Superbands add resistance to bodyweight exercises - wrap around your back for push-ups or use for assisted pull-ups.`;
-      } else if (mentionedEquipment.includes('Kettlebells')) {
-        detailedMessage += `Kettlebell exercises build explosive power and functional strength. Focus on proper form for swings and cleans.`;
-      } else if (mentionedEquipment.includes('Barbells')) {
-        detailedMessage += `Barbell exercises are excellent for building strength and muscle mass. Focus on compound movements.`;
-      } else if (mentionedEquipment.includes('Dumbbells')) {
-        detailedMessage += `Dumbbell exercises provide unilateral training and better range of motion.`;
-      } else {
-        detailedMessage += `The exercises are specifically chosen to match your equipment and fitness goals.`;
-      }
-      
-      workoutData.message = detailedMessage;
-    }
-
-    // UPDATE the workout session in database
-    if (sessionId) {
-      await supabase
-        .from('workout_sessions')
-        .update({
-          planned_exercises: workoutData.workout,
-          modifications: { 
-            timestamp: new Date().toISOString(),
-            reason: message,
-            changes: workoutData.changes
-          }
-        })
-        .eq('id', sessionId);
-    }
-
-    // Create a conversational response based on the request
-    let conversationalMessage = '';
-
-    if (mentionedEquipment.length > 0) {
-      const equipmentName = mentionedEquipment[0];
-      conversationalMessage = `Here's your ${equipmentName.toLowerCase()} workout for today! `;
-      
-      if (workoutData.workout && workoutData.workout.main && workoutData.workout.main.length > 0) {
-        conversationalMessage += `I've put together ${workoutData.workout.warmup?.length || 0} warm-up exercises, ${workoutData.workout.main.length} main exercises, and ${workoutData.workout.cooldown?.length || 0} cool-down stretches using ${equipmentName}. `;
-      }
-      
-      conversationalMessage += `Please let me know if you want to swap out any of the exercises or adjust the sets/reps!`;
-    } else if (messageLower.includes('workout')) {
-      conversationalMessage = `Here's your workout for today based on your available equipment! Let me know if you'd like to modify any exercises.`;
+    if (workoutType === 'pull' || workoutType === 'back') {
+      accessoryExerciseNames = [
+        'Pull-Up',
+        'Chin-Up',
+        'Barbell Bent-Over Row',
+        'Dumbbell Single-Arm Row',
+        'Cable Row',
+        'Lat Pulldown',
+        'Barbell Romanian Deadlift',
+        'Face Pulls',
+        'Barbell Curl',
+        'Dumbbell Hammer Curl'
+      ];
+      accessoryMuscles = ['back', 'biceps', 'rear delts', 'lats'];
+    } else if (workoutType === 'push') {
+      accessoryExerciseNames = [
+        'Dumbbell Flyes',
+        'Cable Chest Fly',
+        'Dips',
+        'Cable Lateral Raise',
+        'Dumbbell Lateral Raise',
+        'Close-Grip Bench Press',
+        'Cable Tricep Pushdown',
+        'Overhead Tricep Extension'
+      ];
+      accessoryMuscles = ['chest', 'shoulders', 'triceps'];
+    } else if (workoutType === 'legs') {
+      accessoryExerciseNames = [
+        'Barbell Romanian Deadlift',
+        'Dumbbell Bulgarian Split Squat',
+        'Walking Lunges',
+        'Leg Curls',
+        'Leg Extensions',
+        'Calf Raises',
+        'Barbell Hip Thrust',
+        'Goblet Squat'
+      ];
+      accessoryMuscles = ['quads', 'hamstrings', 'glutes', 'calves'];
     } else {
-      conversationalMessage = workoutData.message || `I've updated your workout based on your request.`;
+      // Upper/Lower/Full Body
+      accessoryExerciseNames = [
+        'Pull-Up',
+        'Chin-Up',
+        'Barbell Bent-Over Row',
+        'Dumbbell Single-Arm Row',
+        'Dumbbell Flyes',
+        'Cable Chest Fly',
+        'Dips',
+        'Cable Lateral Raise',
+        'Dumbbell Lateral Raise',
+        'Barbell Romanian Deadlift',
+        'Face Pulls',
+        'Barbell Curl',
+        'Dumbbell Hammer Curl',
+        'Cable Tricep Pushdown',
+        'Overhead Tricep Extension'
+      ];
+      accessoryMuscles = ['chest', 'back', 'shoulders', 'arms', 'triceps', 'biceps'];
     }
 
-    // Return the response
+    // Get FRESH warmup exercises (avoiding recent ones)
+    const { data: allWarmupExercises } = await supabase
+      .from('exercises')
+      .select('*')
+      .eq('exercise_phase', 'warmup')
+      .limit(50);
+
+    // Filter out recently used and randomize
+    const freshWarmups = allWarmupExercises
+      ?.filter(ex => !recentlyUsedExercises.has(ex.name))
+      .sort(() => 0.5 - Math.random())
+      .slice(0, 3);
+
+    // If we don't have enough fresh ones, use any warmups
+    const randomWarmups = freshWarmups?.length >= 3 
+      ? freshWarmups 
+      : allWarmupExercises?.sort(() => 0.5 - Math.random()).slice(0, 3);
+
+    // Get FRESH accessory exercises (avoiding recent ones)
+    const { data: allAccessoryExercises } = await supabase
+      .from('exercises')
+      .select('*')
+      .or(`name.in.(${accessoryExerciseNames.join(',')}),primary_muscle.in.(${accessoryMuscles.join(',')})`)
+      .neq('name', mainLift)
+      .limit(50);
+
+    // Prioritize exercises NOT recently used
+    const freshAccessories = allAccessoryExercises
+      ?.filter(ex => !isCoreLift(ex.name) && !recentlyUsedExercises.has(ex.name))
+      .sort(() => 0.5 - Math.random());
+
+    const staleAccessories = allAccessoryExercises
+      ?.filter(ex => !isCoreLift(ex.name) && recentlyUsedExercises.has(ex.name))
+      .sort(() => 0.5 - Math.random());
+
+    // Take fresh ones first, then stale if needed
+    const randomAccessories = [
+      ...(freshAccessories?.slice(0, 4) || []),
+      ...(staleAccessories?.slice(0, Math.max(0, 4 - (freshAccessories?.length || 0))) || [])
+    ].slice(0, 4);
+
+    // Get FRESH cooldown exercises
+    const { data: allCooldownExercises } = await supabase
+      .from('exercises')
+      .select('*')
+      .eq('exercise_phase', 'cooldown')
+      .limit(50);
+
+    const freshCooldowns = allCooldownExercises
+      ?.filter(ex => !recentlyUsedExercises.has(ex.name))
+      .sort(() => 0.5 - Math.random())
+      .slice(0, 3);
+
+    const randomCooldowns = freshCooldowns?.length >= 3
+      ? freshCooldowns
+      : allCooldownExercises?.sort(() => 0.5 - Math.random()).slice(0, 3);
+
+    // Rotate the main lift intelligently
+    const { data: recentMainLifts } = await supabase
+      .from('workout_sessions')
+      .select('workout_name')
+      .eq('user_id', user.id)
+      .ilike('workout_name', `%${workoutType}%`)
+      .order('created_at', { ascending: false })
+      .limit(3);
+
+    const recentlyUsedMainLifts = recentMainLifts?.map(w => {
+      // Extract main lift from workout name (e.g., "push - Barbell Bench Press")
+      const match = w.workout_name?.match(/- (.+)$/);
+      return match ? match[1] : null;
+    }).filter(Boolean) || [];
+
+    // Pick a main lift that wasn't used recently
+    const availableMainLifts = coreLifts[workoutType]?.primary.filter(lift => {
+      // Check equipment
+      if (lift.includes('Barbell') && !allAvailableEquipment.includes('Barbells')) return false;
+      if (lift.includes('Dumbbell') && !allAvailableEquipment.includes('Dumbbells')) return false;
+      if (lift.includes('Trap Bar') && !allAvailableEquipment.includes('Trap Bar')) return false;
+      
+      // Avoid if used in last 2 workouts of same type
+      return !recentlyUsedMainLifts.slice(0, 2).includes(lift);
+    });
+
+    const selectedMainLift = availableMainLifts?.[Math.floor(Math.random() * availableMainLifts.length)] 
+      || coreLifts[workoutType]?.primary[0];
+
+    console.log('Selected main lift:', selectedMainLift);
+    console.log('Fresh accessories:', randomAccessories.map(e => e.name));
+
+    // Get last performance for the main lift
+    const { data: lastPerformance } = await supabase
+      .from('workout_sets')
+      .select('actual_weight, reps')
+      .eq('exercise_name', selectedMainLift)
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    // Build workout with proper structure
+    const workout = {
+      warmup: randomWarmups?.map(ex => ({
+        name: ex.name,
+        sets: '2',
+        reps: '10-15',
+        instruction: ex.instruction
+      })) || [],
+      
+      main: [
+        // THE main compound lift - gets heavy sets
+        {
+          name: mainLiftData?.name || selectedMainLift,
+          sets: '4-5',
+          reps: '3-5', // Heavy for strength
+          instruction: 'Main lift - focus on progressive overload. Add weight when you hit all reps.',
+          isMainLift: true,
+          restMinutes: '3-5'
+        },
+        // Accessories - higher reps, less rest
+        ...(randomAccessories?.map(ex => ({
+          name: ex.name,
+          sets: '3',
+          reps: '8-12',
+          instruction: ex.instruction,
+          isAccessory: true,
+          restMinutes: '1.5-2'
+        })) || [])
+      ],
+      
+      cooldown: randomCooldowns?.map(ex => ({
+        name: ex.name,
+        duration: '30-60 seconds',
+        instruction: ex.instruction
+      })) || []
+    };
+
+    // Create response message highlighting variety
+    const responseMessage = `Here's your ${workoutType} workout! 
+
+**Today's Focus:** ${selectedMainLift} (${mainLiftData?.instruction || 'Progressive overload day'})
+
+I've selected ${randomAccessories.length} fresh accessory exercises you haven't done recently, along with new warmup and cooldown routines. 
+
+${lastPerformance ? `Last ${selectedMainLift}: ${lastPerformance.actual_weight}lbs x ${lastPerformance.reps}. Try to beat it!` : ''}
+
+The main lift stays consistent for strength gains while everything else rotates for variety. Let me know if you want to swap any exercises!`;
+
     return NextResponse.json({
       success: true,
-      workout: workoutData.workout,
-      message: conversationalMessage,
-      response: conversationalMessage, // Add this for backward compatibility
-      details: {
-        exerciseCount: {
-          warmup: workoutData.workout?.warmup?.length || 0,
-          main: workoutData.workout?.main?.length || 0,
-          cooldown: workoutData.workout?.cooldown?.length || 0
-        },
-        equipment: mentionedEquipment
-      }
+      message: responseMessage,
+      workout: workout
     });
 
   } catch (error) {
     console.error('Chat workout error:', error);
-    return NextResponse.json({ error: 'Failed to modify workout' }, { status: 500 });
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Failed to generate workout' 
+    }, { status: 500 });
   }
 } 
