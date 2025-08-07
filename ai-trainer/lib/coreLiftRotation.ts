@@ -91,11 +91,11 @@ export const accessoryExercises = {
 };
 
 export function getMainLift(workoutType: string, availableEquipment: string[]): string {
-  const lifts = coreLifts[workoutType]?.primary || coreLifts.upper.primary;
+  const lifts = coreLifts[workoutType as keyof typeof coreLifts]?.primary || coreLifts.upper.primary;
   
   // Filter by available equipment
   const availableLifts = lifts.filter(lift => {
-    if (lift.includes('Barbell') && !availableEquipment.includes('Barbells')) return false;
+    if (lift.includes('Barbell') && !availableEquipment.includes('Barbell')) return false;
     if (lift.includes('Dumbbell') && !availableEquipment.includes('Dumbbells')) return false;
     if (lift.includes('Trap Bar') && !availableEquipment.includes('Trap Bar')) return false;
     return true;
