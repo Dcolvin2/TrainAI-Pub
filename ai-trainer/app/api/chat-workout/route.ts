@@ -151,6 +151,80 @@ export async function POST(request: Request) {
     console.log('Available exercises after filtering:', availableExercises.length);
     console.log('Sample available exercises:', availableExercises.slice(0, 5).map((e: any) => e.name));
 
+    // Check which type of workout is requested
+    let workoutType = null;
+    const workoutTypes = {
+      'kettlebell': ['kettlebell workout', 'kb workout', 'kettlebells', 'kettlebell session'],
+      'dumbbell': ['dumbbell workout', 'db workout', 'dumbbells', 'dumbbell session'],
+      'barbell': ['barbell workout', 'bb workout', 'barbells', 'barbell session'],
+      'bodyweight': ['bodyweight workout', 'no equipment', 'body weight', 'calisthenics'],
+      'push': ['push workout', 'push day', 'chest workout', 'chest and triceps'],
+      'pull': ['pull workout', 'pull day', 'back workout', 'back and biceps'],
+      'legs': ['leg workout', 'leg day', 'legs', 'lower body']
+    };
+
+    Object.entries(workoutTypes).forEach(([type, phrases]) => {
+      if (phrases.some(phrase => messageLower.includes(phrase))) {
+        workoutType = type;
+      }
+    });
+
+    console.log('Detected workout type:', workoutType);
+
+    // Function to get appropriate warmups based on workout type
+    async function getSmartWarmups(supabase: any, workoutType: string, equipment: string[]) {
+      let query = supabase
+        .from('exercises')
+        .select('*')
+        .eq('exercise_phase', 'warmup');
+      
+      // Filter by relevant muscle groups for workout type
+      if (workoutType === 'push' || workoutType === 'chest') {
+        query = query.or('primary_muscle.in.(chest,shoulders,triceps)');
+      } else if (workoutType === 'pull' || workoutType === 'back') {
+        query = query.or('primary_muscle.in.(back,biceps,lats)');
+      } else if (workoutType === 'legs') {
+        query = query.or('primary_muscle.in.(quads,hamstrings,glutes,calves)');
+      }
+      
+      const { data } = await query.limit(20);
+      
+      // Randomly select 3-4 varied warmups
+      return data
+        ?.sort(() => 0.5 - Math.random())
+        .slice(0, 3);
+    }
+
+    // Function to get appropriate cooldowns
+    async function getSmartCooldowns(supabase: any, workoutType: string) {
+      let query = supabase
+        .from('exercises')
+        .select('*')
+        .eq('exercise_phase', 'cooldown');
+      
+      // Filter by muscle groups that need stretching
+      if (workoutType === 'push') {
+        query = query.or('primary_muscle.in.(chest,shoulders,triceps)');
+      } else if (workoutType === 'pull') {
+        query = query.or('primary_muscle.in.(back,biceps,lats)');
+      } else if (workoutType === 'legs') {
+        query = query.or('primary_muscle.in.(quads,hamstrings,glutes,calves)');
+      }
+      
+      const { data } = await query.limit(20);
+      
+      return data
+        ?.sort(() => 0.5 - Math.random())
+        .slice(0, 3);
+    }
+
+    // Get dynamic warmups and cooldowns from database
+    const smartWarmups = await getSmartWarmups(supabase, workoutType || 'general', allAvailableEquipment);
+    const smartCooldowns = await getSmartCooldowns(supabase, workoutType || 'general');
+
+    console.log('Smart warmups found:', smartWarmups?.length || 0);
+    console.log('Smart cooldowns found:', smartCooldowns?.length || 0);
+
     // Build prompt that MODIFIES the workout
     const prompt = `
 You are a knowledgeable fitness coach. The user said: "${message}"
@@ -164,20 +238,27 @@ ${allAvailableEquipment.join(', ')}
 AVAILABLE EXERCISES (filtered by equipment):
 ${availableExercises.map((e: any) => `- ${e.name} (${e.category}, ${e.primary_muscle})`).join('\n')}
 
+SUGGESTED WARMUPS (from database):
+${smartWarmups?.map((e: any) => `- ${e.name} (${e.primary_muscle})`).join('\n') || 'No warmups found'}
+
+SUGGESTED COOLDOWNS (from database):
+${smartCooldowns?.map((e: any) => `- ${e.name} (${e.primary_muscle})`).join('\n') || 'No cooldowns found'}
+
 CRITICAL INSTRUCTIONS:
 1. You MUST return a MODIFIED workout, not suggestions
 2. ONLY use exercises from the AVAILABLE EXERCISES list above - DO NOT invent new exercises
 3. If the user mentions specific equipment (like "kettlebells"), ONLY use exercises that are tagged with that equipment
 4. If no exercises are available for the mentioned equipment, use bodyweight alternatives
-5. Return exercises as a clean array without workout instructions. Each exercise should be:
+5. Use the SUGGESTED WARMUPS and SUGGESTED COOLDOWNS from the database when possible
+6. Return exercises as a clean array without workout instructions. Each exercise should be:
    {
      "name": "Exercise Name",  // Just the name, no numbers or instructions
      "sets": "3",
      "reps": "15"
    }
-6. Do NOT include items like 'Perform 3 rounds of:' in the exercise list
-7. IMPORTANT: Only use exercise names that EXACTLY match the AVAILABLE EXERCISES list
-8. CRITICAL: Provide a DETAILED and DYNAMIC explanation in the message field that includes:
+7. Do NOT include items like 'Perform 3 rounds of:' in the exercise list
+8. IMPORTANT: Only use exercise names that EXACTLY match the AVAILABLE EXERCISES list
+9. CRITICAL: Provide a DETAILED and DYNAMIC explanation in the message field that includes:
    - What specific equipment was detected and how it enhances the workout
    - Why you chose each exercise and how it benefits the user
    - Specific instructions for using the equipment (e.g., "Wrap the superband around your back for push-ups")
@@ -186,7 +267,7 @@ CRITICAL INSTRUCTIONS:
    - How to modify intensity or difficulty
    - Expected benefits and muscle groups targeted
    - Rest periods and workout structure explanation
-9. Return the COMPLETE modified workout in this exact JSON format:
+10. Return the COMPLETE modified workout in this exact JSON format:
 
 {
   "workout": {
@@ -330,27 +411,6 @@ Return ONLY valid JSON, no other text.`;
       
       workoutData.message = detailedMessage;
     }
-
-    // Add more trigger phrases for better detection
-    const workoutTypes = {
-      'kettlebell': ['kettlebell workout', 'kb workout', 'kettlebells', 'kettlebell session'],
-      'dumbbell': ['dumbbell workout', 'db workout', 'dumbbells', 'dumbbell session'],
-      'barbell': ['barbell workout', 'bb workout', 'barbells', 'barbell session'],
-      'bodyweight': ['bodyweight workout', 'no equipment', 'body weight', 'calisthenics'],
-      'push': ['push workout', 'push day', 'chest workout', 'chest and triceps'],
-      'pull': ['pull workout', 'pull day', 'back workout', 'back and biceps'],
-      'legs': ['leg workout', 'leg day', 'legs', 'lower body']
-    };
-
-    // Check which type of workout is requested
-    let workoutType = null;
-    Object.entries(workoutTypes).forEach(([type, phrases]) => {
-      if (phrases.some(phrase => messageLower.includes(phrase))) {
-        workoutType = type;
-      }
-    });
-
-    console.log('Detected workout type:', workoutType);
 
     // UPDATE the workout session in database
     if (sessionId) {
