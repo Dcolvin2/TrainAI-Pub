@@ -318,12 +318,12 @@ export async function POST(request: Request) {
     const freshWarmups = allWarmupExercises
       ?.filter(ex => !recentlyUsedExercises.has(ex.name))
       .sort(() => 0.5 - Math.random())
-      .slice(0, 3);
+      .slice(0, 3) || [];
 
     // If we don't have enough fresh ones, use any warmups
-    const randomWarmups = freshWarmups?.length >= 3 
+    const randomWarmups = freshWarmups.length >= 3 
       ? freshWarmups 
-      : allWarmupExercises?.sort(() => 0.5 - Math.random()).slice(0, 3);
+      : allWarmupExercises?.sort(() => 0.5 - Math.random()).slice(0, 3) || [];
 
     // Get FRESH accessory exercises (avoiding recent ones)
     const { data: allAccessoryExercises } = await supabase
@@ -336,16 +336,16 @@ export async function POST(request: Request) {
     // Prioritize exercises NOT recently used
     const freshAccessories = allAccessoryExercises
       ?.filter(ex => !isCoreLift(ex.name) && !recentlyUsedExercises.has(ex.name))
-      .sort(() => 0.5 - Math.random());
+      .sort(() => 0.5 - Math.random()) || [];
 
     const staleAccessories = allAccessoryExercises
       ?.filter(ex => !isCoreLift(ex.name) && recentlyUsedExercises.has(ex.name))
-      .sort(() => 0.5 - Math.random());
+      .sort(() => 0.5 - Math.random()) || [];
 
     // Take fresh ones first, then stale if needed
     const randomAccessories = [
-      ...(freshAccessories?.slice(0, 4) || []),
-      ...(staleAccessories?.slice(0, Math.max(0, 4 - (freshAccessories?.length || 0))) || [])
+      ...(freshAccessories.slice(0, 4)),
+      ...(staleAccessories.slice(0, Math.max(0, 4 - freshAccessories.length)))
     ].slice(0, 4);
 
     // Get FRESH cooldown exercises
@@ -358,11 +358,11 @@ export async function POST(request: Request) {
     const freshCooldowns = allCooldownExercises
       ?.filter(ex => !recentlyUsedExercises.has(ex.name))
       .sort(() => 0.5 - Math.random())
-      .slice(0, 3);
+      .slice(0, 3) || [];
 
-    const randomCooldowns = freshCooldowns?.length >= 3
+    const randomCooldowns = freshCooldowns.length >= 3
       ? freshCooldowns
-      : allCooldownExercises?.sort(() => 0.5 - Math.random()).slice(0, 3);
+      : allCooldownExercises?.sort(() => 0.5 - Math.random()).slice(0, 3) || [];
 
     // Rotate the main lift intelligently
     const { data: recentMainLifts } = await supabase
@@ -380,7 +380,7 @@ export async function POST(request: Request) {
     }).filter(Boolean) || [];
 
     // Pick a main lift that wasn't used recently
-    const availableMainLifts = coreLifts[workoutType]?.primary.filter(lift => {
+    const availableMainLifts = coreLifts[workoutType as keyof typeof coreLifts]?.primary.filter((lift: string) => {
       // Check equipment
       if (lift.includes('Barbell') && !allAvailableEquipment.includes('Barbells')) return false;
       if (lift.includes('Dumbbell') && !allAvailableEquipment.includes('Dumbbells')) return false;
@@ -391,7 +391,7 @@ export async function POST(request: Request) {
     });
 
     const selectedMainLift = availableMainLifts?.[Math.floor(Math.random() * availableMainLifts.length)] 
-      || coreLifts[workoutType]?.primary[0];
+      || coreLifts[workoutType as keyof typeof coreLifts]?.primary[0];
 
     console.log('Selected main lift:', selectedMainLift);
     console.log('Fresh accessories:', randomAccessories.map(e => e.name));
