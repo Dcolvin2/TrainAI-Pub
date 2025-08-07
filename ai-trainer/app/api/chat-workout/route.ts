@@ -233,14 +233,76 @@ export async function POST(request: Request) {
     else if (messageLower.includes('lower')) workoutType = 'lower';
     else if (messageLower.includes('full body') || messageLower.includes('fullbody')) workoutType = 'upper';
 
-    // Get ONE main compound lift (the focus of progressive overload)
-    const mainLift = getMainLift(workoutType, allAvailableEquipment);
+    // Debug: Log what we're working with
+    console.log('Workout type requested:', workoutType);
+    console.log('Available equipment:', allAvailableEquipment);
+
+    // Get recent workouts to check main lift history
+    const { data: recentMainLifts } = await supabase
+      .from('workout_sessions')
+      .select('workout_name, planned_exercises')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    console.log('Recent workouts:', recentMainLifts?.map(w => w.workout_name));
+
+    // Extract the main lifts that were used recently
+    const recentlyUsedMainLifts: string[] = [];
+    recentMainLifts?.forEach(workout => {
+      if (workout.planned_exercises?.main?.[0]?.isMainLift) {
+        recentlyUsedMainLifts.push(workout.planned_exercises.main[0].name);
+      }
+    });
+
+    console.log('Recently used main lifts:', recentlyUsedMainLifts);
+
+    // Get all possible main lifts for this workout type
+    const possibleMainLifts = coreLifts[workoutType as keyof typeof coreLifts]?.primary || [];
+    console.log('Possible main lifts for', workoutType, ':', possibleMainLifts);
+
+    // Filter for available equipment AND not recently used
+    let availableMainLifts = possibleMainLifts.filter(lift => {
+      // Check equipment availability
+      if (lift.includes('Barbell') && !allAvailableEquipment.includes('Barbells')) {
+        console.log(`Skipping ${lift} - no barbell`);
+        return false;
+      }
+      if (lift.includes('Dumbbell') && !allAvailableEquipment.includes('Dumbbells')) {
+        console.log(`Skipping ${lift} - no dumbbells`);
+        return false;
+      }
+      if (lift.includes('Trap Bar') && !allAvailableEquipment.includes('Trap Bar')) {
+        console.log(`Skipping ${lift} - no trap bar`);
+        return false;
+      }
+      return true;
+    });
+
+    console.log('Main lifts with available equipment:', availableMainLifts);
+
+    // Remove the most recently used main lift (but keep others)
+    if (recentlyUsedMainLifts.length > 0 && availableMainLifts.length > 1) {
+      const lastUsedLift = recentlyUsedMainLifts[0];
+      const filteredLifts = availableMainLifts.filter(lift => lift !== lastUsedLift);
+      
+      if (filteredLifts.length > 0) {
+        availableMainLifts = filteredLifts;
+        console.log(`Filtered out recently used: ${lastUsedLift}`);
+      }
+    }
+
+    // IMPORTANT: Actually randomize the selection
+    const randomIndex = Math.floor(Math.random() * availableMainLifts.length);
+    const selectedMainLift = availableMainLifts[randomIndex] || possibleMainLifts[0];
+
+    console.log('SELECTED MAIN LIFT:', selectedMainLift, 'from index', randomIndex);
 
     // Get the main lift details
     const { data: mainLiftData } = await supabase
       .from('exercises')
       .select('*')
-      .eq('name', mainLift)
+      .eq('name', selectedMainLift)
       .single();
 
     // Define what accessories to include based on workout type
@@ -307,6 +369,49 @@ export async function POST(request: Request) {
       accessoryMuscles = ['chest', 'back', 'shoulders', 'arms', 'triceps', 'biceps'];
     }
 
+    // Get recently used accessories (not main lifts)
+    const recentAccessories = new Set();
+    recentWorkouts?.forEach(workout => {
+      workout.planned_exercises?.main?.forEach((ex: any) => {
+        // Skip the main lift, only track accessories
+        if (ex.name && !ex.isMainLift) {
+          recentAccessories.add(ex.name);
+        }
+      });
+    });
+
+    console.log('Recently used accessories:', Array.from(recentAccessories));
+
+    // Get a large pool of potential accessories
+    const { data: allAccessoryExercises } = await supabase
+      .from('exercises')
+      .select('*')
+      .in('primary_muscle', accessoryMuscles)
+      .limit(100); // Get lots of options
+
+    console.log('Total accessories available:', allAccessoryExercises?.length);
+
+    // Filter out main lifts and recently used
+    const freshAccessories = allAccessoryExercises?.filter(ex => {
+      // Never use a main lift as an accessory
+      if (isCoreLift(ex.name)) return false;
+      
+      // Prefer exercises not recently used
+      if (recentAccessories.has(ex.name)) return false;
+      
+      return true;
+    });
+
+    console.log('Fresh accessories available:', freshAccessories?.length);
+
+    // IMPORTANT: Fully randomize the array before selecting
+    const shuffledAccessories = freshAccessories
+      ?.sort(() => Math.random() - 0.5)  // First shuffle
+      .sort(() => Math.random() - 0.5)  // Double shuffle for better randomization
+      .slice(0, 5);  // Take 5 (we'll use 4, but have a backup)
+
+    console.log('Selected accessories:', shuffledAccessories?.map(e => e.name));
+
     // Get FRESH warmup exercises (avoiding recent ones)
     const { data: allWarmupExercises } = await supabase
       .from('exercises')
@@ -325,29 +430,6 @@ export async function POST(request: Request) {
       ? freshWarmups 
       : allWarmupExercises?.sort(() => 0.5 - Math.random()).slice(0, 3) || [];
 
-    // Get FRESH accessory exercises (avoiding recent ones)
-    const { data: allAccessoryExercises } = await supabase
-      .from('exercises')
-      .select('*')
-      .or(`name.in.(${accessoryExerciseNames.join(',')}),primary_muscle.in.(${accessoryMuscles.join(',')})`)
-      .neq('name', mainLift)
-      .limit(50);
-
-    // Prioritize exercises NOT recently used
-    const freshAccessories = allAccessoryExercises
-      ?.filter(ex => !isCoreLift(ex.name) && !recentlyUsedExercises.has(ex.name))
-      .sort(() => 0.5 - Math.random()) || [];
-
-    const staleAccessories = allAccessoryExercises
-      ?.filter(ex => !isCoreLift(ex.name) && recentlyUsedExercises.has(ex.name))
-      .sort(() => 0.5 - Math.random()) || [];
-
-    // Take fresh ones first, then stale if needed
-    const randomAccessories = [
-      ...(freshAccessories.slice(0, 4)),
-      ...(staleAccessories.slice(0, Math.max(0, 4 - freshAccessories.length)))
-    ].slice(0, 4);
-
     // Get FRESH cooldown exercises
     const { data: allCooldownExercises } = await supabase
       .from('exercises')
@@ -364,38 +446,6 @@ export async function POST(request: Request) {
       ? freshCooldowns
       : allCooldownExercises?.sort(() => 0.5 - Math.random()).slice(0, 3) || [];
 
-    // Rotate the main lift intelligently
-    const { data: recentMainLifts } = await supabase
-      .from('workout_sessions')
-      .select('workout_name')
-      .eq('user_id', user.id)
-      .ilike('workout_name', `%${workoutType}%`)
-      .order('created_at', { ascending: false })
-      .limit(3);
-
-    const recentlyUsedMainLifts = recentMainLifts?.map(w => {
-      // Extract main lift from workout name (e.g., "push - Barbell Bench Press")
-      const match = w.workout_name?.match(/- (.+)$/);
-      return match ? match[1] : null;
-    }).filter(Boolean) || [];
-
-    // Pick a main lift that wasn't used recently
-    const availableMainLifts = coreLifts[workoutType as keyof typeof coreLifts]?.primary.filter((lift: string) => {
-      // Check equipment
-      if (lift.includes('Barbell') && !allAvailableEquipment.includes('Barbells')) return false;
-      if (lift.includes('Dumbbell') && !allAvailableEquipment.includes('Dumbbells')) return false;
-      if (lift.includes('Trap Bar') && !allAvailableEquipment.includes('Trap Bar')) return false;
-      
-      // Avoid if used in last 2 workouts of same type
-      return !recentlyUsedMainLifts.slice(0, 2).includes(lift);
-    });
-
-    const selectedMainLift = availableMainLifts?.[Math.floor(Math.random() * availableMainLifts.length)] 
-      || coreLifts[workoutType as keyof typeof coreLifts]?.primary[0];
-
-    console.log('Selected main lift:', selectedMainLift);
-    console.log('Fresh accessories:', randomAccessories.map(e => e.name));
-
     // Get last performance for the main lift
     const { data: lastPerformance } = await supabase
       .from('workout_sets')
@@ -406,7 +456,7 @@ export async function POST(request: Request) {
       .limit(1)
       .single();
 
-    // Build workout with proper structure
+    // Build the workout with proper structure
     const workout = {
       warmup: randomWarmups?.map(ex => ({
         name: ex.name,
@@ -416,17 +466,17 @@ export async function POST(request: Request) {
       })) || [],
       
       main: [
-        // THE main compound lift - gets heavy sets
+        // The ONE main lift
         {
-          name: mainLiftData?.name || selectedMainLift,
+          name: selectedMainLift,
           sets: '4-5',
-          reps: '3-5', // Heavy for strength
-          instruction: 'Main lift - focus on progressive overload. Add weight when you hit all reps.',
+          reps: '3-5',
+          instruction: 'Main lift - focus on progressive overload',
           isMainLift: true,
           restMinutes: '3-5'
         },
-        // Accessories - higher reps, less rest
-        ...(randomAccessories?.map(ex => ({
+        // All 4 accessories (should all be different each time)
+        ...(shuffledAccessories?.slice(0, 4).map(ex => ({
           name: ex.name,
           sets: '3',
           reps: '8-12',
@@ -443,12 +493,25 @@ export async function POST(request: Request) {
       })) || []
     };
 
+    // Save the workout with clear naming
+    const { data: session } = await supabase
+      .from('workout_sessions')
+      .insert({
+        user_id: user.id,
+        workout_source: 'chat',
+        workout_name: `${workoutType} - ${selectedMainLift}`,
+        planned_exercises: workout,
+        date: new Date().toISOString()
+      })
+      .select()
+      .single();
+
     // Create response message highlighting variety
     const responseMessage = `Here's your ${workoutType} workout! 
 
 **Today's Focus:** ${selectedMainLift} (${mainLiftData?.instruction || 'Progressive overload day'})
 
-I've selected ${randomAccessories.length} fresh accessory exercises you haven't done recently, along with new warmup and cooldown routines. 
+I've selected ${shuffledAccessories?.length || 0} fresh accessory exercises you haven't done recently, along with new warmup and cooldown routines. 
 
 ${lastPerformance ? `Last ${selectedMainLift}: ${lastPerformance.actual_weight}lbs x ${lastPerformance.reps}. Try to beat it!` : ''}
 
