@@ -299,7 +299,7 @@ export async function POST(request: Request) {
 
     // IMPORTANT: Actually randomize the selection
     const randomIndex = Math.floor(Math.random() * availableMainLifts.length);
-    const selectedMainLift = availableMainLifts[randomIndex] || possibleMainLifts[0];
+    let selectedMainLift = availableMainLifts[randomIndex] || possibleMainLifts[0];
 
     console.log('✅ MAIN LIFT SELECTED:', selectedMainLift);
 
@@ -309,6 +309,12 @@ export async function POST(request: Request) {
       .select('*')
       .eq('name', selectedMainLift)
       .single();
+
+    console.log('🔍 Main lift data structure:', {
+      mainLiftData,
+      isArray: Array.isArray(mainLiftData),
+      name: mainLiftData?.name
+    });
 
     // Define what accessories to include based on workout type
     let accessoryExerciseNames: string[] = [];
@@ -395,6 +401,8 @@ export async function POST(request: Request) {
       .limit(100); // Get lots of options
 
     console.log('📊 Accessories found:', allAccessoryExercises?.length);
+    console.log('🔍 First accessory from DB:', allAccessoryExercises?.[0]);
+    console.log('🔍 Is it an array?', Array.isArray(allAccessoryExercises?.[0]));
 
     // Filter out main lifts and recently used
     const freshAccessories = allAccessoryExercises?.filter(ex => {
@@ -416,6 +424,11 @@ export async function POST(request: Request) {
       .slice(0, 5);  // Take 5 (we'll use 4, but have a backup)
 
     console.log('✨ Final selected accessories:', shuffledAccessories?.map(e => e.name));
+    console.log('🔍 Accessory structure check:', {
+      firstAccessory: shuffledAccessories?.[0],
+      isArray: Array.isArray(shuffledAccessories?.[0]),
+      name: shuffledAccessories?.[0]?.name
+    });
 
     // Get FRESH warmup exercises (avoiding recent ones)
     const { data: allWarmupExercises } = await supabase
@@ -461,6 +474,20 @@ export async function POST(request: Request) {
       .limit(1)
       .single();
 
+    // Force main lift rotation by checking last used
+    const lastWorkout = recentWorkouts?.[0];
+    const lastMainLift = lastWorkout?.planned_exercises?.main?.[0]?.name;
+
+    console.log('🔄 Last main lift was:', lastMainLift);
+
+    // If the same main lift was used last time, force a different one
+    if (lastMainLift === selectedMainLift && availableMainLifts.length > 1) {
+      const alternativeLifts = availableMainLifts.filter(lift => lift !== selectedMainLift);
+      const newMainLift = alternativeLifts[Math.floor(Math.random() * alternativeLifts.length)];
+      console.log('🔄 Forcing rotation from', selectedMainLift, 'to', newMainLift);
+      selectedMainLift = newMainLift;
+    }
+
     // Build the workout with proper structure
     const workout = {
       warmup: randomWarmups?.map(ex => ({
@@ -471,21 +498,21 @@ export async function POST(request: Request) {
       })) || [],
       
       main: [
-        // The ONE main lift
+        // The ONE main lift - handle array vs object properly
         {
-          name: selectedMainLift,
+          name: Array.isArray(mainLiftData) ? mainLiftData[0]?.name : mainLiftData?.name || selectedMainLift,
           sets: '4-5',
           reps: '3-5',
-          instruction: 'Main lift - focus on progressive overload',
+          instruction: Array.isArray(mainLiftData) ? mainLiftData[0]?.instruction : mainLiftData?.instruction || 'Main lift - focus on progressive overload',
           isMainLift: true,
           restMinutes: '3-5'
         },
-        // All 4 accessories (should all be different each time)
+        // All 4 accessories - handle array vs object properly
         ...(shuffledAccessories?.slice(0, 4).map(ex => ({
-          name: ex.name,
+          name: Array.isArray(ex) ? ex[0]?.name : ex.name,
           sets: '3',
           reps: '8-12',
-          instruction: ex.instruction,
+          instruction: Array.isArray(ex) ? ex[0]?.instruction : ex.instruction,
           isAccessory: true,
           restMinutes: '1.5-2'
         })) || [])
