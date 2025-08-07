@@ -83,46 +83,118 @@ export async function POST(request: Request) {
     if (isModificationRequest && currentWorkout) {
       console.log('Modification request detected');
       
-      // Extract which exercise to swap (simple version - can be enhanced)
-      let exerciseToSwap = null;
-      if (messageLower.includes('this')) {
-        // User said "swap this exercise" - need context
-        exerciseToSwap = 'the selected exercise';
-      } else {
-        // Try to find exercise name in message
-        // This is simplified - you might want to enhance this
-        const currentExercises = [
-          ...(currentWorkout.warmup || []),
-          ...(currentWorkout.main || []),
-          ...(currentWorkout.cooldown || [])
-        ];
-        
-        currentExercises.forEach((ex: any) => {
-          if (messageLower.includes(ex.name.toLowerCase())) {
-            exerciseToSwap = ex.name;
-          }
-        });
+      // Determine what equipment type we're working with
+      let requiredEquipment: string[] = [];
+      
+      // Check if current workout is kettlebell, dumbbell, etc.
+      if (messageLower.includes('kettlebell') || 
+          (currentWorkout.main && currentWorkout.main.some((ex: any) => ex.name?.toLowerCase().includes('kettlebell')))) {
+        requiredEquipment = ['Kettlebells'];
+      } else if (messageLower.includes('dumbbell') || 
+                 (currentWorkout.main && currentWorkout.main.some((ex: any) => ex.name?.toLowerCase().includes('dumbbell')))) {
+        requiredEquipment = ['Dumbbells'];
+      } else if (messageLower.includes('barbell') || 
+                 (currentWorkout.main && currentWorkout.main.some((ex: any) => ex.name?.toLowerCase().includes('barbell')))) {
+        requiredEquipment = ['Barbells'];
+      } else if (messageLower.includes('superband') || 
+                 (currentWorkout.main && currentWorkout.main.some((ex: any) => ex.name?.toLowerCase().includes('band')))) {
+        requiredEquipment = ['Superbands'];
       }
       
-      // Get a replacement exercise
-      const { data: exercises } = await supabase
+      // Find which exercise to replace
+      let exerciseToReplace = null;
+      let exerciseIndex = -1;
+      let exercisePhase = 'main'; // default to main
+      
+      // Try to identify the exercise from the message
+      const allExercises = [
+        ...(currentWorkout.warmup || []).map((ex: any, i: number) => ({...ex, phase: 'warmup', index: i})),
+        ...(currentWorkout.main || []).map((ex: any, i: number) => ({...ex, phase: 'main', index: i})),
+        ...(currentWorkout.cooldown || []).map((ex: any, i: number) => ({...ex, phase: 'cooldown', index: i}))
+      ];
+      
+      // Find exercise mentioned in message
+      for (const ex of allExercises) {
+        if (messageLower.includes(ex.name.toLowerCase())) {
+          exerciseToReplace = ex.name;
+          exerciseIndex = ex.index;
+          exercisePhase = ex.phase;
+          break;
+        }
+      }
+      
+      // If no specific exercise mentioned, replace the last mentioned or first main exercise
+      if (!exerciseToReplace && currentWorkout.main && currentWorkout.main.length > 0) {
+        exerciseToReplace = currentWorkout.main[0].name;
+        exerciseIndex = 0;
+        exercisePhase = 'main';
+      }
+      
+      // Get a replacement exercise WITH THE SAME EQUIPMENT
+      let query = supabase
         .from('exercises')
         .select('*')
-        .limit(5);
+        .eq('exercise_phase', exercisePhase);
       
-      const replacement = exercises?.[Math.floor(Math.random() * exercises.length)];
+      // Filter by equipment if specified
+      if (requiredEquipment.length > 0) {
+        query = query.contains('equipment_required', requiredEquipment);
+      }
       
-      if (replacement) {
+      // Exclude the current exercise
+      if (exerciseToReplace) {
+        query = query.neq('name', exerciseToReplace);
+      }
+      
+      const { data: replacementExercises } = await query.limit(20);
+      
+      if (replacementExercises && replacementExercises.length > 0) {
+        // Pick a random replacement
+        const replacement = replacementExercises[Math.floor(Math.random() * replacementExercises.length)];
+        
+        // Create updated workout
+        const updatedWorkout = { ...currentWorkout };
+        
+        // Update the specific exercise in the workout
+        if (exercisePhase === 'warmup' && updatedWorkout.warmup) {
+          updatedWorkout.warmup[exerciseIndex] = {
+            name: replacement.name,
+            sets: replacement.sets || '2',
+            reps: replacement.reps || '10',
+            instruction: replacement.instruction
+          };
+        } else if (exercisePhase === 'main' && updatedWorkout.main) {
+          updatedWorkout.main[exerciseIndex] = {
+            name: replacement.name,
+            sets: replacement.sets || '3',
+            reps: replacement.reps || '8-12',
+            instruction: replacement.instruction
+          };
+        } else if (exercisePhase === 'cooldown' && updatedWorkout.cooldown) {
+          updatedWorkout.cooldown[exerciseIndex] = {
+            name: replacement.name,
+            duration: replacement.set_duration_seconds ? `${replacement.set_duration_seconds} seconds` : '30 seconds',
+            instruction: replacement.instruction
+          };
+        }
+        
         return NextResponse.json({
           success: true,
           isModification: true,
-          message: `Sure! Let's swap that out with ${replacement.name}. ${replacement.instruction || 'This is a great alternative that works similar muscles.'}`,
-          response: `Sure! Let's swap that out with ${replacement.name}. ${replacement.instruction || 'This is a great alternative that works similar muscles.'}`,
+          message: `Sure! Let's swap ${exerciseToReplace} with ${replacement.name}. ${replacement.instruction || 'This is a great alternative that targets the same muscle groups.'}`,
+          workout: updatedWorkout, // Return the UPDATED workout
           modification: {
-            original: exerciseToSwap,
+            original: exerciseToReplace,
             replacement: replacement.name,
-            instruction: replacement.instruction
+            phase: exercisePhase,
+            index: exerciseIndex
           }
+        });
+      } else {
+        return NextResponse.json({
+          success: true,
+          isModification: true,
+          message: `I couldn't find a suitable ${requiredEquipment.join('/')} replacement. Try asking for a different type of exercise.`
         });
       }
     }
