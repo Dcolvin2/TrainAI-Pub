@@ -15,8 +15,11 @@ const anthropic = new Anthropic({
 import { getMainLift, isCoreLift, coreLifts } from '../../../lib/coreLiftRotation';
 
 export async function POST(request: Request) {
+  console.log('🟦 CHAT-WORKOUT ENDPOINT CALLED');
+  
   try {
     const { message, currentWorkout, sessionId } = await request.json();
+    console.log('📝 Message received:', message);
     
     // Get user from auth context or request body
     const user = { id: sessionId }; // Simplified for now
@@ -233,9 +236,11 @@ export async function POST(request: Request) {
     else if (messageLower.includes('lower')) workoutType = 'lower';
     else if (messageLower.includes('full body') || messageLower.includes('fullbody')) workoutType = 'upper';
 
+    console.log('🎯 Workout type detected:', workoutType);
+
     // Debug: Log what we're working with
     console.log('Workout type requested:', workoutType);
-    console.log('Available equipment:', allAvailableEquipment);
+    console.log('🔧 Available equipment:', allAvailableEquipment);
 
     // Get recent workouts to check main lift history
     const { data: recentMainLifts } = await supabase
@@ -259,7 +264,7 @@ export async function POST(request: Request) {
 
     // Get all possible main lifts for this workout type
     const possibleMainLifts = coreLifts[workoutType as keyof typeof coreLifts]?.primary || [];
-    console.log('Possible main lifts for', workoutType, ':', possibleMainLifts);
+    console.log('💪 Possible main lifts:', coreLifts[workoutType as keyof typeof coreLifts]?.primary);
 
     // Filter for available equipment AND not recently used
     let availableMainLifts = possibleMainLifts.filter(lift => {
@@ -296,7 +301,7 @@ export async function POST(request: Request) {
     const randomIndex = Math.floor(Math.random() * availableMainLifts.length);
     const selectedMainLift = availableMainLifts[randomIndex] || possibleMainLifts[0];
 
-    console.log('SELECTED MAIN LIFT:', selectedMainLift, 'from index', randomIndex);
+    console.log('✅ MAIN LIFT SELECTED:', selectedMainLift);
 
     // Get the main lift details
     const { data: mainLiftData } = await supabase
@@ -389,7 +394,7 @@ export async function POST(request: Request) {
       .in('primary_muscle', accessoryMuscles)
       .limit(100); // Get lots of options
 
-    console.log('Total accessories available:', allAccessoryExercises?.length);
+    console.log('📊 Accessories found:', allAccessoryExercises?.length);
 
     // Filter out main lifts and recently used
     const freshAccessories = allAccessoryExercises?.filter(ex => {
@@ -402,7 +407,7 @@ export async function POST(request: Request) {
       return true;
     });
 
-    console.log('Fresh accessories available:', freshAccessories?.length);
+    console.log('🔄 Fresh accessories:', freshAccessories?.map(e => e.name));
 
     // IMPORTANT: Fully randomize the array before selecting
     const shuffledAccessories = freshAccessories
@@ -410,7 +415,7 @@ export async function POST(request: Request) {
       .sort(() => Math.random() - 0.5)  // Double shuffle for better randomization
       .slice(0, 5);  // Take 5 (we'll use 4, but have a backup)
 
-    console.log('Selected accessories:', shuffledAccessories?.map(e => e.name));
+    console.log('✨ Final selected accessories:', shuffledAccessories?.map(e => e.name));
 
     // Get FRESH warmup exercises (avoiding recent ones)
     const { data: allWarmupExercises } = await supabase
@@ -505,6 +510,13 @@ export async function POST(request: Request) {
       })
       .select()
       .single();
+
+    console.log('📤 Returning workout with:', {
+      mainLift: workout.main[0].name,
+      accessories: workout.main.slice(1).map(e => e.name),
+      warmups: workout.warmup.map(e => e.name),
+      cooldowns: workout.cooldown.map(e => e.name)
+    });
 
     // Create response message highlighting variety
     const responseMessage = `Here's your ${workoutType} workout! 
