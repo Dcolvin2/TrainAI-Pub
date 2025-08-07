@@ -76,6 +76,57 @@ export async function POST(request: Request) {
     console.log('Mentioned equipment:', mentionedEquipment);
     console.log('All available equipment:', allAvailableEquipment);
 
+    // Check if this is a modification request
+    const modificationKeywords = ['swap', 'replace', 'change', 'remove', 'different', 'instead', 'substitute', 'switch'];
+    const isModificationRequest = modificationKeywords.some(keyword => messageLower.includes(keyword));
+
+    if (isModificationRequest && currentWorkout) {
+      console.log('Modification request detected');
+      
+      // Extract which exercise to swap (simple version - can be enhanced)
+      let exerciseToSwap = null;
+      if (messageLower.includes('this')) {
+        // User said "swap this exercise" - need context
+        exerciseToSwap = 'the selected exercise';
+      } else {
+        // Try to find exercise name in message
+        // This is simplified - you might want to enhance this
+        const currentExercises = [
+          ...(currentWorkout.warmup || []),
+          ...(currentWorkout.main || []),
+          ...(currentWorkout.cooldown || [])
+        ];
+        
+        currentExercises.forEach((ex: any) => {
+          if (messageLower.includes(ex.name.toLowerCase())) {
+            exerciseToSwap = ex.name;
+          }
+        });
+      }
+      
+      // Get a replacement exercise
+      const { data: exercises } = await supabase
+        .from('exercises')
+        .select('*')
+        .limit(5);
+      
+      const replacement = exercises?.[Math.floor(Math.random() * exercises.length)];
+      
+      if (replacement) {
+        return NextResponse.json({
+          success: true,
+          isModification: true,
+          message: `Sure! Let's swap that out with ${replacement.name}. ${replacement.instruction || 'This is a great alternative that works similar muscles.'}`,
+          response: `Sure! Let's swap that out with ${replacement.name}. ${replacement.instruction || 'This is a great alternative that works similar muscles.'}`,
+          modification: {
+            original: exerciseToSwap,
+            replacement: replacement.name,
+            instruction: replacement.instruction
+          }
+        });
+      }
+    }
+
     // CRITICAL: Get exercises that match available equipment
     const { data: exercises } = await supabase
       .from('exercises')
