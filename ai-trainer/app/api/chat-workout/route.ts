@@ -154,14 +154,6 @@ CRITICAL INSTRUCTIONS:
 
 IMPORTANT: The message field must be concise but informative. Do NOT use generic phrases like "I've updated your workout based on your request." Keep explanations brief but specific to the equipment and workout type.
 
-CRITICAL: Your response message must be specific and informative. DO NOT use generic phrases like:
-- "I've updated your workout based on your request"
-- "I've updated your workout"
-- "based on your request"
-- Any other generic response
-
-Instead, provide specific information about the equipment and workout type.
-
 Return ONLY valid JSON, no other text.`;
 
     // If message contains "debug", return database info instead
@@ -265,15 +257,7 @@ Return ONLY valid JSON, no other text.`;
     }
 
     // Ensure we have a proper message
-    console.log('Original message from AI:', workoutData.message);
-    
-    if (!workoutData.message || 
-        workoutData.message === "Brief description of what was changed" || 
-        workoutData.message.includes("updated your workout based on your request") ||
-        workoutData.message.includes("I've updated your workout") ||
-        workoutData.message.includes("based on your request")) {
-      
-      console.log('Triggering fallback due to generic message');
+    if (!workoutData.message || workoutData.message === "Brief description of what was changed" || workoutData.message.includes("updated your workout based on your request")) {
       const detectedEquipment = mentionedEquipment.length > 0 ? mentionedEquipment.join(', ') : 'your available equipment';
       const workoutType = message.toLowerCase().includes('strength') ? 'strength' : 
                          message.toLowerCase().includes('cardio') ? 'cardio' : 
@@ -294,69 +278,28 @@ Return ONLY valid JSON, no other text.`;
       }
       
       workoutData.message = detailedMessage;
-      console.log('Replaced with:', workoutData.message);
     }
-    
-    // Additional check: if the message is still too generic, replace it
-    if (workoutData.message && (
-        workoutData.message.includes("updated your workout") ||
-        workoutData.message.includes("based on your request") ||
-        workoutData.message.length < 50
-    )) {
-      console.log('Triggering second fallback due to generic message');
-      const detectedEquipment = mentionedEquipment.length > 0 ? mentionedEquipment.join(', ') : 'your available equipment';
-      const workoutType = message.toLowerCase().includes('strength') ? 'strength' : 
-                         message.toLowerCase().includes('cardio') ? 'cardio' : 
-                         message.toLowerCase().includes('hiit') ? 'HIIT' : 'general fitness';
-      
-      let detailedMessage = `I've created a ${workoutType} workout using ${detectedEquipment}. `;
-      
-      if (mentionedEquipment.includes('Superbands')) {
-        detailedMessage += `Superbands add resistance to bodyweight exercises - wrap around your back for push-ups or use for assisted pull-ups.`;
-      } else if (mentionedEquipment.includes('Kettlebells')) {
-        detailedMessage += `Kettlebell exercises build explosive power and functional strength. Focus on proper form for swings and cleans.`;
-      } else if (mentionedEquipment.includes('Barbells')) {
-        detailedMessage += `Barbell exercises are excellent for building strength and muscle mass. Focus on compound movements.`;
-      } else if (mentionedEquipment.includes('Dumbbells')) {
-        detailedMessage += `Dumbbell exercises provide unilateral training and better range of motion.`;
-      } else {
-        detailedMessage += `The exercises are specifically chosen to match your equipment and fitness goals.`;
+
+    // Add more trigger phrases for better detection
+    const workoutTypes = {
+      'kettlebell': ['kettlebell workout', 'kb workout', 'kettlebells', 'kettlebell session'],
+      'dumbbell': ['dumbbell workout', 'db workout', 'dumbbells', 'dumbbell session'],
+      'barbell': ['barbell workout', 'bb workout', 'barbells', 'barbell session'],
+      'bodyweight': ['bodyweight workout', 'no equipment', 'body weight', 'calisthenics'],
+      'push': ['push workout', 'push day', 'chest workout', 'chest and triceps'],
+      'pull': ['pull workout', 'pull day', 'back workout', 'back and biceps'],
+      'legs': ['leg workout', 'leg day', 'legs', 'lower body']
+    };
+
+    // Check which type of workout is requested
+    let workoutType = null;
+    Object.entries(workoutTypes).forEach(([type, phrases]) => {
+      if (phrases.some(phrase => messageLower.includes(phrase))) {
+        workoutType = type;
       }
-      
-      workoutData.message = detailedMessage;
-      console.log('Second replacement with:', workoutData.message);
-    }
-    
-    // Final aggressive fallback: if user mentioned specific equipment, ensure we have a good response
-    if (mentionedEquipment.length > 0 && (
-        !workoutData.message ||
-        workoutData.message.includes("updated your workout") ||
-        workoutData.message.includes("based on your request") ||
-        workoutData.message.length < 30
-    )) {
-      console.log('Triggering final aggressive fallback');
-      const detectedEquipment = mentionedEquipment.join(', ');
-      const workoutType = message.toLowerCase().includes('strength') ? 'strength' : 
-                         message.toLowerCase().includes('cardio') ? 'cardio' : 
-                         message.toLowerCase().includes('hiit') ? 'HIIT' : 'general fitness';
-      
-      let detailedMessage = `I've created a ${workoutType} workout using ${detectedEquipment}. `;
-      
-      if (mentionedEquipment.includes('Superbands')) {
-        detailedMessage += `Superbands add resistance to bodyweight exercises - wrap around your back for push-ups or use for assisted pull-ups.`;
-      } else if (mentionedEquipment.includes('Kettlebells')) {
-        detailedMessage += `Kettlebell exercises build explosive power and functional strength. Focus on proper form for swings and cleans.`;
-      } else if (mentionedEquipment.includes('Barbells')) {
-        detailedMessage += `Barbell exercises are excellent for building strength and muscle mass. Focus on compound movements.`;
-      } else if (mentionedEquipment.includes('Dumbbells')) {
-        detailedMessage += `Dumbbell exercises provide unilateral training and better range of motion.`;
-      } else {
-        detailedMessage += `The exercises are specifically chosen to match your equipment and fitness goals.`;
-      }
-      
-      workoutData.message = detailedMessage;
-      console.log('Final replacement with:', workoutData.message);
-    }
+    });
+
+    console.log('Detected workout type:', workoutType);
 
     // UPDATE the workout session in database
     if (sessionId) {
@@ -373,10 +316,38 @@ Return ONLY valid JSON, no other text.`;
         .eq('id', sessionId);
     }
 
+    // Create a conversational response based on the request
+    let conversationalMessage = '';
+
+    if (mentionedEquipment.length > 0) {
+      const equipmentName = mentionedEquipment[0];
+      conversationalMessage = `Here's your ${equipmentName.toLowerCase()} workout for today! `;
+      
+      if (workoutData.workout && workoutData.workout.main && workoutData.workout.main.length > 0) {
+        conversationalMessage += `I've put together ${workoutData.workout.warmup?.length || 0} warm-up exercises, ${workoutData.workout.main.length} main exercises, and ${workoutData.workout.cooldown?.length || 0} cool-down stretches using ${equipmentName}. `;
+      }
+      
+      conversationalMessage += `Please let me know if you want to swap out any of the exercises or adjust the sets/reps!`;
+    } else if (messageLower.includes('workout')) {
+      conversationalMessage = `Here's your workout for today based on your available equipment! Let me know if you'd like to modify any exercises.`;
+    } else {
+      conversationalMessage = workoutData.message || `I've updated your workout based on your request.`;
+    }
+
+    // Return the response
     return NextResponse.json({
       success: true,
       workout: workoutData.workout,
-      message: workoutData.changes
+      message: conversationalMessage,
+      response: conversationalMessage, // Add this for backward compatibility
+      details: {
+        exerciseCount: {
+          warmup: workoutData.workout?.warmup?.length || 0,
+          main: workoutData.workout?.main?.length || 0,
+          cooldown: workoutData.workout?.cooldown?.length || 0
+        },
+        equipment: mentionedEquipment
+      }
     });
 
   } catch (error) {

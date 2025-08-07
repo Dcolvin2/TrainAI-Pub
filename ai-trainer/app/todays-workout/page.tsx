@@ -185,10 +185,45 @@ export default function TodaysWorkoutPage() {
             content: `Error: ${data.error}` 
           }]);
         } else {
-          setChatMessages(prev => [...prev, { 
-            role: 'assistant', 
-            content: data.message || data.response || data.changes || "I've updated your workout based on your request." 
-          }]);
+          // Add assistant response with workout details
+          if (data.workout && data.workout.main) {
+            // Format workout for display
+            let workoutDisplay = data.message + '\n\n';
+            
+            if (data.workout.warmup && data.workout.warmup.length > 0) {
+              workoutDisplay += '**🔥 Warm-up:**\n';
+              data.workout.warmup.forEach((ex, i) => {
+                workoutDisplay += `${i+1}. ${ex.name} - ${ex.sets || '2'} sets x ${ex.reps || '10'} reps\n`;
+              });
+              workoutDisplay += '\n';
+            }
+            
+            if (data.workout.main && data.workout.main.length > 0) {
+              workoutDisplay += '**💪 Main Workout:**\n';
+              data.workout.main.forEach((ex, i) => {
+                workoutDisplay += `${i+1}. ${ex.name} - ${ex.sets || '3'} sets x ${ex.reps || '8-12'} reps\n`;
+              });
+              workoutDisplay += '\n';
+            }
+            
+            if (data.workout.cooldown && data.workout.cooldown.length > 0) {
+              workoutDisplay += '**🧘 Cool-down:**\n';
+              data.workout.cooldown.forEach((ex, i) => {
+                workoutDisplay += `${i+1}. ${ex.name} - ${ex.duration || '30 seconds'}\n`;
+              });
+            }
+            
+            setChatMessages(prev => [...prev, {
+              role: 'assistant',
+              content: workoutDisplay
+            }]);
+          } else {
+            // Regular message without workout
+            setChatMessages(prev => [...prev, {
+              role: 'assistant',
+              content: data.message || data.response
+            }]);
+          }
           
           // If workout data is returned, update the display
           if (data.workout) {
