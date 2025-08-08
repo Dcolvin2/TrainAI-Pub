@@ -75,7 +75,7 @@ export class WorkoutService {
       .eq('user_id', userId)
       .eq('is_available', true);
 
-    const availableEquipment = userEquipment?.map(eq => eq.equipment.name) || [];
+    const availableEquipment = userEquipment?.map((eq: any) => eq.equipment.name) || [];
 
     // Get ALL exercises from both tables
     const [nikeResult, exercisesResult] = await Promise.all([
@@ -97,21 +97,21 @@ export class WorkoutService {
   private organizeExercises(nike: any[], regular: any[], equipment: string[]) {
     // Extract unique Nike exercises by phase
     const nikeByPhase = {
-      warmup: this.getUniqueNikeExercises(nike.filter(e => e.exercise_phase === 'warmup')),
-      main: this.getUniqueNikeExercises(nike.filter(e => e.exercise_phase === 'main')),
-      accessory: this.getUniqueNikeExercises(nike.filter(e => e.exercise_phase === 'accessory')),
-      cooldown: this.getUniqueNikeExercises(nike.filter(e => e.exercise_phase === 'cooldown'))
+      warmup: this.getUniqueNikeExercises(nike.filter((e: any) => e.exercise_phase === 'warmup')),
+      main: this.getUniqueNikeExercises(nike.filter((e: any) => e.exercise_phase === 'main')),
+      accessory: this.getUniqueNikeExercises(nike.filter((e: any) => e.exercise_phase === 'accessory')),
+      cooldown: this.getUniqueNikeExercises(nike.filter((e: any) => e.exercise_phase === 'cooldown'))
     };
 
     // Filter regular exercises by equipment availability
-    const regularFiltered = regular.filter(ex => {
+    const regularFiltered = regular.filter((ex: any) => {
       if (!ex.equipment_required || ex.equipment_required.length === 0) {
         // Allow bodyweight only for warmup/cooldown
         return ex.exercise_phase === 'warmup' || ex.exercise_phase === 'cooldown';
       }
       // Check if user has required equipment
-      return ex.equipment_required.some(req => 
-        equipment.some(userEq => 
+      return ex.equipment_required.some((req: string) => 
+        equipment.some((userEq: string) => 
           userEq.toLowerCase().includes(req.toLowerCase()) ||
           req.toLowerCase().includes(userEq.toLowerCase())
         )
@@ -120,13 +120,13 @@ export class WorkoutService {
 
     // Organize regular exercises by phase
     const regularByPhase = {
-      warmup: regularFiltered.filter(e => e.exercise_phase === 'warmup' || e.category === 'mobility'),
-      main: regularFiltered.filter(e => e.exercise_phase === 'main' || e.is_compound === true),
-      accessory: regularFiltered.filter(e => 
+      warmup: regularFiltered.filter((e: any) => e.exercise_phase === 'warmup' || e.category === 'mobility'),
+      main: regularFiltered.filter((e: any) => e.exercise_phase === 'main' || e.is_compound === true),
+      accessory: regularFiltered.filter((e: any) => 
         (e.exercise_phase === 'accessory' || e.category === 'hypertrophy') &&
         e.equipment_required && e.equipment_required.length > 0
       ),
-      cooldown: regularFiltered.filter(e => e.exercise_phase === 'cooldown' || 
+      cooldown: regularFiltered.filter((e: any) => e.exercise_phase === 'cooldown' || 
         (e.category === 'mobility' && e.name.toLowerCase().includes('stretch')))
     };
 
@@ -201,22 +201,22 @@ TIME STRUCTURE (${duration} minutes total):
 AVAILABLE EXERCISES:
 
 WARMUP (${exercises.warmup.length} available):
-${exercises.warmup.slice(0, 15).map(e => 
+${exercises.warmup.slice(0, 15).map((e: any) => 
   `- ${e.name || e.exercise}: ${e.instructions || e.instruction || 'Dynamic movement'}`
 ).join('\n')}
 
 MAIN EXERCISES for ${workoutType.toUpperCase()} (${exercises.main.length} available):
-${exercises.main.filter(e => this.matchesMuscleGroup(e, targetMuscles)).slice(0, 10).map(e => 
+${exercises.main.filter((e: any) => this.matchesMuscleGroup(e, targetMuscles)).slice(0, 10).map((e: any) => 
   `- ${e.name || e.exercise}: ${e.equipment_required?.join(', ') || this.inferEquipment(e.name || e.exercise)}`
 ).join('\n')}
 
 ACCESSORIES (${exercises.accessories.length} with equipment):
-${exercises.accessories.filter(e => this.matchesMuscleGroup(e, targetMuscles)).slice(0, 20).map(e => 
+${exercises.accessories.filter((e: any) => this.matchesMuscleGroup(e, targetMuscles)).slice(0, 20).map((e: any) => 
   `- ${e.name || e.exercise}: ${e.equipment_required?.join(', ') || this.inferEquipment(e.name || e.exercise)}`
 ).join('\n')}
 
 COOLDOWN (${exercises.cooldown.length} available):
-${exercises.cooldown.slice(0, 15).map(e => 
+${exercises.cooldown.slice(0, 15).map((e: any) => 
   `- ${e.name || e.exercise}: ${e.instructions || e.instruction || 'Hold 30-60 seconds'}`
 ).join('\n')}
 
@@ -248,7 +248,7 @@ Return JSON:
     const exerciseName = (exercise.name || exercise.exercise || '').toLowerCase();
     const primaryMuscle = (exercise.primary_muscle || '').toLowerCase();
     
-    return targetMuscles.some(muscle => 
+    return targetMuscles.some((muscle: string) => 
       exerciseName.includes(muscle) || 
       primaryMuscle.includes(muscle) ||
       this.inferMuscleFromName(exerciseName).includes(muscle)
