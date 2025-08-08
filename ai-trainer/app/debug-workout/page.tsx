@@ -23,8 +23,8 @@ export default function DebugWorkoutPage() {
       testResults.push({
         testNumber: i + 1,
         mainLift: data.workout?.main?.[0]?.name || 'NO MAIN LIFT',
-        accessories: data.workout?.main?.slice(1).map(e => e.name) || [],
-        warmups: data.workout?.warmup?.map(e => e.name) || [],
+        accessories: data.workout?.main?.slice(1).map((e: any) => e.name) || [],
+        warmups: data.workout?.warmup?.map((e: any) => e.name) || [],
         timestamp: new Date().toISOString()
       });
 
