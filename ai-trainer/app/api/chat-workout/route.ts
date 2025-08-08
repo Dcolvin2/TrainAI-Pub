@@ -593,6 +593,14 @@ export async function POST(request: Request) {
       cooldowns: workout.cooldown.map(e => e.name)
     });
 
+    // CRITICAL DEBUG - Right before returning
+    console.log('🚨 FINAL CHECK BEFORE RETURNING:');
+    console.log('Workout object:', JSON.stringify({
+      mainLift: workout.main?.[0]?.name,
+      accessories: workout.main?.slice(1).map(e => e.name),
+      warmups: workout.warmup?.map(e => e.name)
+    }, null, 2));
+
     // Create response message highlighting variety
     const responseMessage = `Here's your ${workoutType} workout! 
 
@@ -607,7 +615,13 @@ The main lift stays consistent for strength gains while everything else rotates 
     return NextResponse.json({
       success: true,
       message: responseMessage,
-      workout: workout
+      workout: workout,
+      debug: {
+        mainLiftName: workout.main?.[0]?.name,
+        accessoryNames: workout.main?.slice(1).map(e => e.name),
+        warmupNames: workout.warmup?.map(e => e.name),
+        timestamp: Date.now()
+      }
     });
 
   } catch (error) {
