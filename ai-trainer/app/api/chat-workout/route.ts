@@ -331,39 +331,38 @@ export async function POST(request: Request) {
     // ============ DEBUG ACCESSORY SELECTION ============
     console.log('🟢 === ACCESSORY DEBUG ===');
 
-    // Get all possible accessories
+    // Fisher-Yates shuffle function
+    function shuffle<T>(array: T[]): T[] {
+      const result = [...array];
+      for (let i = result.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [result[i], result[j]] = [result[j], result[i]];
+      }
+      return result;
+    }
+
+    // Get ALL accessories
     const { data: allAccessories } = await supabase
       .from('exercises')
-      .select('name, primary_muscle')
-      .in('primary_muscle', accessoryMuscles)
+      .select('*')
+      .in('primary_muscle', ['chest', 'shoulders', 'triceps'])
+      .neq('name', mainLift)  // Exclude the main lift
+      .not('name', 'ilike', '%bench press%')  // Exclude other bench variations
+      .not('name', 'ilike', '%overhead press%')  // Exclude other presses
       .limit(100);
 
-    console.log('1️⃣ Total accessories in DB:', allAccessories?.length);
-    console.log('2️⃣ First 5 accessories:', allAccessories?.slice(0, 5).map(e => e.name));
+    console.log(`Found ${allAccessories?.length} total accessories`);
 
-    // Check what was used recently
-    const recentAccessoryNames: string[] = [];
-    recentWorkouts?.forEach(w => {
-      w.planned_exercises?.main?.forEach((ex: any) => {
-        if (!ex.isMainLift) recentAccessoryNames.push(ex.name);
-      });
+    // Shuffle ALL accessories properly
+    const shuffledAccessories = shuffle(allAccessories || []);
+
+    // Take the first 4 from the shuffled list
+    const selectedAccessories = shuffledAccessories.slice(0, 4);
+
+    console.log('Selected accessories after proper shuffle:');
+    selectedAccessories.forEach((acc, i) => {
+      console.log(`  ${i + 1}. ${acc.name}`);
     });
-    console.log('3️⃣ Recently used accessories:', recentAccessoryNames);
-
-    // Filter for fresh ones
-    const freshAccessories = allAccessories?.filter(ex => 
-      !recentAccessoryNames.includes(ex.name) && !isCoreLift(ex.name)
-    );
-    console.log('4️⃣ Fresh accessories available:', freshAccessories?.length);
-    console.log('5️⃣ Fresh accessory names:', freshAccessories?.slice(0, 10).map(e => e.name));
-
-    // Show the shuffle
-    const beforeShuffle = freshAccessories?.slice(0, 4).map(e => e.name);
-    console.log('6️⃣ Before shuffle (first 4):', beforeShuffle);
-
-    const shuffled = [...(freshAccessories || [])].sort(() => Math.random() - 0.5);
-    const afterShuffle = shuffled.slice(0, 4).map(e => e.name);
-    console.log('7️⃣ After shuffle (selected 4):', afterShuffle);
 
     // ============ DEBUG WARMUP SELECTION ============
     console.log('🟡 === WARMUP DEBUG ===');
@@ -407,7 +406,7 @@ export async function POST(request: Request) {
     // Check data structure before building workout
     console.log('🔍 === DATA STRUCTURE CHECK ===');
     console.log('Main lift is array?', Array.isArray(mainLift));
-    console.log('First accessory is array?', Array.isArray(shuffled?.[0]));
+    console.log('First accessory is array?', Array.isArray(selectedAccessories?.[0]));
     console.log('First warmup is array?', Array.isArray(warmupShuffle?.[0]));
 
     // Get the main lift details
@@ -435,43 +434,6 @@ export async function POST(request: Request) {
     });
 
     console.log('Recently used accessories:', Array.from(recentAccessories));
-
-    // Get a large pool of potential accessories
-    const { data: allAccessoryExercises } = await supabase
-      .from('exercises')
-      .select('*')
-      .in('primary_muscle', accessoryMuscles)
-      .limit(100); // Get lots of options
-
-    console.log('📊 Accessories found:', allAccessoryExercises?.length);
-    console.log('🔍 First accessory from DB:', allAccessoryExercises?.[0]);
-    console.log('🔍 Is it an array?', Array.isArray(allAccessoryExercises?.[0]));
-
-    // Filter out main lifts and recently used
-    const freshAccessoriesFiltered = allAccessoryExercises?.filter(ex => {
-      // Never use a main lift as an accessory
-      if (isCoreLift(ex.name)) return false;
-      
-      // Prefer exercises not recently used
-      if (recentAccessories.has(ex.name)) return false;
-      
-      return true;
-    });
-
-    console.log('🔄 Fresh accessories:', freshAccessoriesFiltered?.map(e => e.name));
-
-    // IMPORTANT: Fully randomize the array before selecting
-    const shuffledAccessories = freshAccessoriesFiltered
-      ?.sort(() => Math.random() - 0.5)  // First shuffle
-      .sort(() => Math.random() - 0.5)  // Double shuffle for better randomization
-      .slice(0, 5);  // Take 5 (we'll use 4, but have a backup)
-
-    console.log('✨ Final selected accessories:', shuffledAccessories?.map(e => e.name));
-    console.log('🔍 Accessory structure check:', {
-      firstAccessory: shuffledAccessories?.[0],
-      isArray: Array.isArray(shuffledAccessories?.[0]),
-      name: shuffledAccessories?.[0]?.name
-    });
 
     // Get FRESH warmup exercises (avoiding recent ones)
     const { data: allWarmupExercises } = await supabase
@@ -531,7 +493,7 @@ export async function POST(request: Request) {
       mainLift = newMainLift;
     }
 
-    // Build the workout with proper structure
+    // Build the workout
     const workout = {
       warmup: randomWarmups?.map(ex => ({
         name: ex.name,
@@ -541,24 +503,22 @@ export async function POST(request: Request) {
       })) || [],
       
       main: [
-        // The ONE main lift - handle array vs object properly
+        // The ONE main lift
         {
-          name: Array.isArray(mainLiftData) ? mainLiftData[0]?.name : mainLiftData?.name || mainLift,
+          name: mainLift,
           sets: '4-5',
           reps: '3-5',
-          instruction: Array.isArray(mainLiftData) ? mainLiftData[0]?.instruction : mainLiftData?.instruction || 'Main lift - focus on progressive overload',
-          isMainLift: true,
-          restMinutes: '3-5'
+          instruction: 'Main lift - progressive overload',
+          isMainLift: true
         },
-        // All 4 accessories - handle array vs object properly
-        ...(shuffledAccessories?.slice(0, 4).map(ex => ({
-          name: Array.isArray(ex) ? ex[0]?.name : ex.name,
+        // Use the properly shuffled accessories
+        ...selectedAccessories.map(acc => ({
+          name: acc.name,
           sets: '3',
           reps: '8-12',
-          instruction: Array.isArray(ex) ? ex[0]?.instruction : ex.instruction,
-          isAccessory: true,
-          restMinutes: '1.5-2'
-        })) || [])
+          instruction: acc.instruction,
+          isAccessory: true
+        }))
       ],
       
       cooldown: randomCooldowns?.map(ex => ({
@@ -606,7 +566,7 @@ export async function POST(request: Request) {
 
 **Today's Focus:** ${mainLift} (${mainLiftData?.instruction || 'Progressive overload day'})
 
-I've selected ${shuffledAccessories?.length || 0} fresh accessory exercises you haven't done recently, along with new warmup and cooldown routines. 
+I've selected ${selectedAccessories?.length || 0} fresh accessory exercises you haven't done recently, along with new warmup and cooldown routines. 
 
 ${lastPerformance ? `Last ${mainLift}: ${lastPerformance.actual_weight}lbs x ${lastPerformance.reps}. Try to beat it!` : ''}
 
