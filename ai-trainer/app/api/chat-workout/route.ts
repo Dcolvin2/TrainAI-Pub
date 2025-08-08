@@ -367,40 +367,17 @@ export async function POST(request: Request) {
     // ============ DEBUG WARMUP SELECTION ============
     console.log('🟡 === WARMUP DEBUG ===');
 
-    // Get ALL warmup exercises from the database
-    const { data: allWarmupExercises } = await supabase
+    const { data: warmupExercises } = await supabase
       .from('exercises')
-      .select('*')
+      .select('name')
       .eq('exercise_phase', 'warmup')
-      .limit(200); // Get more warmups for variety
+      .limit(30);
 
-    console.log('1️⃣ Total warmups available:', allWarmupExercises?.length);
-    console.log('2️⃣ Sample warmups:', allWarmupExercises?.slice(0, 5).map(e => e.name));
+    console.log('1️⃣ Total warmups available:', warmupExercises?.length);
+    console.log('2️⃣ Sample warmups:', warmupExercises?.slice(0, 5).map(e => e.name));
 
-    // Shuffle ALL warmups properly using Fisher-Yates
-    const shuffledWarmups = shuffle(allWarmupExercises || []);
-    const selectedWarmups = shuffledWarmups.slice(0, 3);
-
-    console.log('3️⃣ Selected warmups after shuffle:', selectedWarmups.map(e => e.name));
-
-    // ============ DEBUG COOLDOWN SELECTION ============
-    console.log('🟣 === COOLDOWN DEBUG ===');
-
-    // Get ALL cooldown exercises from the database
-    const { data: allCooldownExercises } = await supabase
-      .from('exercises')
-      .select('*')
-      .eq('exercise_phase', 'cooldown')
-      .limit(200); // Get more cooldowns for variety
-
-    console.log('1️⃣ Total cooldowns available:', allCooldownExercises?.length);
-    console.log('2️⃣ Sample cooldowns:', allCooldownExercises?.slice(0, 5).map(e => e.name));
-
-    // Shuffle ALL cooldowns properly using Fisher-Yates
-    const shuffledCooldowns = shuffle(allCooldownExercises || []);
-    const selectedCooldowns = shuffledCooldowns.slice(0, 3);
-
-    console.log('3️⃣ Selected cooldowns after shuffle:', selectedCooldowns.map(e => e.name));
+    const warmupShuffle = [...(warmupExercises || [])].sort(() => Math.random() - 0.5);
+    console.log('3️⃣ Selected warmups:', warmupShuffle.slice(0, 3).map(e => e.name));
 
     // ============ FORCE COMPLETE RANDOMIZATION ============
     console.log('🟠 === FORCE RANDOMIZATION DEBUG ===');
@@ -430,8 +407,7 @@ export async function POST(request: Request) {
     console.log('🔍 === DATA STRUCTURE CHECK ===');
     console.log('Main lift is array?', Array.isArray(mainLift));
     console.log('First accessory is array?', Array.isArray(selectedAccessories?.[0]));
-    console.log('First warmup is array?', Array.isArray(selectedWarmups?.[0]));
-    console.log('First cooldown is array?', Array.isArray(selectedCooldowns?.[0]));
+    console.log('First warmup is array?', Array.isArray(warmupShuffle?.[0]));
 
     // Get the main lift details
     const { data: mainLiftData } = await supabase
@@ -459,6 +435,40 @@ export async function POST(request: Request) {
 
     console.log('Recently used accessories:', Array.from(recentAccessories));
 
+    // Get FRESH warmup exercises (avoiding recent ones)
+    const { data: allWarmupExercises } = await supabase
+      .from('exercises')
+      .select('*')
+      .eq('exercise_phase', 'warmup')
+      .limit(50);
+
+    // Filter out recently used and randomize
+    const freshWarmups = allWarmupExercises
+      ?.filter(ex => !recentlyUsedExercises.has(ex.name))
+      .sort(() => 0.5 - Math.random())
+      .slice(0, 3) || [];
+
+    // If we don't have enough fresh ones, use any warmups
+    const randomWarmups = freshWarmups.length >= 3 
+      ? freshWarmups 
+      : allWarmupExercises?.sort(() => 0.5 - Math.random()).slice(0, 3) || [];
+
+    // Get FRESH cooldown exercises
+    const { data: allCooldownExercises } = await supabase
+      .from('exercises')
+      .select('*')
+      .eq('exercise_phase', 'cooldown')
+      .limit(50);
+
+    const freshCooldowns = allCooldownExercises
+      ?.filter(ex => !recentlyUsedExercises.has(ex.name))
+      .sort(() => 0.5 - Math.random())
+      .slice(0, 3) || [];
+
+    const randomCooldowns = freshCooldowns.length >= 3
+      ? freshCooldowns
+      : allCooldownExercises?.sort(() => 0.5 - Math.random()).slice(0, 3) || [];
+
     // Get last performance for the main lift
     const { data: lastPerformance } = await supabase
       .from('workout_sets')
@@ -485,7 +495,7 @@ export async function POST(request: Request) {
 
     // Build the workout
     const workout = {
-      warmup: selectedWarmups?.map((ex: any) => ({
+      warmup: randomWarmups?.map(ex => ({
         name: ex.name,
         sets: '2',
         reps: '10-15',
@@ -511,7 +521,7 @@ export async function POST(request: Request) {
         }))
       ],
       
-      cooldown: selectedCooldowns?.map((ex: any) => ({
+      cooldown: randomCooldowns?.map(ex => ({
         name: ex.name,
         duration: '30-60 seconds',
         instruction: ex.instruction

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { RestTimer } from './RestTimer';
 
 interface Exercise {
   name: string;
@@ -22,48 +23,49 @@ interface WorkoutDisplayProps {
 }
 
 export function WorkoutDisplay({ workout, onFinish }: WorkoutDisplayProps) {
-  const [restTimer, setRestTimer] = useState<number | null>(null);
-  const [isResting, setIsResting] = useState(false);
+  const [showRestTimer, setShowRestTimer] = useState(false);
+  const [currentExercise, setCurrentExercise] = useState<string>('');
 
-  const startRestTimer = (seconds: number) => {
-    setRestTimer(seconds);
-    setIsResting(true);
+  const startRestTimer = (exerciseName: string) => {
+    setCurrentExercise(exerciseName);
+    setShowRestTimer(true);
   };
 
-  useEffect(() => {
-    if (restTimer && restTimer > 0) {
-      const timer = setTimeout(() => {
-        setRestTimer(restTimer - 1);
-      }, 1000);
-      return () => clearTimeout(timer);
-    } else if (restTimer === 0) {
-      setIsResting(false);
-      setRestTimer(null);
-    }
-  }, [restTimer]);
+  const handleRestComplete = () => {
+    setShowRestTimer(false);
+    setCurrentExercise('');
+  };
 
   return (
     <div className="min-h-screen bg-black text-white p-6">
-      {/* Rest Timer Bar at Top */}
-      {isResting && (
-        <div className="fixed top-0 left-0 right-0 bg-gray-900 p-4 z-50">
-          <div className="max-w-4xl mx-auto">
-            <div className="flex justify-between items-center">
-              <span className="text-lg">Rest Timer</span>
-              <span className="text-2xl font-bold">{restTimer}s</span>
+      {/* Rest Timer Modal */}
+      {showRestTimer && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-xl p-6 max-w-md w-full mx-4">
+            <div className="text-center mb-4">
+              <h3 className="text-xl font-semibold text-white mb-2">
+                Rest Timer
+              </h3>
+              <p className="text-gray-400">
+                Resting after: <span className="text-green-400">{currentExercise}</span>
+              </p>
             </div>
-            <div className="w-full bg-gray-800 h-2 mt-2 rounded">
-              <div 
-                className="bg-green-500 h-full rounded transition-all"
-                style={{ width: `${((restTimer || 0) / 60) * 100}%` }}
-              />
-            </div>
+            <RestTimer 
+              defaultRestTime={180} 
+              onRestComplete={handleRestComplete}
+            />
+            <button
+              onClick={handleRestComplete}
+              className="w-full mt-4 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            >
+              Skip Rest
+            </button>
           </div>
         </div>
       )}
 
       {/* Main Content */}
-      <div className="max-w-4xl mx-auto mt-20">
+      <div className="max-w-4xl mx-auto">
         {/* Workout Header */}
         <h1 className="text-3xl font-bold mb-8">{workout.name}</h1>
 
@@ -85,7 +87,7 @@ export function WorkoutDisplay({ workout, onFinish }: WorkoutDisplayProps) {
           <ExerciseCard 
             key={idx}
             exercise={exercise}
-            onStartRest={() => startRestTimer(60)}
+            onStartRest={() => startRestTimer(exercise.name)}
           />
         ))}
 
@@ -137,6 +139,11 @@ function ExerciseCard({ exercise, onStartRest }: ExerciseCardProps) {
     setSets(prev => prev.map((set, idx) => 
       idx === index ? { ...set, completed: !set.completed } : set
     ));
+    
+    // Start rest timer when a set is completed
+    if (!sets[index].completed) {
+      onStartRest();
+    }
   };
 
   return (
@@ -170,7 +177,7 @@ function ExerciseCard({ exercise, onStartRest }: ExerciseCardProps) {
             <input
               type="checkbox"
               checked={set.completed || false}
-              onChange={(e) => completeSet(idx)}
+              onChange={() => completeSet(idx)}
               className="w-5 h-5 cursor-pointer text-green-500 bg-gray-800 border-gray-600 rounded focus:ring-green-500 focus:ring-2"
               disabled={false}
             />
@@ -178,12 +185,20 @@ function ExerciseCard({ exercise, onStartRest }: ExerciseCardProps) {
         ))}
       </div>
       
-      <button
-        onClick={onStartRest}
-        className="mt-4 text-green-500 hover:text-green-400"
-      >
-        + Add Set
-      </button>
+      <div className="flex justify-between items-center mt-4">
+        <button
+          onClick={onStartRest}
+          className="text-green-500 hover:text-green-400"
+        >
+          + Add Set
+        </button>
+        <button
+          onClick={onStartRest}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          Start Rest Timer
+        </button>
+      </div>
     </div>
   );
 } 

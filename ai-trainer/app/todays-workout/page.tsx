@@ -5,6 +5,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { generateWorkoutForType, getWorkoutSuggestions, saveWorkout } from '@/lib/workoutGenerator';
 import { WorkoutDisplay } from '../components/WorkoutDisplay';
+import { RestTimer } from '../components/RestTimer';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -73,6 +74,7 @@ export default function TodaysWorkoutPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [generatedWorkout, setGeneratedWorkout] = useState<GeneratedWorkout | null>(null);
   const [previousWorkoutData, setPreviousWorkoutData] = useState<any>({});
+  const [showRestTimer, setShowRestTimer] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new messages are added
@@ -558,8 +560,26 @@ export default function TodaysWorkoutPage() {
           <div className="lg:col-span-1">
             <div className="bg-gray-900 rounded-lg h-[500px] flex flex-col">
               <div className="p-4 border-b border-gray-800">
-                <h3 className="text-lg font-semibold">AI Workout Assistant</h3>
+                <div className="flex justify-between items-center">
+                  <h3 className="text-lg font-semibold">AI Workout Assistant</h3>
+                  <button
+                    onClick={() => setShowRestTimer(!showRestTimer)}
+                    className="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                  >
+                    {showRestTimer ? 'Hide' : 'Show'} Rest Timer
+                  </button>
+                </div>
               </div>
+              
+              {/* Rest Timer */}
+              {showRestTimer && (
+                <div className="p-4 border-b border-gray-800">
+                  <RestTimer 
+                    defaultRestTime={180} 
+                    onRestComplete={() => setShowRestTimer(false)}
+                  />
+                </div>
+              )}
               
               {/* Chat Messages */}
               <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -583,7 +603,7 @@ export default function TodaysWorkoutPage() {
                     >
                       <p className="whitespace-pre-wrap break-words">{msg.content}</p>
                     </div>
-                </div>
+                  </div>
                 ))}
                 
                 {isLoading && (
@@ -591,8 +611,8 @@ export default function TodaysWorkoutPage() {
                     <div className="bg-gray-800 rounded-lg px-4 py-2">
                       <span className="text-gray-400 animate-pulse">Thinking...</span>
                     </div>
-                </div>
-              )}
+                  </div>
+                )}
               
               {/* Auto-scroll target */}
               <div ref={chatEndRef} />
@@ -620,8 +640,48 @@ export default function TodaysWorkoutPage() {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+      
+      {/* Floating Rest Timer Button */}
+      <div className="fixed bottom-6 right-6 z-50">
+        <button
+          onClick={() => setShowRestTimer(!showRestTimer)}
+          className="bg-blue-600 hover:bg-blue-700 text-white rounded-full p-4 shadow-lg transition-all duration-200 hover:scale-105"
+          title="Rest Timer"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" />
+            <polyline points="12,6 12,12 16,14" />
+          </svg>
+        </button>
+      </div>
+      
+      {/* Floating Rest Timer Modal */}
+      {showRestTimer && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-xl p-6 max-w-md w-full mx-4">
+            <div className="text-center mb-4">
+              <h3 className="text-xl font-semibold text-white mb-2">
+                Rest Timer
+              </h3>
+              <p className="text-gray-400">
+                Take a break between sets
+              </p>
             </div>
+            <RestTimer 
+              defaultRestTime={180} 
+              onRestComplete={() => setShowRestTimer(false)}
+            />
+            <button
+              onClick={() => setShowRestTimer(false)}
+              className="w-full mt-4 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            >
+              Close
+            </button>
           </div>
+        </div>
+      )}
     </div>
   );
 }
