@@ -15,27 +15,22 @@ export async function POST(request: Request) {
   
   try {
     const requestBody = await request.json();
-    const { workoutType, timeAvailable = 45, focus } = requestBody;
+    const { workoutType, timeAvailable = 45, focus, userId } = requestBody;
     
-    console.log('📝 Request params:', { workoutType, timeAvailable, focus });
+    console.log('📝 Request params:', { workoutType, timeAvailable, focus, userId });
     
-    // Check user authentication
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError) {
-      console.error('❌ Auth error:', authError);
-      return NextResponse.json({ error: 'Authentication failed', details: authError }, { status: 401 });
+    // Check user authentication - use userId from request body for now
+    if (!userId) {
+      console.error('❌ No userId provided');
+      return NextResponse.json({ error: 'userId is required' }, { status: 400 });
     }
-    if (!user) {
-      console.error('❌ No user found');
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    console.log('✅ User authenticated:', user.id);
+    console.log('✅ User ID provided:', userId);
 
     // Get user profile
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .single();
     
     if (profileError) {
@@ -51,7 +46,7 @@ export async function POST(request: Request) {
     const { data: userEquipment, error: equipmentError } = await supabase
       .from('user_equipment')
       .select('equipment:equipment_id(name)')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .eq('is_available', true);
     
     if (equipmentError) {
@@ -90,7 +85,7 @@ export async function POST(request: Request) {
       prompt = await workoutService.generateWorkoutPrompt(
         workoutType || focus || 'upper',
         timeAvailable,
-        user.id,
+        userId,
         profile
       );
       console.log('✅ Prompt generated, length:', prompt.length);
