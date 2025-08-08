@@ -65,33 +65,79 @@ export class WorkoutService {
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     );
+    console.log('🔧 WorkoutService constructor called');
   }
 
   async getAllAvailableExercises(userId: string) {
+    console.log('🔍 Getting exercises for user:', userId);
+    
     // Get user's available equipment
-    const { data: userEquipment } = await this.supabase
+    const { data: userEquipment, error: equipError } = await this.supabase
       .from('user_equipment')
       .select('equipment:equipment_id(name)')
       .eq('user_id', userId)
       .eq('is_available', true);
 
-    const availableEquipment = userEquipment?.map((eq: any) => eq.equipment.name) || [];
+    if (equipError) {
+      console.error('❌ Error fetching user equipment:', equipError);
+      throw new Error(`Equipment fetch failed: ${equipError.message}`);
+    }
+
+    const availableEquipment = userEquipment?.map((eq: any) => eq.equipment?.name).filter(Boolean) || [];
+    console.log('📦 Available equipment:', availableEquipment);
 
     // Get ALL exercises from both tables
+    console.log('📚 Fetching exercises from both tables...');
+    
     const [nikeResult, exercisesResult] = await Promise.all([
       this.supabase
         .from('nike_workouts')
-        .select('*'),
+        .select('*')
+        .limit(500), // Add limit to prevent timeout
       this.supabase
         .from('exercises')
         .select('*')
+        .limit(500) // Add limit to prevent timeout
     ]);
+
+    if (nikeResult.error) {
+      console.error('❌ Error fetching nike_workouts:', nikeResult.error);
+      throw new Error(`Nike workouts fetch failed: ${nikeResult.error.message}`);
+    }
+
+    if (exercisesResult.error) {
+      console.error('❌ Error fetching exercises:', exercisesResult.error);
+      throw new Error(`Exercises fetch failed: ${exercisesResult.error.message}`);
+    }
 
     const nike = nikeResult.data || [];
     const regular = exercisesResult.data || [];
 
+    console.log('📊 Fetched data:', {
+      nikeCount: nike.length,
+      regularCount: regular.length,
+      totalCount: nike.length + regular.length
+    });
+
+    // Sample some exercises for debugging
+    if (nike.length > 0) {
+      console.log('🏃 Sample Nike exercise:', nike[0]);
+    }
+    if (regular.length > 0) {
+      console.log('💪 Sample regular exercise:', regular[0]);
+    }
+
     // Organize by phase and equipment
-    return this.organizeExercises(nike, regular, availableEquipment);
+    const organized = this.organizeExercises(nike, regular, availableEquipment);
+    
+    console.log('✅ Exercises organized:', {
+      warmupCount: organized.warmup.length,
+      mainCount: organized.main.length,
+      accessoriesCount: organized.accessories.length,
+      cooldownCount: organized.cooldown.length
+    });
+
+    return organized;
   }
 
   private organizeExercises(nike: any[], regular: any[], equipment: string[]) {
@@ -175,11 +221,23 @@ export class WorkoutService {
     userId: string,
     profile: any
   ) {
-    const exercises = await this.getAllAvailableExercises(userId);
+    console.log('🎯 Generating prompt for:', { workoutType, duration, userId });
+    
+    let exercises;
+    try {
+      exercises = await this.getAllAvailableExercises(userId);
+    } catch (error) {
+      console.error('❌ Failed to get exercises:', error);
+      throw error;
+    }
+
     const structure = TIME_STRUCTURES[duration] || TIME_STRUCTURES[45];
     const targetMuscles = this.getTargetMuscles(workoutType);
+    
+    console.log('📋 Workout structure:', structure);
+    console.log('💪 Target muscles:', targetMuscles);
 
-    return `Create a ${duration}-minute ${workoutType} workout using exercises from our comprehensive database.
+    const prompt = `Create a ${duration}-minute ${workoutType} workout using exercises from our comprehensive database.
 
 DATABASE STATS:
 - Total exercises available: ${exercises.totals.combined} (${exercises.totals.nike} Nike + ${exercises.totals.regular} regular)
@@ -189,7 +247,7 @@ DATABASE STATS:
 - Cooldown options: ${exercises.totals.byPhase.cooldown}
 
 USER PROFILE:
-- Current: ${profile.current_weight} lbs → Goal: ${profile.goal_weight} lbs
+- Current: ${profile?.current_weight || 'N/A'} lbs → Goal: ${profile?.goal_weight || 'N/A'} lbs
 - Available Equipment: ${exercises.equipment.join(', ')}
 
 TIME STRUCTURE (${duration} minutes total):
@@ -242,6 +300,10 @@ Return JSON:
     {"name": "Exercise from cooldown list", "duration": "60 seconds"}
   ]
 }`;
+    
+    console.log('✅ Prompt generated, total exercises available:', exercises.totals.combined);
+    
+    return prompt;
   }
 
   private matchesMuscleGroup(exercise: any, targetMuscles: string[]): boolean {
