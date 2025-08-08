@@ -247,7 +247,7 @@ DATABASE STATS:
 - Cooldown options: ${exercises.totals.byPhase.cooldown}
 
 USER PROFILE:
-- Current: ${profile?.current_weight || 'N/A'} lbs → Goal: ${profile?.goal_weight || 'N/A'} lbs
+- Current: ${profile?.current_weight || 'Not set'} lbs → Goal: ${profile?.goal_weight || 'Not set'} lbs
 - Available Equipment: ${exercises.equipment.join(', ')}
 
 TIME STRUCTURE (${duration} minutes total):

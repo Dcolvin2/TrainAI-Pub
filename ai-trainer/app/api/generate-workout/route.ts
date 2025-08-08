@@ -26,37 +26,62 @@ export async function POST(request: Request) {
     }
     console.log('✅ User ID provided:', userId);
 
-    // Get user profile
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('user_id', userId)
-      .single();
-    
-    if (profileError) {
-      console.error('❌ Profile error:', profileError);
-      return NextResponse.json({ error: 'Failed to get profile', details: profileError }, { status: 500 });
+    // Get user profile - make it optional with defaults
+    let profile = null;
+    try {
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+      
+      if (profileError) {
+        console.log('⚠️ Profile not found, using defaults:', profileError.message);
+        // Profile doesn't exist, use defaults
+        profile = {
+          current_weight: null,
+          goal_weight: null,
+          first_name: null,
+          last_name: null
+        };
+      } else {
+        profile = profileData;
+        console.log('✅ Profile loaded:', { 
+          current_weight: profile?.current_weight, 
+          goal_weight: profile?.goal_weight 
+        });
+      }
+    } catch (error) {
+      console.log('⚠️ Profile error, using defaults:', error);
+      profile = {
+        current_weight: null,
+        goal_weight: null,
+        first_name: null,
+        last_name: null
+      };
     }
-    console.log('✅ Profile loaded:', { 
-      current_weight: profile?.current_weight, 
-      goal_weight: profile?.goal_weight 
-    });
 
     // Get user equipment directly to debug
-    const { data: userEquipment, error: equipmentError } = await supabase
-      .from('user_equipment')
-      .select('equipment:equipment_id(name)')
-      .eq('user_id', userId)
-      .eq('is_available', true);
-    
-    if (equipmentError) {
-      console.error('❌ Equipment error:', equipmentError);
-      return NextResponse.json({ error: 'Failed to get equipment', details: equipmentError }, { status: 500 });
+    let equipmentList: string[] = [];
+    try {
+      const { data: userEquipment, error: equipmentError } = await supabase
+        .from('user_equipment')
+        .select('equipment:equipment_id(name)')
+        .eq('user_id', userId)
+        .eq('is_available', true);
+      
+      if (equipmentError) {
+        console.log('⚠️ Equipment error, using empty list:', equipmentError.message);
+        equipmentList = [];
+      } else {
+        equipmentList = userEquipment?.map((eq: any) => eq.equipment?.name).filter(Boolean) || [];
+        console.log('✅ User equipment found:', equipmentList);
+        console.log('📊 Equipment count:', equipmentList.length);
+      }
+    } catch (error) {
+      console.log('⚠️ Equipment fetch error, using empty list:', error);
+      equipmentList = [];
     }
-    
-    const equipmentList = userEquipment?.map((eq: any) => eq.equipment?.name).filter(Boolean) || [];
-    console.log('✅ User equipment found:', equipmentList);
-    console.log('📊 Equipment count:', equipmentList.length);
 
     // Check if tables have data
     const { count: nikeCount } = await supabase
