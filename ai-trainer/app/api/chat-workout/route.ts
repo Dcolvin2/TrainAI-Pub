@@ -34,16 +34,26 @@ async function getAvailableEquipmentNames(userId: string) {
 
 export async function POST(req: Request) {
   const url = new URL(req.url);
-  const user = url.searchParams.get('user');
-  if (!user) {
-    return NextResponse.json({ ok: false, error: 'Missing ?user=<uuid>' }, { status: 400 });
+  let userId = url.searchParams.get('user') || undefined;
+
+  // Try to read body, but don't crash if it's empty
+  let body: any = {};
+  try { body = await req.json(); } catch { /* no body */ }
+
+  if (!userId) userId = body?.user || body?.sessionId || body?.user_id;
+
+  if (!userId) {
+    return NextResponse.json(
+      { ok: false, error: 'Missing user (qs ?user=… or body { user })' },
+      { status: 400 }
+    );
   }
 
-  const { message = '' } = await req.json().catch(() => ({ message: '' }));
+  const message = (body?.message ?? '').toString().trim();
 
   try {
     // pull equipment with admin client
-    const names = await getAvailableEquipmentNames(user);
+    const names = await getAvailableEquipmentNames(userId);
     const has = (label: string) => names.some(n => n.toLowerCase() === label.toLowerCase());
 
     // simple routing example: kettlebell if you actually have Kettlebells
@@ -51,7 +61,7 @@ export async function POST(req: Request) {
       return NextResponse.json({
         ok: true,
         message: 'Planned: Kettlebell Strength & Conditioning (~45 min).',
-        debug: { user, equipmentCount: names.length, usedServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY },
+        debug: { user: userId, equipmentCount: names.length, usedServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY },
         // ...build the kettlebell plan here...
       });
     }
@@ -61,7 +71,7 @@ export async function POST(req: Request) {
       return NextResponse.json({
         ok: true,
         message: "I don't see Kettlebells in your equipment list. Want me to plan a bodyweight session or use Dumbbells instead?",
-        debug: { user, equipment: names },
+        debug: { user: userId, equipment: names },
       });
     }
 
@@ -69,7 +79,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       message: 'Planned: Bodyweight Full Body Strength (~45 min).',
-      debug: { user, equipmentCount: names.length },
+      debug: { user: userId, equipmentCount: names.length },
     });
   } catch (err: any) {
     console.error('chat-workout error', err?.message ?? err);

@@ -30,11 +30,13 @@ export default function ApiTester() {
       url = `/api/debug/equipment${userId ? `?user=${encodeURIComponent(userId)}` : ''}`;
       init = { method: 'GET' };
     } else {
-      url = '/api/chat-workout';
+      // Always append ?user=<uuid> to the URL for chat-workout
+      const sep = '/api/chat-workout'.includes('?') ? '&' : '?';
+      url = `/api/chat-workout${sep}user=${encodeURIComponent(userId || 'demo-user')}`;
       init = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, sessionId: userId || 'demo-user' }),
+        body: JSON.stringify({ user: userId || 'demo-user', message }),
       };
     }
 

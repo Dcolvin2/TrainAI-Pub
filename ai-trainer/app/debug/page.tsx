@@ -14,10 +14,13 @@ export default function DebugPage() {
   }
 
   async function postChat() {
-    const res = await fetch('/api/chat-workout', {
+    // Always append ?user=<uuid> to the URL for chat-workout
+    const url = `/api/chat-workout?user=${encodeURIComponent(user)}`;
+    
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ message: msg, sessionId: user }),
+      body: JSON.stringify({ user: user, message: msg }),
     });
     setOut(await res.json());
   }
