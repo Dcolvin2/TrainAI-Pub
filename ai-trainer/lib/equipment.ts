@@ -6,27 +6,21 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+// Returns equipment names for a user, only where is_available = true (or null)
 export async function getUserEquipmentNames(userId: string): Promise<string[]> {
-  // 1) pull user_equipment rows
-  const { data: ue, error: ueErr } = await supabase
+  const { data, error } = await supabase
     .from('user_equipment')
-    .select('equipment_id, is_available')
+    .select('equipment:equipment_id(name), is_available')
     .eq('user_id', userId)
-    .eq('is_available', true);
+    .or('is_available.is.null,is_available.eq.true'); // keeps rows where flag is missing or true
 
-  if (ueErr || !ue || ue.length === 0) return [];
+  if (error) throw error;
 
-  const ids = ue.map(r => r.equipment_id).filter(Boolean);
-  if (!ids.length) return [];
-
-  // 2) pull equipment names
-  const { data: eq, error: eqErr } = await supabase
-    .from('equipment')
-    .select('id, name')
-    .in('id', ids);
-
-  if (eqErr || !eq) return [];
-
-  // normalize names
-  return eq.map(e => (e.name || '').trim()).filter(Boolean);
+  return (data ?? [])
+    .map(r => {
+      // Handle the join result structure properly
+      const equipment = r.equipment as any;
+      return equipment?.name?.trim();
+    })
+    .filter((n): n is string => Boolean(n));
 }

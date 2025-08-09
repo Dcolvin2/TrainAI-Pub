@@ -79,17 +79,22 @@ export async function POST(req: Request) {
     }
 
     // 2) Context: equipment + duration
-    const [minutes, equipmentNames] = await Promise.all([
+    const [minutes, availableNames] = await Promise.all([
       getUserMinutes(userId),
       getUserEquipmentNames(userId)
     ]);
+
+    const availableLower = new Set(availableNames.map(n => n.toLowerCase()));
+    
+    // simple KB detection that tolerates plural/singular
+    const hasKB = availableLower.has('kettlebell') || availableLower.has('kettlebells');
 
     // 3) Build prompt for Anthropic
     const styleHint = detectStyleHint(String(message));
     const prompt = buildWorkoutPrompt({
       userMessage: String(message),
       minutes,
-      availableEquipment: equipmentNames,
+      availableEquipment: availableNames,
       styleHint
     });
 
@@ -112,8 +117,8 @@ export async function POST(req: Request) {
     }
 
     // 6) Compose a friendly message (not one word)
-    const equipLine = equipmentNames.length
-      ? `Using: ${equipmentNames.join(', ')}.`
+    const equipLine = availableNames.length
+      ? `Using: ${availableNames.join(', ')}.`
       : `No equipment on file — defaulting to bodyweight.`;
     const headline = `Planned: ${plan.name} (~${plan.est_total_minutes ?? plan.duration_min} min). ${equipLine}`;
 
