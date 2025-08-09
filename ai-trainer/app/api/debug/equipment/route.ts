@@ -1,24 +1,57 @@
-export const runtime = 'nodejs';
-
 import { NextResponse } from 'next/server';
 import { getUserEquipmentNames } from '@/lib/userEquipment';
 
-export async function GET(req: Request) {
+export const runtime = 'nodejs';
+
+function looksLikeUuid(s?: string | null) {
+  return !!s && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
+}
+
+async function resolveUserId(req: Request) {
   const url = new URL(req.url);
-  const user = url.searchParams.get('user');
+  const qs = url.searchParams.get('user') || undefined;
+  const segs = url.pathname.split('/').filter(Boolean);
+  const lastSeg = segs[segs.length - 1];
+  const header = req.headers.get('x-user-id') || undefined;
+
+  let bodyUser: string | undefined;
+  if (req.method !== 'GET') {
+    try {
+      const b = await req.json();
+      bodyUser = b?.user || b?.user_id;
+    } catch {}
+  }
+
+  const user =
+    (looksLikeUuid(qs) && qs) ||
+    (looksLikeUuid(lastSeg) && lastSeg) ||
+    (looksLikeUuid(header) && header) ||
+    (looksLikeUuid(bodyUser) && bodyUser) ||
+    undefined;
+
+  return { user, echo: { url: url.toString(), qs, lastSeg, header, bodyUser } };
+}
+
+export async function GET(req: Request) {
+  const { user, echo } = await resolveUserId(req);
   if (!user) {
-    return NextResponse.json({ ok: false, error: 'Missing ?user=<uuid>' }, { status: 400 });
+    return NextResponse.json({ ok: false, error: 'Missing user id', received: echo }, { status: 400 });
   }
 
   const { names, rows, warn } = await getUserEquipmentNames(user);
-
   return NextResponse.json({
     ok: true,
     user,
     counts: { user_equipment: rows.length, equipment_names: names.length },
     equipment_names: names,
     warnings: warn,
+    echo,
   });
+}
+
+// also accept POST so you can test with a JSON body:
+export async function POST(req: Request) {
+  return GET(req);
 }
 
 

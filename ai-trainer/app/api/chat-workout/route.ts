@@ -11,11 +11,29 @@ type WorkoutShape = {
   cooldown:{ name: string; sets?: string; reps?: string; duration?: string; instruction?: string }[];
 };
 
+function looksLikeUuid(s?: string | null) {
+  return !!s && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
+}
+
+function resolveUserIdSync(req: Request) {
+  const url = new URL(req.url);
+  const qs = url.searchParams.get('user') || undefined;
+  const segs = url.pathname.split('/').filter(Boolean);
+  const lastSeg = segs[segs.length - 1];
+  const header = req.headers.get('x-user-id') || undefined;
+
+  const user =
+    (looksLikeUuid(qs) && qs) ||
+    (looksLikeUuid(lastSeg) && lastSeg) ||
+    (looksLikeUuid(header) && header) ||
+    undefined;
+
+  return user;
+}
+
 export async function POST(req: Request) {
   try {
-    const url = new URL(req.url);
-    const user = url.searchParams.get('user') || undefined;
-
+    const user = resolveUserIdSync(req);
     const { message } = (await req.json().catch(() => ({}))) as { message?: string };
     if (!message) {
       return NextResponse.json({ ok: false, error: 'Missing { "message": "<text>" }' }, { status: 400 });
