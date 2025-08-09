@@ -87,9 +87,9 @@ export default function TodaysWorkoutPage() {
       
       const { data: previousSets } = await supabase
         .from('workout_sets')
-        .select('exercise_name, actual_weight, reps')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
+        .select('id, session_id, exercise_name, set_number, prescribed_weight, actual_weight, reps, rest_seconds, rpe, session:workout_sessions!inner(user_id, date)')
+        .eq('session.user_id', user.id)
+        .order('date', { foreignTable: 'workout_sessions', ascending: false })
         .limit(50);
       
       // Group by exercise name to get most recent
