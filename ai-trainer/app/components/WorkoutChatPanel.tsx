@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useWorkoutStore } from '@/lib/workoutStore';
+import { useAuth } from '@/context/AuthContext';
 
 // Simple icon components (since we don't have lucide-react)
 const Send = ({ size }: { size: number }) => (
@@ -94,6 +95,7 @@ export function WorkoutChatPanel() {
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { setPending } = useWorkoutStore();
+  const { user } = useAuth();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -106,13 +108,27 @@ export function WorkoutChatPanel() {
   const handleSend = async () => {
     if (!message.trim() || isLoading) return;
 
+    // Get the signed-in user id
+    const userId = user?.id;
+    
+    // Guard - check if user ID is available
+    if (!userId) {
+      console.warn('No user id available for chat-workout');
+      setMessages(prev => [...prev, {
+        type: 'error',
+        content: 'Please sign in to use the workout chat.'
+      }]);
+      return;
+    }
+
     const userMessage = { type: 'user', content: message };
     setMessages(prev => [...prev, userMessage]);
     setMessage('');
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/chat-workout', {
+      // Always append ?user=<uuid> to the URL
+      const response = await fetch(`/api/chat-workout?user=${userId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 

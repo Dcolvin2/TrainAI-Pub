@@ -165,7 +165,7 @@ export default function TodaysWorkoutPage() {
         }
       } else {
         // Use regular chat endpoint for other requests
-        const response = await fetch('/api/chat-workout', {
+        const response = await fetch(`/api/chat-workout?user=${user?.id}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
