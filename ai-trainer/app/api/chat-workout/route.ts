@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
 import { anthropic } from '@/lib/anthropicClient';
 import { tryParseJson } from '@/lib/safeJson';
 import { getUserEquipmentNames } from '@/lib/userEquipment';
@@ -15,32 +17,54 @@ function looksLikeUuid(s?: string | null) {
   return !!s && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
 }
 
-function resolveUserIdSync(req: Request) {
+async function resolveUserId(req: Request) {
   const url = new URL(req.url);
   const qs = url.searchParams.get('user') || undefined;
   const segs = url.pathname.split('/').filter(Boolean);
   const lastSeg = segs[segs.length - 1];
   const header = req.headers.get('x-user-id') || undefined;
 
-  const user =
+  // First try explicit user ID from various sources
+  let user =
     (looksLikeUuid(qs) && qs) ||
     (looksLikeUuid(lastSeg) && lastSeg) ||
     (looksLikeUuid(header) && header) ||
     undefined;
+
+  // If no explicit user ID, try to get from authenticated user
+  if (!user) {
+    try {
+      const supabase = createRouteHandlerClient({ cookies });
+      const { data: auth } = await supabase.auth.getUser();
+      if (auth?.user?.id) {
+        user = auth.user.id;
+      }
+    } catch (err) {
+      // Auth fallback failed, continue with no user
+    }
+  }
 
   return user;
 }
 
 export async function POST(req: Request) {
   try {
-    const user = resolveUserIdSync(req);
+    const user = await resolveUserId(req);
     const { message } = (await req.json().catch(() => ({}))) as { message?: string };
     if (!message) {
       return NextResponse.json({ ok: false, error: 'Missing { "message": "<text>" }' }, { status: 400 });
     }
 
-    const equip = user ? (await getUserEquipmentNames(user)).names : [];
-    const equipList = equip.length ? equip.join(', ') : 'Bodyweight only';
+    if (!user) {
+      return NextResponse.json({ 
+        ok: false, 
+        error: 'Missing user id and no signed-in user found',
+        hint: 'Try ?user=<uuid> or sign in to your account'
+      }, { status: 400 });
+    }
+
+    const equip = await getUserEquipmentNames(user);
+    const equipList = equip.names.length ? equip.names.join(', ') : 'Bodyweight only';
 
     const hardNike = /\bnike\s*(?:training club|workout|wod|#?\s*\d+)/i.test(message);
     if (hardNike) {
@@ -96,7 +120,7 @@ USER MESSAGE:
       }
     }
 
-    const headline = `Planned ${equip.length ? `with: ${equip.join(', ')}` : '(bodyweight only)'}.`;
+    const headline = `Planned ${equip.names.length ? `with: ${equip.names.join(', ')}` : '(bodyweight only)'}.`;
 
     return NextResponse.json({
       ok: true,

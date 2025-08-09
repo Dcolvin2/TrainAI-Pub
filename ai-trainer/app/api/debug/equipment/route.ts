@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
 import { getUserEquipmentNames } from '@/lib/userEquipment';
 
 export const runtime = 'nodejs';
@@ -22,20 +24,39 @@ async function resolveUserId(req: Request) {
     } catch {}
   }
 
-  const user =
+  // First try explicit user ID from various sources
+  let user =
     (looksLikeUuid(qs) && qs) ||
     (looksLikeUuid(lastSeg) && lastSeg) ||
     (looksLikeUuid(header) && header) ||
     (looksLikeUuid(bodyUser) && bodyUser) ||
     undefined;
 
-  return { user, echo: { url: url.toString(), qs, lastSeg, header, bodyUser } };
+  // If no explicit user ID, try to get from authenticated user
+  if (!user) {
+    try {
+      const supabase = createRouteHandlerClient({ cookies });
+      const { data: auth } = await supabase.auth.getUser();
+      if (auth?.user?.id) {
+        user = auth.user.id;
+      }
+    } catch (err) {
+      // Auth fallback failed, continue with no user
+    }
+  }
+
+  return { user, echo: { url: url.toString(), qs, lastSeg, header, bodyUser, authFallback: !!user && !(qs || lastSeg || header || bodyUser) } };
 }
 
 export async function GET(req: Request) {
   const { user, echo } = await resolveUserId(req);
   if (!user) {
-    return NextResponse.json({ ok: false, error: 'Missing user id', received: echo }, { status: 400 });
+    return NextResponse.json({ 
+      ok: false, 
+      error: 'Missing user id and no signed-in user found', 
+      received: echo,
+      hint: 'Try ?user=<uuid> or sign in to your account'
+    }, { status: 400 });
   }
 
   const { names, rows, warn } = await getUserEquipmentNames(user);
