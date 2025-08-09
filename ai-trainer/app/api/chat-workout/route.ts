@@ -1,38 +1,36 @@
 import { NextResponse } from 'next/server';
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
 import Anthropic from '@anthropic-ai/sdk';
+import { supabase as supabaseClient } from '@/lib/supabaseClient';
 
 export async function POST(request: Request) {
   try {
-    const supabase = createRouteHandlerClient({ cookies });
+    const supabase = supabaseClient;
 
-    const { message, conversationHistory = [] } = await request.json();
-
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const body = await request.json();
+    const message: string = body.message || '';
+    const conversationHistory: string[] = body.conversationHistory || body.context || [];
+    const providedUserId: string | null = body.sessionId || body.userId || null;
+    const shouldInsert = !!providedUserId;
 
     const [profileResult, equipmentResult, exercisesResult] = await Promise.all([
-      supabase
-        .from('profiles')
-        .select('*')
-        .eq('user_id', user.id)
-        .single(),
-      supabase
-        .from('user_equipment')
-        .select('equipment:equipment_id(name)')
-        .eq('user_id', user.id)
-        .eq('is_available', true),
-      supabase
-        .from('exercises')
-        .select('*')
+      providedUserId
+        ? supabase.from('profiles').select('*').eq('user_id', providedUserId).maybeSingle()
+        : Promise.resolve({ data: null, error: null } as any),
+      providedUserId
+        ? supabase
+            .from('user_equipment')
+            .select('equipment:equipment_id(name)')
+            .eq('user_id', providedUserId)
+            .eq('is_available', true)
+        : Promise.resolve({ data: [], error: null } as any),
+      supabase.from('exercises').select('*')
     ]);
 
-    const profile = profileResult.data as any;
-    const equipment = (equipmentResult.data || []).map((e: any) => e.equipment?.name).filter(Boolean) as string[];
-    const exercises = (exercisesResult.data as any[]) || [];
+    const profile = (profileResult as any).data as any;
+    const equipment = ((equipmentResult as any).data || [])
+      .map((e: any) => e.equipment?.name)
+      .filter(Boolean) as string[];
+    const exercises = ((exercisesResult as any).data as any[]) || [];
 
     const allowedExercises = exercises.filter((ex: any) => {
       const required: string[] = ex.equipment_required || [];
@@ -79,11 +77,11 @@ Provide your response in this format:
     const hasWorkout = /\bsets?\b|\b0:00\b|\bBlock\b/i.test(aiResponse);
 
     let sessionId: string | null = null;
-    if (hasWorkout) {
+    if (hasWorkout && shouldInsert) {
       const { data: session } = await supabase
         .from('workout_sessions')
         .insert({
-          user_id: user.id,
+          user_id: providedUserId!,
           workout_source: 'chat',
           workout_name: 'Chat Generated Workout',
           chat_context: { message, conversationHistory, allowedExercisesCount: allowedExercises.length }
