@@ -1,23 +1,32 @@
 // lib/equipment.ts
-import { SupabaseClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
 
-export async function getAvailableEquipmentNames(
-  supabase: SupabaseClient,
-  userId: string
-): Promise<string[]> {
-  const { data, error } = await supabase
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
+export async function getUserEquipmentNames(userId: string): Promise<string[]> {
+  // 1) pull user_equipment rows
+  const { data: ue, error: ueErr } = await supabase
     .from('user_equipment')
-    .select('is_available, equipment:equipment_id(name)')
+    .select('equipment_id, is_available')
     .eq('user_id', userId)
     .eq('is_available', true);
 
-  if (error || !data) return [];
-  
-  // Handle the join result structure properly
-  return data
-    .map(row => {
-      const equipment = row.equipment as any;
-      return equipment?.name;
-    })
-    .filter((name): name is string => Boolean(name));
+  if (ueErr || !ue || ue.length === 0) return [];
+
+  const ids = ue.map(r => r.equipment_id).filter(Boolean);
+  if (!ids.length) return [];
+
+  // 2) pull equipment names
+  const { data: eq, error: eqErr } = await supabase
+    .from('equipment')
+    .select('id, name')
+    .in('id', ids);
+
+  if (eqErr || !eq) return [];
+
+  // normalize names
+  return eq.map(e => (e.name || '').trim()).filter(Boolean);
 }

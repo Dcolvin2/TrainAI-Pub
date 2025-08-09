@@ -4,8 +4,12 @@ export const runtime = 'nodejs';
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import Anthropic from '@anthropic-ai/sdk';
-import { getAvailableEquipmentNames } from '@/lib/equipment';
+
+import { shouldUseNike } from '@/lib/intent';
 import { tryParseJson } from '@/lib/safeJson';
+import { getUserEquipmentNames } from '@/lib/equipment';
+import { buildWorkoutPrompt } from '@/lib/workoutPrompt';
+import type { StrictPlan } from '@/lib/types';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,181 +18,112 @@ const supabase = createClient(
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
-type PlanSet = { set: number; reps: string | number; rest_seconds?: number; };
-type PlanItem = { name: string; sets?: string | number; reps?: string | number; instruction?: string; isAccessory?: boolean; };
-type WorkoutPlan = {
-  name: string;
-  duration_min?: number;
-  phases?: { phase: 'warmup'|'main'|'accessory'|'conditioning'|'cooldown'; items: PlanItem[]; }[];
-  warmup?: PlanItem[];
-  main?: PlanItem[];
-  cooldown?: PlanItem[];
-  est_total_minutes?: number;
-};
-
-function looksLikePersonaQuery(m: string) {
-  // If they named a person / coach / celeb, we'll go to the model
-  return /\b(joe holder|chris hemsworth|rob gronkowski|goggins|holder|hem sworth|celebrity|coach|inspired by|in the style of)\b/i.test(m);
+// Simple profile for duration default (non-breaking if absent)
+async function getUserMinutes(userId: string): Promise<number> {
+  const { data } = await supabase
+    .from('profiles')
+    .select('preferred_workout_duration')
+    .eq('user_id', userId)
+    .maybeSingle();
+  return Number(data?.preferred_workout_duration ?? 45);
 }
 
-function wantsKettlebellOnly(m: string) {
-  return /\bkettlebell(s)?\b/i.test(m);
+// Derive optional style hint from message (coach/persona name if present)
+function detectStyleHint(m: string): string | null {
+  const lower = m.toLowerCase();
+  // silly heuristic: any two-word capitalized in message can be a name; keep simple
+  const known = ['joe holder', 'chris hemsworth', 'david goggins', 'rob gronkowski'];
+  const hit = known.find(k => lower.includes(k));
+  return hit ?? null;
 }
 
-function wantsNike(m: string) {
-  // Explicit Nike only — no accidental routing
-  return /\b(nike training club|nike app|nike workout|nike\s*#?\s*\d+)\b/i.test(m);
-}
-
-function buildStrictPrompt(opts: { msg: string; equipment: string[]; duration?: number }) {
-  const { msg, equipment, duration = 45 } = opts;
-  return `
-Return ONLY valid JSON.
-
-Schema:
-{
-  "name": string,
-  "duration_min": number,
-  "phases": [
-    { "phase": "warmup"|"main"|"accessory"|"conditioning"|"cooldown",
-      "items": [
-        { "name": string, "sets": string|number, "reps": string|number, "instruction": string }
-      ]
-    }
-  ],
-  "est_total_minutes": number
-}
-
-Rules:
-- duration_min <= ${duration}
-- Use ONLY equipment from: ${equipment.join(', ') || 'Bodyweight'}
-- If user implies kettlebells, every "main" and "accessory" item should be a kettlebell movement.
-- Include warmup and cooldown.
-- If the user names a person/coach, emulate their general style without trademarked program names.
-
-User request: "${msg}"
-`;
-}
-
-function simpleFallbackPlan(msg: string, forceKb: boolean): WorkoutPlan {
-  const kb = (name: string, instruction: string): PlanItem => ({ name, sets: '3', reps: '8–12', instruction });
-  const bw = (name: string, instruction: string): PlanItem => ({ name, sets: '3', reps: '12–15', instruction });
-
-  const warmup: PlanItem[] = [
-    { name: 'Arm Circles', sets: '1', reps: '10 each direction', instruction: 'Large forward/backward circles' },
-    { name: 'Hip Openers', sets: '1', reps: '10 each side', instruction: 'Controlled hip rotations' },
-    { name: 'World\'s Greatest Stretch', sets: '1', reps: '5 each side', instruction: 'Lunge + T-spine reach' },
-  ];
-
-  const main: PlanItem[] = forceKb
-    ? [
-        kb('Kettlebell Swings', 'Hinge; snap hips; neutral spine'),
-        kb('Kettlebell Goblet Squat', 'Elbows inside knees, tall torso'),
-        kb('Kettlebell Clean & Press', 'Clean to rack; press overhead strong'),
-        kb('Kettlebell Row', 'Hinge, pull to hip/ribs'),
-      ]
-    : [
-        bw('Bodyweight Squat', 'Sit between hips; keep chest proud'),
-        bw('Push-Up', 'Brace; full range'),
-        bw('Reverse Lunge', 'Knee under hip; tall posture'),
-        bw('Plank', '30–45s; ribs down; glutes on'),
-      ];
-
-  const cooldown: PlanItem[] = [
-    { name: 'Child\'s Pose', sets: '1', reps: '45–60s', instruction: 'Deep breaths' },
-    { name: 'Hamstring Stretch', sets: '1', reps: '30–45s/side', instruction: 'Soft knee; long spine' },
-    { name: 'Thoracic Rotation', sets: '1', reps: '6/side', instruction: 'Smooth rotations' },
-  ];
-
+// Fallback tiny bodyweight plan if AI fails (keeps UI alive)
+function fallbackPlan(minutes: number): StrictPlan {
   return {
-    name: forceKb ? 'Kettlebell Total-Body' : 'Bodyweight Strength Focus',
-    duration_min: 45,
+    name: 'Bodyweight Strength Focus',
+    duration_min: Math.min(minutes, 45),
+    est_total_minutes: Math.min(minutes, 45),
     phases: [
-      { phase: 'warmup', items: warmup },
-      { phase: 'main', items: main },
-      { phase: 'cooldown', items: cooldown },
-    ],
-    est_total_minutes: 45
+      { phase: 'warmup', items: [
+        { name: 'Arm Circles', sets: '1', reps: '10 each direction', instruction: 'Large, smooth circles' },
+        { name: 'Hip Openers', sets: '1', reps: '10/side', instruction: 'Controlled range' }
+      ]},
+      { phase: 'main', items: [
+        { name: 'Bodyweight Squat', sets: '3', reps: '12–15', instruction: 'Chest tall' },
+        { name: 'Push-Up', sets: '3', reps: '8–12', instruction: 'Full range' }
+      ]},
+      { phase: 'accessory', items: [
+        { name: 'Walking Lunge', sets: '2', reps: '10/side', instruction: 'Knee under hip', isAccessory: true },
+        { name: 'Side Plank', sets: '2', reps: '20–30s/side', instruction: 'Ribs down', isAccessory: true }
+      ]},
+      { phase: 'cooldown', items: [
+        { name: 'Child\'s Pose', sets: '1', reps: '45–60s', instruction: 'Easy breathing' }
+      ]}
+    ]
   };
 }
 
 export async function POST(req: Request) {
   try {
-    const { message, sessionId } = await req.json();
+    const { message, sessionId, currentWorkout } = await req.json();
     if (!message) return NextResponse.json({ ok: false, error: 'Missing message' }, { status: 400 });
 
-    // Pretend sessionId is the user (your current code does this)
-    const userId = sessionId as string;
-    if (!userId) return NextResponse.json({ ok: false, error: 'Missing user' }, { status: 401 });
+    // Resolve user (use sessionId you pass today)
+    const userId = sessionId as string | undefined;
+    if (!userId) return NextResponse.json({ ok: false, error: 'Missing user id (sessionId)' }, { status: 400 });
 
-    // 1) Equipment from DB (joined)
-    const equipmentNames = await getAvailableEquipmentNames(supabase, userId);
-    const lowerEquip = equipmentNames.map(e => e.toLowerCase());
-
-    // 2) Routing: Nike only on explicit mention
-    const m = String(message).toLowerCase();
-    if (wantsNike(m)) {
-      return NextResponse.json({ ok: true, route: 'nike', info: 'Explicit Nike request detected; keeping behavior unchanged.' });
+    // 1) Nike guard
+    if (shouldUseNike(String(message))) {
+      // Your existing Nike path — return a soft redirect so UI can handle as before
+      return NextResponse.json({ ok: true, route: 'nike', message: String(message) });
     }
 
-    // 3) Persona / Kettlebell intent
-    const forceKb = wantsKettlebellOnly(m);
-    const useModel = looksLikePersonaQuery(m) || forceKb; // use model for both
+    // 2) Context: equipment + duration
+    const [minutes, equipmentNames] = await Promise.all([
+      getUserMinutes(userId),
+      getUserEquipmentNames(userId)
+    ]);
 
-    // 4) Model path (strict JSON). If it fails, we fallback to algorithmic generator.
-    let plan: WorkoutPlan | null = null;
-
-    if (useModel) {
-      const prompt = buildStrictPrompt({
-        msg: message,
-        equipment: equipmentNames.length ? equipmentNames : ['Bodyweight'],
-        duration: 45
-      });
-
-      const resp = await anthropic.messages.create({
-        model: 'claude-3-5-sonnet-20241022',
-        max_tokens: 1500,
-        temperature: 0.4,
-        messages: [{ role: 'user', content: prompt }]
-      } as any);
-
-      const firstBlock: any = resp?.content?.[0];
-      const text = (firstBlock && firstBlock.type === 'text') ? firstBlock.text : String(firstBlock?.text ?? '');
-      plan = tryParseJson<WorkoutPlan>(text);
-    }
-
-    // 5) Fallback if model didn't return valid JSON
-    if (!plan || (!plan.phases && !plan.main)) {
-      plan = simpleFallbackPlan(message, forceKb);
-    }
-
-    // 6) Save planned workout (no "save as workout" step needed)
-    await supabase.from('workout_sessions').insert({
-      user_id: userId,
-      workout_source: 'chat',
-      workout_name: plan.name,
-      workout_type: forceKb ? 'kettlebell' : 'custom',
-      planned_exercises: plan,
-      date: new Date().toISOString()
+    // 3) Build prompt for Anthropic
+    const styleHint = detectStyleHint(String(message));
+    const prompt = buildWorkoutPrompt({
+      userMessage: String(message),
+      minutes,
+      availableEquipment: equipmentNames,
+      styleHint
     });
 
-    // 7) Shape response for your existing UI
-    //    If phases exist, keep them; if not, map to warmup/main/cooldown legacy keys.
-    const legacy = plan.phases ? undefined : {
-      warmup: plan.warmup ?? [],
-      main: plan.main ?? [],
-      cooldown: plan.cooldown ?? []
-    };
-
-    return NextResponse.json({
-      ok: true,
-      message: `Planned: ${plan.name}${equipmentNames.length ? ` (uses: ${equipmentNames.join(', ')})` : ' (bodyweight only)'}.`,
-      plan,
-      workout: legacy // your renderer can still read this if it expects warmup/main/cooldown
+    // 4) Call Anthropic
+    const ai = await anthropic.messages.create({
+      model: 'claude-3-5-sonnet-20241022',
+      max_tokens: 1600,
+      temperature: 0.4,
+      system: 'You are a meticulous strength coach. Always obey equipment limits; avoid Olympic lifts (snatch/clean/jerk). Return JSON only.',
+      messages: [{ role: 'user', content: prompt }]
     });
-  } catch (err) {
-    console.error('chat-workout error:', err);
-    return NextResponse.json({ ok: false, error: 'Chat failed' }, { status: 500 });
+
+    const firstText = (Array.isArray(ai.content) ? ai.content.find(b => (b as any).type === 'text') : null) as any;
+    const raw = String(firstText?.text ?? '');
+    let plan = tryParseJson<StrictPlan>(raw);
+
+    // 5) If parse failed or phases missing, use fallback
+    if (!plan || !Array.isArray(plan.phases)) {
+      plan = fallbackPlan(minutes);
+    }
+
+    // 6) Compose a friendly message (not one word)
+    const equipLine = equipmentNames.length
+      ? `Using: ${equipmentNames.join(', ')}.`
+      : `No equipment on file — defaulting to bodyweight.`;
+    const headline = `Planned: ${plan.name} (~${plan.est_total_minutes ?? plan.duration_min} min). ${equipLine}`;
+
+    // 7) (Optional) If you want: we do NOT auto-save to workouts here.
+    //    Your UI can save after completion, like before.
+
+    return NextResponse.json({ ok: true, message: headline, plan });
+  } catch (err: any) {
+    console.error('chat-workout error', err?.message ?? err);
+    return NextResponse.json({ ok: false, error: 'Failed to generate workout' }, { status: 500 });
   }
 }
 

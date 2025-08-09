@@ -24,5 +24,3 @@ npm run build
 ---
 *Last updated: Deployment configuration fixed*
 # Updated Thu Jul 31 16:35:22 MDT 2025
-
-Trigger: manual redeploy test
