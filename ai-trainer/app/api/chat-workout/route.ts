@@ -1,142 +1,143 @@
-// app/api/chat-workout/route.ts
 import { NextResponse } from 'next/server';
-import { buildStrictWorkoutPrompt } from '@/lib/workoutPrompt';
+import { supabase as supabaseClient } from '@/lib/supabaseClient';
 import { getUserContext } from '@/lib/workoutContext';
-import { claude } from '@/lib/claudeClient';
-import { createClient } from '@supabase/supabase-js';
+import { buildStrictPrompt } from '@/lib/workoutPrompt';
+import { chatClaude } from '@/lib/claudeClient';
+import { handleNikeWorkoutRequest } from '@/lib/nikeWorkoutHandler';
 
-// IMPORTANT: your column name is literally "workout source"
-const ENTRIES_TABLE = 'workout_entries';
-const WORKOUT_SOURCE_COL = 'workout source';
-
-type PlanItemSet = {
-  set_number: number;
-  reps: number | string;
-  prescribed_weight: number | string | null;
-  rest_seconds: number;
-};
-type PlanItem = {
-  exercise_id: string;
-  display_name: string;
-  sets: PlanItemSet[];
-  notes?: string | null;
-};
-type PlanPhase = {
-  phase: 'warmup' | 'main' | 'conditioning' | 'cooldown';
-  items: PlanItem[];
-};
-type StrictPlan = {
-  name: string;
-  duration_min: number;
-  phases: PlanPhase[];
-  est_total_minutes: number;
-};
-
-export async function POST(req: Request) {
-  // Use the same pattern as other routes in this repo
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
-
-  const body = await req.json().catch(() => ({} as any));
-  const message: string = body?.message ?? '';
-  const fallbackUserId: string | undefined = body?.userId;
-
-  let {
-    data: { user }
-  } = await supabase.auth.getUser();
-  if (!user && fallbackUserId) {
-    // Fallback to provided userId when auth context isn't available in the route
-    user = { id: fallbackUserId } as any;
-  }
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-  // 1) Build user context
-  const { profile, availableEquipment, allowedExercises } = await getUserContext(user.id);
-
-  // 2) Call model with strict prompt
-  const prompt = buildStrictWorkoutPrompt({
-    userMessage: message,
-    profile,
-    availableEquipment,
-    allowedExercises
-  });
-
-  const ai = await claude.messages.create({
-    model: 'claude-3-5-sonnet-20241022',
-    max_tokens: 2000,
-    temperature: 0.4,
-    messages: [{ role: 'user', content: prompt }]
-  });
-
-  const raw = (ai as any)?.content?.[0]?.text ?? '';
-  let plan: StrictPlan | null = null;
+export async function POST(request: Request) {
   try {
-    plan = JSON.parse(raw) as StrictPlan;
-  } catch {
-    // keep chat UX intact even if JSON parsing fails
-    return NextResponse.json({ response: raw, error: 'Model did not return JSON' }, { status: 200 });
-  }
+    const body = await request.json();
+    const message: string = body.message || '';
+    const sessionId: string | null = body.sessionId || body.userId || null;
+    const conversationHistory = body.conversationHistory || body.context || [];
 
-  // 3) Optional insert: one row per set -> public.workout_entries
-  //    We do a safe "try insert; fall back if table/column not present".
-  let entriesInserted = 0;
+    // Back-compat: allow missing sessionId (skip DB writes in that case)
+    const shouldInsert = !!sessionId;
+    const user = { id: (sessionId as string) || `anon_${Date.now()}` };
+    const supabase = supabaseClient;
 
-  if (plan?.phases?.length) {
-    const now = new Date();
-    const rows: Record<string, unknown>[] = [];
+    const ctx = await getUserContext(user.id);
 
-    for (const ph of plan.phases) {
-      for (const it of ph.items) {
-        for (const s of it.sets) {
-          rows.push({
-            user_id: user.id,
-            date: now.toISOString().slice(0, 10),
-            started_at: now.toISOString(),
-            finished_at: null,
-            total_volume: 0,
-            program_day_id: null,
-            // optimistic include of the spaced column:
-            [WORKOUT_SOURCE_COL]: 'ai_generated',
+    // Nike workout
+    if (message.toLowerCase().includes('nike workout')) {
+      return handleNikeWorkoutRequest(user, ctx.profile);
+    }
 
-            exercise_id: it.exercise_id,
-            exercise_name: it.display_name,
-            set_number: typeof s.set_number === 'number' ? s.set_number : Number(s.set_number) || 1,
-            previous_weight: null,
-            prescribed_weight: typeof s.prescribed_weight === 'number' ? s.prescribed_weight : null,
-            actual_weight: null,
-            reps: typeof s.reps === 'number' ? s.reps : null,
-            rest_seconds: typeof s.rest_seconds === 'number' ? s.rest_seconds : 120,
-            rpe: 7,
-            session_id_old: null,
-            set_id_old: null
+    const prompt = buildStrictPrompt({
+      userMessage: message,
+      profile: ctx.profile,
+      availableEquipment: ctx.availableEquipment,
+      exercisesByPhase: ctx.exercisesByPhase
+    });
+
+    const aiText = await chatClaude(prompt);
+    const jsonText = aiText.trim().replace(/^```[a-zA-Z]*\n?/, '').replace(/```\s*$/, '');
+
+    let workoutPlan: any;
+    try {
+      workoutPlan = JSON.parse(jsonText);
+    } catch {
+      return NextResponse.json({ error: 'Invalid AI response JSON' }, { status: 502 });
+    }
+
+    // Insert workout session (only if we have a user id)
+    const today = new Date();
+    const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000)
+      .toISOString()
+      .split('T')[0];
+
+    let session: any | null = null;
+    if (shouldInsert) {
+      const insertRes = await supabase
+        .from('workout_sessions')
+        .insert({
+          user_id: user.id,
+          date: localDate,
+          workout_source: 'chat',
+          workout_name: workoutPlan.name,
+          workout_type: ctx.profile.training_goal,
+          planned_exercises: workoutPlan,
+          actual_duration_minutes: workoutPlan.duration_minutes,
+          chat_context: { message, conversationHistory }
+        })
+        .select()
+        .single();
+      if (insertRes.error) {
+        // Non-fatal for back-compat: continue without session
+        session = null;
+      } else {
+        session = insertRes.data;
+      }
+    }
+
+    // Prepare workout sets
+    const setRows: any[] = [];
+    for (const phase of workoutPlan.phases || []) {
+      for (const exercise of phase.exercises || []) {
+        const exerciseData = ctx.allowedExercises.find((e: any) => e.id === exercise.exercise_id);
+        for (const set of exercise.sets || []) {
+          setRows.push({
+            session_id: session.id,
+            exercise_id: exercise.exercise_id,
+            exercise_name: exercise.exercise_name,
+            set_number: set.set_number,
+            prescribed_weight: set.prescribed_weight ?? null,
+            prescribed_load: set.prescribed_load || null,
+            reps: typeof set.reps === 'number' ? set.reps : 0,
+            rest_seconds: set.rest_seconds || exerciseData?.rest_seconds_default || 90
           });
         }
       }
     }
 
-    if (rows.length) {
-      // attempt with "workout source"
-      let ins = await supabase.from(ENTRIES_TABLE).insert(rows);
-      if (ins.error) {
-        // retry WITHOUT the spaced column if the first insert failed due to missing column/table
-        const sanitized = rows.map((r) => {
-          const { [WORKOUT_SOURCE_COL]: _drop, ...rest } = r as any;
-          return rest;
-        });
-        ins = await supabase.from(ENTRIES_TABLE).insert(sanitized);
-      }
-      if (!ins.error) entriesInserted = rows.length;
-    }
-  }
+    if (shouldInsert && setRows.length) {
+      await supabase.from('workout_sets').insert(setRows);
 
-  // 4) Return raw text (so your existing chat UI shows the reply) + parsed plan for any future UI enhancements
-  return NextResponse.json({
-    response: raw,
-    plan,
-    entriesInserted
-  });
+      const entryRows = setRows.map((set) => ({
+        user_id: user.id,
+        date: localDate,
+        exercise_id: set.exercise_id,
+        exercise_name: set.exercise_name,
+        set_number: set.set_number,
+        prescribed_weight: set.prescribed_weight,
+        reps: set.reps,
+        rest_seconds: set.rest_seconds,
+        workout_source: 'chat'
+      }));
+
+      await supabase.from('workout_entries').insert(entryRows);
+    }
+
+    // Back-compat response for Chat Panel UI (expects phases.warmup/main/cooldown.exercises[].name)
+    const sessionIdToReturn = session?.id || user.id;
+    const byPhaseMap: Record<string, any[]> = {};
+    for (const p of workoutPlan.phases || []) {
+      byPhaseMap[p.phase] = (p.exercises || []).map((e: any) => ({ name: e.exercise_name }));
+    }
+    const legacyWorkout = {
+      phases: {
+        warmup: { exercises: byPhaseMap['warmup'] || [] },
+        main: { exercises: byPhaseMap['main'] || [] },
+        cooldown: { exercises: byPhaseMap['cooldown'] || [] }
+      }
+    };
+
+    const formattedResponse = `Planned: ${workoutPlan.name} (about ${workoutPlan.duration_minutes} min)\n` +
+      ['warmup', 'main', 'cooldown']
+        .map((ph) => `- ${ph}: ${(legacyWorkout.phases as any)[ph].exercises.map((e: any) => e.name).join(', ')}`)
+        .join('\n');
+
+    return NextResponse.json({
+      type: 'custom_workout',
+      formattedResponse,
+      sessionId: sessionIdToReturn,
+      workout: legacyWorkout
+    });
+  } catch (error) {
+    console.error('chat-workout error:', error);
+    return NextResponse.json({ error: 'Failed to generate workout' }, { status: 500 });
+  }
 }
 
 
