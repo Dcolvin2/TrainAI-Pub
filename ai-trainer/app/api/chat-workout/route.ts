@@ -1,84 +1,203 @@
 import { NextResponse } from 'next/server';
-import { getEquipmentNamesForUser } from '@/lib/equipment';
+import { z, ZodError } from 'zod';
 import { quickParse } from '@/lib/intent';
+import { getEquipmentNamesForUser } from '@/lib/equipment';
 import { planWorkout } from '@/lib/planner';
 import { sanitize } from '@/lib/safety';
+import type { Plan } from '@/lib/schemas';
 
-export const runtime = 'nodejs';
+// Looser schema for parsing AI output
+const LoosePhaseItem = z.object({
+  name: z.string().min(1),
+  sets: z.union([z.number().int().positive(), z.string().regex(/^\d+$/)]).optional(),
+  reps: z.union([z.string(), z.number()]).optional(),
+  duration: z.string().optional(),
+  instruction: z.string().optional(),
+  isAccessory: z.boolean().optional(),
+}).passthrough();
 
-function pickUserId(req: Request, body?: any) {
+const LoosePhase = z.object({
+  phase: z.enum(["warmup","main","accessory","conditioning","cooldown"]),
+  items: z.array(LoosePhaseItem).min(1)
+});
+
+const LoosePlanSchema = z.object({
+  name: z.string(),
+  duration_min: z.union([z.number(), z.string().regex(/^\d+$/)]),
+  phases: z.array(LoosePhase).min(1),
+  progression_tip: z.string().optional(),
+}).passthrough();
+
+// Convert loose plan to strict Plan type
+function convertToStrictPlan(loose: z.infer<typeof LoosePlanSchema>): Plan {
+  return {
+    name: loose.name,
+    duration_min: typeof loose.duration_min === 'string' ? parseInt(loose.duration_min, 10) : loose.duration_min,
+    phases: loose.phases.map(phase => ({
+      phase: phase.phase,
+      items: phase.items.map(item => ({
+        name: item.name,
+        sets: typeof item.sets === 'string' ? parseInt(item.sets, 10) : item.sets,
+        reps: typeof item.reps === 'string' ? item.reps : String(item.reps || ''),
+        duration: item.duration,
+        instruction: item.instruction,
+        isAccessory: item.isAccessory,
+        substitutions: [],
+      }))
+    })),
+    progression_tip: loose.progression_tip,
+  };
+}
+
+// Graceful fallback plan
+const fallback: Plan = {
+  name: "Simple Barbell Strength",
+  duration_min: 40,
+  phases: [
+    { phase: "warmup", items: [{ name: "Band Pull-Aparts", sets: 1, reps: "20", substitutions: [] }] },
+    { phase: "main", items: [
+        { name: "Barbell Back Squat", sets: 4, reps: "5", substitutions: [] },
+        { name: "Barbell Bench Press", sets: 4, reps: "5", substitutions: [] },
+      ]},
+    { phase: "cooldown", items: [{ name: "Couch Stretch", duration: "45s/side", substitutions: [] }] }
+  ]
+};
+
+function pickUserId(req: Request): string | null {
+  // Try query param first
   const url = new URL(req.url);
-  const fromQS = url.searchParams.get('user') || url.searchParams.get('uid');
-  const fromHeader = req.headers.get('x-user-id') || req.headers.get('x-supabase-user-id');
-  const fromBody = body?.user;
-  return fromQS || fromHeader || fromBody || null;
+  const qs = url.searchParams.get('user');
+  if (qs) return qs;
+
+  // Try header
+  const header = req.headers.get('x-user-id');
+  if (header) return header;
+
+  // Try body (for POST)
+  try {
+    const body = JSON.parse(req.body?.toString() || '{}');
+    if (body.user) return body.user;
+  } catch {}
+
+  return null;
 }
 
 export async function POST(req: Request) {
+  const userId = pickUserId(req);
+  if (!userId) {
+    return NextResponse.json({ 
+      ok: false, 
+      error: 'Missing ?user=<uuid> or x-user-id header or {user: "uuid"} in body' 
+    }, { status: 400 });
+  }
+
   try {
-    const body = await req.json().catch(() => ({}));
-    const userId = pickUserId(req, body);
-    const q: string = body.q || body.message || body.text || '';
-    const narrate = String(new URL(req.url).searchParams.get('narrate') || body.narrate || '') === '1';
+    const body = await req.json();
+    const userMessage = body.q || body.message || '';
 
-    if (!userId) return NextResponse.json({ ok: false, error: 'Missing ?user=<uuid>' }, { status: 400 });
-    if (!q) return NextResponse.json({ ok: false, error: 'Missing chat message "q"' }, { status: 400 });
-
-    const parsed = quickParse(q);
+    // Parse user intent
+    const intent = quickParse(userMessage);
+    
+    // Get user's equipment
     const equipment = await getEquipmentNamesForUser(userId);
-
-    // modality hints
-    const hasKB = equipment.some(e => e.toLowerCase().includes('kettlebell'));
-    const hasBB = equipment.some(e => e.toLowerCase().includes('barbell'));
-    const hasDB = equipment.some(e => e.toLowerCase().includes('dumbbell'));
-    const modalityHints =
-      [parsed.modality, hasKB && 'kettlebell', hasBB && 'barbell', hasDB && 'dumbbell']
-        .filter(Boolean)
-        .join(', ') || 'any';
-
-    // celebrity → style hint
-    const styleMap: Record<string,string> = {
-      'rob gronkowski': 'athletic power, heavy basics, explosive accessories',
-      'gronk': 'athletic power, heavy basics, explosive accessories',
-      'joe holder': 'movement quality, tempo work, circuits, mobility',
-    };
-    const styleHint = parsed.athleteName ? styleMap[parsed.athleteName] : undefined;
-
-    const duration = parsed.duration_min || 45;
-
-    const { plan } = await planWorkout({
-      userMsg: q,
+    
+    // Generate workout plan
+    const { raw } = await planWorkout({
+      userMsg: userMessage,
       equipment,
-      duration,
-      modalityHints,
-      styleHint,
+      duration: intent.duration_min || 45,
+      modalityHints: intent.modality || 'mixed',
+      styleHint: intent.athleteName ? `inspired by ${intent.athleteName}` : undefined
     });
 
-    const { plan: cleanPlan, blocked } = sanitize(plan);
+    const modelText = raw.trim();
 
-    // optional short narrative
-    let narrative: string | undefined;
-    if (narrate) {
-      narrative = `Today's plan: ${cleanPlan.name}. Expect about ${cleanPlan.duration_min} minutes with a warmup, a main strength block, accessories, and a cooldown. Keep rests ~90s on accessories and 2–3 min on heavy sets. Progress next time by following: ${cleanPlan.progression_tip || 'Add 1–2 reps or small weight if sets felt ≤7 RPE.'}`;
+    try {
+      const parsed = LoosePlanSchema.parse(JSON.parse(modelText));
+      
+      // Convert to strict Plan type and sanitize
+      const strictPlan = convertToStrictPlan(parsed);
+      const { plan: sanitized } = sanitize(strictPlan);
+      
+      // Generate narrative if requested
+      let narrative = '';
+      const url = new URL(req.url);
+      if (url.searchParams.get('narrate') === '1') {
+        try {
+          const { Anthropic } = await import('@anthropic-ai/sdk');
+          const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+          
+          const response = await anthropic.messages.create({
+            model: 'claude-3-5-sonnet-20241022',
+            max_tokens: 300,
+            messages: [{
+              role: 'user',
+              content: `Write a brief, motivating narrative for this workout plan. Keep it under 3 sentences and focus on the user's goals and the workout structure:\n\n${JSON.stringify(sanitized, null, 2)}`
+            }]
+          });
+          
+          narrative = response.content[0].type === 'text' ? response.content[0].text : '';
+        } catch (narrateErr) {
+          console.warn('Narrative generation failed:', narrateErr);
+          // Continue without narrative
+        }
+      }
+
+      return NextResponse.json({ 
+        ok: true, 
+        message: narrative || 'Workout plan generated successfully!',
+        plan: sanitized,
+        narrative: narrative || undefined
+      });
+
+    } catch (err) {
+      if (err instanceof ZodError) {
+        const url = new URL(req.url);
+        const debug = url.searchParams.get("debug") === "1";
+        return NextResponse.json(
+          debug
+            ? { 
+                ok: true, 
+                message: "Using fallback (validation failed).",
+                plan: fallback, 
+                validation_issues: err.issues, 
+                raw_model_text: modelText 
+              }
+            : { 
+                ok: true, 
+                message: "Planned (fallback).", 
+                plan: fallback 
+              }
+        );
+      }
+      throw err;
     }
 
-    return NextResponse.json({
-      ok: true,
-      message: `${parsed.athleteName ? 'Inspired by ' + parsed.athleteName + '. ' : ''}Planned: ${cleanPlan.name}.`,
-      plan: cleanPlan,
-      narrative,
-      debug: {
-        user: userId,
-        intent: parsed.intent,
-        equipmentCount: equipment.length,
-        modalityHints,
-        styleHint,
-        blockedExercises: blocked,
-      },
-    });
-  } catch (err: any) {
-    return NextResponse.json({ ok: false, error: String(err?.message || err) }, { status: 500 });
+  } catch (error) {
+    console.error('Workout generation error:', error);
+    return NextResponse.json({ 
+      ok: false, 
+      error: 'Failed to generate workout plan',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 });
   }
+}
+
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  
+  if (url.searchParams.get('health') === '1') {
+    return NextResponse.json({ 
+      ok: true, 
+      status: 'healthy',
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  return NextResponse.json({ 
+    ok: false, 
+    error: 'Use POST with workout request or GET ?health=1 for status' 
+  }, { status: 405 });
 }
 
 
