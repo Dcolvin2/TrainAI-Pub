@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
-import { getUserEquipmentNames } from '@/lib/userEquipment';
+import { getUserEquipmentNamesDetailed } from '@/lib/userEquipment';
 
 export const runtime = 'nodejs';
 
@@ -59,26 +59,17 @@ export async function GET(req: Request) {
     }, { status: 400 });
   }
 
-  // after you've validated `user`
-  type NamesResult =
-    | string[]
-    | { names: string[]; rows?: any[]; warn?: string[] };
-
-  const result = (await getUserEquipmentNames(user)) as NamesResult;
-
-  const names = Array.isArray(result) ? result : result.names ?? [];
-  const rows  = Array.isArray(result) ? undefined : result.rows;
-  const warn  = Array.isArray(result) ? [] : result.warn ?? [];
-
+  const { names, rows, warn } = await getUserEquipmentNamesDetailed(user);
+  
   return NextResponse.json({
     ok: true,
     user,
     counts: {
-      user_equipment: rows ? rows.length : names.length,
+      user_equipment: rows.length,
       equipment_names: names.length,
     },
     equipment_names: names,
-    rows,           // may be undefined (that's fine for debug)
+    rows,
     warnings: warn,
     echo: { url: req.url, qs: user, lastSeg: 'equipment' },
   });
