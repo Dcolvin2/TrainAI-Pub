@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useWorkoutStore } from '@/lib/workoutStore';
 import { useAuth } from '@/context/AuthContext';
+import PlanRenderer from './PlanRenderer';
 
 // Simple icon components (since we don't have lucide-react)
 const Send = ({ size }: { size: number }) => (
@@ -127,39 +128,53 @@ export function WorkoutChatPanel() {
     setIsLoading(true);
 
     try {
-      // Always append ?user=<uuid> to the URL
-      const response = await fetch(`/api/chat-workout?user=${userId}`, {
+      // Call the new chat-workout endpoint with narration
+      const response = await fetch(`/api/chat-workout?user=${userId}&narrate=1`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          message,
-          context: messages.slice(-5)
+          q: message,
+          user: userId,
+          narrate: 1
         })
       });
 
       const data = await response.json();
 
-      if (data.type === 'nike_list') {
-        setMessages(prev => [...prev, {
-          type: 'nike_list',
-          content: data.message,
-          workouts: data.workouts
-        }]);
-      } else if (data.type === 'custom_workout') {
+      if (data.ok) {
+        // Add assistant message with narrative and plan
         setMessages(prev => [...prev, {
           type: 'assistant',
-          content: data.formattedResponse
+          content: data.narrative || data.message,
+          plan: data.plan || null,
+          debug: data.debug || null
         }]);
         
-        // Set as pending workout
-        setPending({
-          planId: data.sessionId,
-          warmup: data.workout.phases.warmup.exercises.map((e: any) => e.name),
-          workout: data.workout.phases.main.exercises.map((e: any) => e.name),
-          cooldown: data.workout.phases.cooldown.exercises.map((e: any) => e.name)
-        });
+        // If we have a plan, also set it as pending workout
+        if (data.plan) {
+          // Convert the new plan format to the expected format
+          const warmup = data.plan.phases.find((p: any) => p.phase === 'warmup')?.items.map((e: any) => e.name) || [];
+          const main = data.plan.phases.find((p: any) => p.phase === 'main')?.items.map((e: any) => e.name) || [];
+          const cooldown = data.plan.phases.find((p: any) => p.phase === 'cooldown')?.items.map((e: any) => e.name) || [];
+          const accessories = data.plan.phases.find((p: any) => p.phase === 'accessory')?.items.map((e: any) => e.name) || [];
+          
+          setPending({
+            planId: `chat-${Date.now()}`,
+            warmup,
+            workout: main,
+            cooldown,
+            accessories
+          });
+        }
+      } else {
+        // Handle error response
+        setMessages(prev => [...prev, {
+          type: 'error',
+          content: data.error || 'Sorry, I had trouble generating that workout. Please try again.'
+        }]);
       }
     } catch (error) {
+      console.error('Chat workout error:', error);
       setMessages(prev => [...prev, {
         type: 'error',
         content: 'Sorry, I had trouble generating that workout. Please try again.'
@@ -232,6 +247,11 @@ export function WorkoutChatPanel() {
                   <div className="flex justify-start">
                     <div className="bg-gray-100 rounded-lg p-3 max-w-[80%] whitespace-pre-wrap">
                       {msg.content}
+                      {msg.plan && (
+                        <div className="mt-3">
+                          <PlanRenderer plan={msg.plan} />
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -254,6 +274,14 @@ export function WorkoutChatPanel() {
                           </Button>
                         ))}
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {msg.type === 'error' && (
+                  <div className="flex justify-start">
+                    <div className="bg-red-100 text-red-800 rounded-lg p-3 max-w-[80%]">
+                      {msg.content}
                     </div>
                   </div>
                 )}
@@ -290,23 +318,23 @@ export function WorkoutChatPanel() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setMessage("Nike workouts")}
+                onClick={() => setMessage("kettlebell workout 30 min")}
               >
-                Nike Program
+                Kettlebell
               </Button>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setMessage("45 min upper body")}
+                onClick={() => setMessage("joe holder style mobility")}
+              >
+                Joe Holder
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setMessage("upper body strength 45 min")}
               >
                 Upper Body
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setMessage("Quick HIIT")}
-              >
-                HIIT
               </Button>
             </div>
           </div>
