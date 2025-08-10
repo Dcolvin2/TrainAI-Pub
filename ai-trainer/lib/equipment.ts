@@ -1,26 +1,28 @@
-// lib/equipment.ts
-import { createClient } from '@supabase/supabase-js';
+import { admin } from './supabaseAdmin';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
-// Returns equipment names for a user, only where is_available = true (or null)
-export async function getUserEquipmentNames(userId: string): Promise<string[]> {
-  const { data, error } = await supabase
+export async function getEquipmentNamesForUser(userId: string): Promise<string[]> {
+  // join user_equipment → equipment
+  const { data, error } = await admin
     .from('user_equipment')
-    .select('equipment:equipment_id(name), is_available')
-    .eq('user_id', userId)
-    .or('is_available.is.null,is_available.eq.true'); // keeps rows where flag is missing or true
+    .select('is_available, equipment:equipment_id ( name )')
+    .eq('user_id', userId);
 
-  if (error) throw error;
+  if (error) {
+    // Fallback: try without is_available column
+    const res = await admin
+      .from('user_equipment')
+      .select('equipment:equipment_id ( name )')
+      .eq('user_id', userId);
+    if (res.error) throw res.error;
+    return (res.data || [])
+      .map((r: any) => r.equipment?.name)
+      .filter(Boolean)
+      .sort();
+  }
 
-  return (data ?? [])
-    .map(r => {
-      // Handle the join result structure properly
-      const equipment = r.equipment as any;
-      return equipment?.name?.trim();
-    })
-    .filter((n): n is string => Boolean(n));
+  return (data || [])
+    .filter((r: any) => r.is_available !== false) // treat null/true as available
+    .map((r: any) => r.equipment?.name)
+    .filter(Boolean)
+    .sort();
 }
