@@ -1,15 +1,17 @@
-import { admin } from './supabaseAdmin';
+import { getSupabaseAdmin } from './supabaseAdmin';
 
 export async function getEquipmentNamesForUser(userId: string): Promise<string[]> {
+  const supabase = getSupabaseAdmin();
+  
   // join user_equipment → equipment
-  const { data, error } = await admin
+  const { data, error } = await supabase
     .from('user_equipment')
     .select('is_available, equipment:equipment_id ( name )')
     .eq('user_id', userId);
 
   if (error) {
     // Fallback: try without is_available column
-    const res = await admin
+    const res = await supabase
       .from('user_equipment')
       .select('equipment:equipment_id ( name )')
       .eq('user_id', userId);
