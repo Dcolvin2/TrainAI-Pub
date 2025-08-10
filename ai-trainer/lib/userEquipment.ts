@@ -18,4 +18,22 @@ export async function getUserEquipmentNames(userId: string) {
     .sort();
 }
 
+export async function getUserEquipmentNamesDetailed(userId: string) {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('user_equipment')
+    .select('id,user_id,is_available, equipment:equipment_id(name)')
+    .eq('user_id', userId);
+
+  if (error) throw error;
+
+  const names = (data ?? [])
+    .filter(r => r.is_available)
+    .map(r => r?.equipment?.name)
+    .filter(Boolean)
+    .sort();
+
+  return { names, rows: data ?? [], warn: [] as string[] };
+}
+
 

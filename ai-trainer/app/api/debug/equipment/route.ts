@@ -59,14 +59,28 @@ export async function GET(req: Request) {
     }, { status: 400 });
   }
 
-  const { names, rows, warn } = await getUserEquipmentNames(user);
+  // after you've validated `user`
+  type NamesResult =
+    | string[]
+    | { names: string[]; rows?: any[]; warn?: string[] };
+
+  const result = (await getUserEquipmentNames(user)) as NamesResult;
+
+  const names = Array.isArray(result) ? result : result.names ?? [];
+  const rows  = Array.isArray(result) ? undefined : result.rows;
+  const warn  = Array.isArray(result) ? [] : result.warn ?? [];
+
   return NextResponse.json({
     ok: true,
     user,
-    counts: { user_equipment: rows.length, equipment_names: names.length },
+    counts: {
+      user_equipment: rows ? rows.length : names.length,
+      equipment_names: names.length,
+    },
     equipment_names: names,
+    rows,           // may be undefined (that's fine for debug)
     warnings: warn,
-    echo,
+    echo: { url: req.url, qs: user, lastSeg: 'equipment' },
   });
 }
 
