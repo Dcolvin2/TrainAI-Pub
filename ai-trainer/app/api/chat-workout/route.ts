@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { PlanSchema } from '@/lib/planSchema';
+import { tryExtractJson, normalizePlanShape } from '@/lib/planNormalize';
 import { z, ZodError } from 'zod';
 import { quickParse } from '@/lib/intent';
 import { getEquipmentNamesForUser } from '@/lib/equipment';
@@ -6,58 +8,17 @@ import { planWorkout } from '@/lib/planner';
 import { sanitize } from '@/lib/safety';
 import type { Plan } from '@/lib/schemas';
 
-// Looser schema for parsing AI output
-const LoosePhaseItem = z.object({
-  name: z.string().min(1),
-  sets: z.union([z.number().int().positive(), z.string().regex(/^\d+$/)]).optional(),
-  reps: z.union([z.string(), z.number()]).optional(),
-  duration: z.string().optional(),
-  instruction: z.string().optional(),
-  isAccessory: z.boolean().optional(),
-}).passthrough();
-
-const LoosePhase = z.object({
-  phase: z.enum(["warmup","main","accessory","conditioning","cooldown"]),
-  items: z.array(LoosePhaseItem).min(1)
-});
-
-const LoosePlanSchema = z.object({
-  name: z.string(),
-  duration_min: z.union([z.number(), z.string().regex(/^\d+$/)]),
-  phases: z.array(LoosePhase).min(1),
-  progression_tip: z.string().optional(),
-}).passthrough();
-
-// Convert loose plan to strict Plan type
-function convertToStrictPlan(loose: z.infer<typeof LoosePlanSchema>): Plan {
-  return {
-    name: loose.name,
-    duration_min: typeof loose.duration_min === 'string' ? parseInt(loose.duration_min, 10) : loose.duration_min,
-    phases: loose.phases.map(phase => ({
-      phase: phase.phase,
-      items: phase.items.map(item => ({
-        name: item.name,
-        sets: typeof item.sets === 'string' ? parseInt(item.sets, 10) : item.sets,
-        reps: typeof item.reps === 'string' ? item.reps : String(item.reps || ''),
-        duration: item.duration,
-        instruction: item.instruction,
-        isAccessory: item.isAccessory,
-        substitutions: [],
-      }))
-    })),
-    progression_tip: loose.progression_tip,
-  };
-}
+export const runtime = 'nodejs';
 
 // Graceful fallback plan
 const fallback: Plan = {
-  name: "Simple Barbell Strength",
+  name: "Simple Strength",
   duration_min: 40,
   phases: [
     { phase: "warmup", items: [{ name: "Band Pull-Aparts", sets: 1, reps: "20", substitutions: [] }] },
     { phase: "main", items: [
-        { name: "Barbell Back Squat", sets: 4, reps: "5", substitutions: [] },
-        { name: "Barbell Bench Press", sets: 4, reps: "5", substitutions: [] },
+        { name: "Goblet Squat", sets: 4, reps: "8-10", substitutions: [] },
+        { name: "DB Row", sets: 4, reps: "8-12", substitutions: [] },
       ]},
     { phase: "cooldown", items: [{ name: "Couch Stretch", duration: "45s/side", substitutions: [] }] }
   ]
@@ -111,12 +72,43 @@ export async function POST(req: Request) {
     });
 
     const modelText = raw.trim();
+    const debugOn = new URL(req.url).searchParams.get("debug") === "1";
+
+    // 1) Extract + normalize + validate
+    const rawObj = tryExtractJson(modelText);
+    if (!rawObj) {
+      return NextResponse.json(
+        debugOn
+          ? { ok: false, error: "Model did not return JSON", raw_model_text: modelText }
+          : { ok: false, error: "Failed to generate workout plan" },
+        { status: 400 }
+      );
+    }
+
+    const normalized = normalizePlanShape(rawObj);
 
     try {
-      const parsed = LoosePlanSchema.parse(JSON.parse(modelText));
+      const plan = PlanSchema.parse(normalized);
       
       // Convert to strict Plan type and sanitize
-      const strictPlan = convertToStrictPlan(parsed);
+      const strictPlan = {
+        name: plan.name,
+        duration_min: typeof plan.duration_min === 'string' ? parseInt(plan.duration_min, 10) : plan.duration_min,
+        phases: plan.phases.map(phase => ({
+          phase: phase.phase,
+          items: phase.items.map(item => ({
+            name: item.name,
+            sets: typeof item.sets === 'string' ? parseInt(item.sets, 10) : item.sets,
+            reps: typeof item.reps === 'string' ? item.reps : String(item.reps || ''),
+            duration: item.duration,
+            instruction: item.instruction,
+            isAccessory: item.isAccessory,
+            substitutions: [],
+          }))
+        })),
+        progression_tip: typeof plan.progression_tip === 'string' ? plan.progression_tip : undefined,
+      };
+      
       const { plan: sanitized } = sanitize(strictPlan);
       
       // Generate narrative if requested
@@ -143,31 +135,28 @@ export async function POST(req: Request) {
         }
       }
 
+      // ✅ SUCCESS — return full plan so your UI renders tables
       return NextResponse.json({ 
         ok: true, 
-        message: narrative || 'Workout plan generated successfully!',
+        message: narrative || `Planned: ${sanitized.name} (~${sanitized.duration_min} min).`,
         plan: sanitized,
         narrative: narrative || undefined
       });
 
     } catch (err) {
+      // 3) Graceful fallback + rich debug
       if (err instanceof ZodError) {
-        const url = new URL(req.url);
-        const debug = url.searchParams.get("debug") === "1";
         return NextResponse.json(
-          debug
-            ? { 
-                ok: true, 
-                message: "Using fallback (validation failed).",
-                plan: fallback, 
-                validation_issues: err.issues, 
-                raw_model_text: modelText 
+          debugOn
+            ? {
+                ok: true,
+                message: "Planned (fallback; validation failed).",
+                plan: fallback,
+                validation_issues: err.issues,
+                raw_model_text: modelText,
+                normalized,
               }
-            : { 
-                ok: true, 
-                message: "Planned (fallback).", 
-                plan: fallback 
-              }
+            : { ok: true, message: "Planned (fallback).", plan: fallback }
         );
       }
       throw err;
