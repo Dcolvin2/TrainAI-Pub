@@ -1,28 +1,123 @@
 import { NextResponse } from 'next/server';
-import { PlanSchema } from '@/lib/planSchema';
-import { tryExtractJson, normalizePlanShape } from '@/lib/planNormalize';
-import { z, ZodError } from 'zod';
 import { quickParse } from '@/lib/intent';
 import { getEquipmentNamesForUser } from '@/lib/equipment';
 import { planWorkout } from '@/lib/planner';
-import { sanitize } from '@/lib/safety';
-import type { Plan } from '@/lib/schemas';
 
 export const runtime = 'nodejs';
 
-// Graceful fallback plan
-const fallback: Plan = {
-  name: "Simple Strength",
-  duration_min: 40,
-  phases: [
-    { phase: "warmup", items: [{ name: "Band Pull-Aparts", sets: 1, reps: "20", substitutions: [] }] },
-    { phase: "main", items: [
-        { name: "Goblet Squat", sets: 4, reps: "8-10", substitutions: [] },
-        { name: "DB Row", sets: 4, reps: "8-12", substitutions: [] },
-      ]},
-    { phase: "cooldown", items: [{ name: "Couch Stretch", duration: "45s/side", substitutions: [] }] }
-  ]
+// --- Normalization + legacy shaping ---
+
+type PlanItem = {
+  name: string;
+  sets?: string | number;
+  reps?: string | number;
+  duration?: string;
+  instruction?: string;
+  isAccessory?: boolean;
 };
+
+type PlanPhase =
+  | { phase: 'warmup' | 'main' | 'accessory' | 'conditioning' | 'cooldown'; items: PlanItem[] };
+
+type Plan = {
+  name: string;
+  duration_min?: number | string;
+  phases: PlanPhase[];
+  est_total_minutes?: number | string;
+};
+
+function coerceToString(v: unknown): string | undefined {
+  if (v === undefined || v === null) return undefined;
+  return typeof v === 'number' ? String(v) : String(v);
+}
+
+// Accept numbers or strings from the model and normalize to strings
+export function normalizePlan(input: any) {
+  const warnings: string[] = [];
+  if (!input || typeof input !== 'object') {
+    return { plan: null, warnings: ['LLM returned empty or non-object JSON'] };
+  }
+
+  const plan: Plan = {
+    name: String(input.name ?? 'Workout'),
+    duration_min: input.duration_min ?? input.est_total_minutes,
+    phases: Array.isArray(input.phases) ? input.phases.map((p: any) => {
+      const phase = String(p?.phase ?? '').toLowerCase();
+      const allowed: PlanPhase['phase'][] = ['warmup','main','accessory','conditioning','cooldown'];
+      const normalizedPhase = allowed.includes(phase as any) ? (phase as PlanPhase['phase']) : 'main';
+      if (phase !== normalizedPhase) warnings.push(`Unknown phase "${phase}" → coerced to "main"`);
+
+      const items: PlanItem[] = Array.isArray(p?.items) ? p.items.map((it: any) => ({
+        name: String(it?.name ?? 'Exercise'),
+        sets: coerceToString(it?.sets),
+        reps: coerceToString(it?.reps),
+        duration: it?.duration ? String(it.duration) : undefined,
+        instruction: it?.instruction ? String(it.instruction) : undefined,
+        isAccessory: Boolean(it?.isAccessory),
+      })) : [];
+
+      return { phase: normalizedPhase, items };
+    }) : [],
+    est_total_minutes: input.est_total_minutes ?? input.duration_min
+  };
+
+  // Require at least warmup/main/cooldown buckets to keep UI happy
+  const ensurePhase = (k: PlanPhase['phase']) => {
+    if (!plan.phases.some(ph => ph.phase === k)) plan.phases.push({ phase: k, items: [] });
+  };
+  ensurePhase('warmup'); ensurePhase('main'); ensurePhase('cooldown');
+
+  return { plan, warnings };
+}
+
+// Convert normalized Plan → legacy workout shape your UI already renders
+export function toLegacyWorkout(plan: Plan) {
+  const get = (k: PlanPhase['phase']) => plan.phases.find(p => p.phase === k)?.items ?? [];
+
+  const warmup = get('warmup').map(it => ({
+    name: it.name,
+    sets: it.sets ?? '1',
+    reps: it.reps ?? '10-15',
+    instruction: it.instruction ?? ''
+  }));
+
+  const mainCore = get('main').map(it => ({
+    name: it.name,
+    sets: it.sets ?? '3',
+    reps: it.reps ?? '8-12',
+    instruction: it.instruction ?? '',
+    isAccessory: false
+  }));
+
+  const accessories = get('accessory').map(it => ({
+    name: it.name,
+    sets: it.sets ?? '3',
+    reps: it.reps ?? '10-15',
+    instruction: it.instruction ?? '',
+    isAccessory: true
+  }));
+
+  const cooldown = get('cooldown').map(it => ({
+    name: it.name,
+    duration: it.duration ?? (it.reps ? String(it.reps) : '30-60s'),
+    instruction: it.instruction ?? ''
+  }));
+
+  // Conditioning can be folded after main core (optional)
+  const conditioning = get('conditioning').map(it => ({
+    name: it.name,
+    sets: it.sets ?? '3',
+    reps: it.reps ?? (it.duration ?? '30s'),
+    instruction: it.instruction ?? '',
+    isAccessory: true
+  }));
+
+  return {
+    warmup,
+    main: [...mainCore, ...accessories, ...conditioning],
+    cooldown
+  };
+}
 
 function pickUserId(req: Request): string | null {
   // Try query param first
@@ -71,96 +166,88 @@ export async function POST(req: Request) {
       styleHint: intent.athleteName ? `inspired by ${intent.athleteName}` : undefined
     });
 
-    const modelText = raw.trim();
+    const aiText = String(raw ?? '');
     const debugOn = new URL(req.url).searchParams.get("debug") === "1";
 
-    // 1) Extract + normalize + validate
-    const rawObj = tryExtractJson(modelText);
-    if (!rawObj) {
-      return NextResponse.json(
-        debugOn
-          ? { ok: false, error: "Model did not return JSON", raw_model_text: modelText }
-          : { ok: false, error: "Failed to generate workout plan" },
-        { status: 400 }
-      );
-    }
-
-    const normalized = normalizePlanShape(rawObj);
-
+    // Parse and normalize the LLM output
+    let parsed: any;
     try {
-      const plan = PlanSchema.parse(normalized);
-      
-      // Convert to strict Plan type and sanitize
-      const strictPlan = {
-        name: plan.name,
-        duration_min: typeof plan.duration_min === 'string' ? parseInt(plan.duration_min, 10) : plan.duration_min,
-        phases: plan.phases.map(phase => ({
-          phase: phase.phase,
-          items: phase.items.map(item => ({
-            name: item.name,
-            sets: typeof item.sets === 'string' ? parseInt(item.sets, 10) : item.sets,
-            reps: typeof item.reps === 'string' ? item.reps : String(item.reps || ''),
-            duration: item.duration,
-            instruction: item.instruction,
-            isAccessory: item.isAccessory,
-            substitutions: [],
-          }))
-        })),
-        progression_tip: typeof plan.progression_tip === 'string' ? plan.progression_tip : undefined,
-      };
-      
-      const { plan: sanitized } = sanitize(strictPlan);
-      
-      // Generate narrative if requested
-      let narrative = '';
-      const url = new URL(req.url);
-      if (url.searchParams.get('narrate') === '1') {
+      parsed = JSON.parse(aiText);
+    } catch {
+      // (Optional) attempt to extract the first {...} block if the model added chatter
+      const m = aiText.match(/\{[\s\S]*\}/);
+      if (m) {
         try {
-          const { Anthropic } = await import('@anthropic-ai/sdk');
-          const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-          
-          const response = await anthropic.messages.create({
-            model: 'claude-3-5-sonnet-20241022',
-            max_tokens: 300,
-            messages: [{
-              role: 'user',
-              content: `Write a brief, motivating narrative for this workout plan. Keep it under 3 sentences and focus on the user's goals and the workout structure:\n\n${JSON.stringify(sanitized, null, 2)}`
-            }]
-          });
-          
-          narrative = response.content[0].type === 'text' ? response.content[0].text : '';
-        } catch (narrateErr) {
-          console.warn('Narrative generation failed:', narrateErr);
-          // Continue without narrative
+          parsed = JSON.parse(m[0]);
+        } catch {
+          parsed = null;
         }
       }
-
-      // ✅ SUCCESS — return full plan so your UI renders tables
-      return NextResponse.json({ 
-        ok: true, 
-        message: narrative || `Planned: ${sanitized.name} (~${sanitized.duration_min} min).`,
-        plan: sanitized,
-        narrative: narrative || undefined
-      });
-
-    } catch (err) {
-      // 3) Graceful fallback + rich debug
-      if (err instanceof ZodError) {
-        return NextResponse.json(
-          debugOn
-            ? {
-                ok: true,
-                message: "Planned (fallback; validation failed).",
-                plan: fallback,
-                validation_issues: err.issues,
-                raw_model_text: modelText,
-                normalized,
-              }
-            : { ok: true, message: "Planned (fallback).", plan: fallback }
-        );
-      }
-      throw err;
     }
+
+    const { plan, warnings } = normalizePlan(parsed);
+    if (!plan) {
+      return NextResponse.json({
+        ok: false,
+        error: 'Planner JSON failed validation',
+        details: warnings.join('; ') || 'could not normalize plan'
+      }, { status: 400 });
+    }
+
+    // (Optional) enforce your "no oly lifts" rule at this layer too:
+    const banned = /snatch|power\s*clean|clean\s*&?\s*jerk|jerk/i;
+    plan.phases.forEach(ph => {
+      ph.items = ph.items.filter(it => !banned.test(it.name));
+    });
+
+    // bridge to your existing UI shape
+    const workout = toLegacyWorkout(plan);
+
+    // Generate narrative if requested
+    let narrative = '';
+    const url = new URL(req.url);
+    if (url.searchParams.get('narrate') === '1') {
+      try {
+        const { Anthropic } = await import('@anthropic-ai/sdk');
+        const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+        
+        const response = await anthropic.messages.create({
+          model: 'claude-3-5-sonnet-20241022',
+          max_tokens: 300,
+          messages: [{
+            role: 'user',
+            content: `Write a brief, motivating narrative for this workout plan. Keep it under 3 sentences and focus on the user's goals and the workout structure:\n\n${JSON.stringify(plan, null, 2)}`
+          }]
+        });
+        
+        narrative = response.content[0].type === 'text' ? response.content[0].text : '';
+      } catch (narrateErr) {
+        console.warn('Narrative generation failed:', narrateErr);
+        // Continue without narrative
+      }
+    }
+
+    // richer chat string:
+    const title = plan.name || 'Planned Session';
+    const minutes = String(plan.est_total_minutes ?? plan.duration_min ?? '').trim();
+    const summary = `Planned: ${title}${minutes ? ` (~${minutes} min)` : ''}.
+Warm-up: ${workout.warmup.map(i => i.name).join(', ') || '—'}
+Main: ${workout.main.map(i => i.name).join(', ') || '—'}
+Cooldown: ${workout.cooldown.map(i => i.name).join(', ') || '—'}`;
+
+    // return both shapes to future-proof UI
+    return NextResponse.json({
+      ok: true,
+      message: narrative || summary,
+      plan,
+      workout,
+      narrative: narrative || undefined,
+      debug: debugOn ? {
+        validation_ok: true,
+        warnings,
+        raw_model_text: aiText
+      } : undefined
+    });
 
   } catch (error) {
     console.error('Workout generation error:', error);
