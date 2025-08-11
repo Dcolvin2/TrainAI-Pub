@@ -6,21 +6,31 @@ export const runtime = "nodejs";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
+export async function GET() {
+  // Quick sanity check so you can visit /api/debug/llm in the browser
+  return NextResponse.json({ ok: true, hint: "POST a JSON body: { message: string }" });
+}
+
 export async function POST(req: Request) {
-  const { message } = await req.json();
-  if (!message) return NextResponse.json({ ok: false, error: "Missing message" }, { status: 400 });
+  const { message } = await req.json().catch(() => ({}));
+  if (!message) {
+    return NextResponse.json({ ok: false, error: "Missing message" }, { status: 400 });
+  }
 
   const prompt = `
-Return ONLY JSON that matches:
+Return ONLY JSON (no markdown or fences) that matches:
 {
   "name": string,
   "duration_min": number,
   "phases": [
-    { "phase": "warmup"|"main"|"accessory"|"conditioning"|"cooldown", "items": [ { "name": string, "sets"?: number|string, "reps"?: number|string, "duration"?: string, "instruction"?: string, "isAccessory"?: boolean } ] }
-  ]
+    { "phase": "warmup"|"main"|"accessory"|"conditioning"|"cooldown",
+      "items": [ { "name": string, "sets"?: number|string, "reps"?: number|string, "duration"?: string, "instruction"?: string, "isAccessory"?: boolean } ]
+    }
+  ],
+  "est_total_minutes"?: number
 }
 
-User: "${message}"
+User request: "${message}"
 `;
 
   const resp = await anthropic.messages.create({
@@ -30,6 +40,10 @@ User: "${message}"
     messages: [{ role: "user", content: prompt }],
   });
 
-  const text = String(resp?.content?.[0]?.type === "text" ? (resp as any).content[0].text : "");
-  return NextResponse.json({ ok: true, raw: text });
+  // Gather all text blocks from Anthropic response
+  const raw = (resp?.content ?? [])
+    .map((b: any) => (b && typeof b === "object" && "text" in b ? b.text : ""))
+    .join("\n");
+
+  return NextResponse.json({ ok: true, raw });
 }
