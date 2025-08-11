@@ -1,12 +1,19 @@
 // app/api/chat-workout/route.ts
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { supabase } from "@/lib/supabaseClient";
+import { createClient } from '@supabase/supabase-js';
 
 export const runtime = "nodejs";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 const VERSION = "chat-workout:v4-equip-dow-min-2025-08-11";
+
+// server-only client (service role) for reading user_equipment safely
+const admin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!, // ensure this env var is set in Vercel
+  { auth: { persistSession: false } }
+);
 
 /* ---------- types used internally ---------- */
 type PlanItem = {
@@ -104,7 +111,7 @@ function toLegacyWorkout(plan: Plan) {
     duration: it.duration ?? (it.reps ? String(it.reps) : "30-60s"),
     instruction: it.instruction ?? "",
   }));
-  return { warmup, main: [...mainCore, ...accessories, ...conditioning], cooldown };
+  return { warmup, main: [...mainCore, ...accessories], cooldown };
 }
 
 function findJsonObject(s: string): string | null {
@@ -150,31 +157,66 @@ function dayCueFor(date = new Date()): { label: string; cue: string } {
   return { label: day[0]?.toUpperCase() + day.slice(1), cue: "cardio / conditioning focus" };
 }
 
+function canon(name: string) {
+  const n = name.toLowerCase().trim();
+  if (/^hex\s*bar|trap\s*bar/.test(n)) return 'trap bar';
+  if (/^db$|dumbbells?/.test(n)) return 'dumbbells';
+  if (/^kb$|kettlebells?/.test(n)) return 'kettlebell';
+  if (/barbell/.test(n)) return 'barbell';
+  if (/bench/.test(n)) return 'bench';
+  if (/rack|power\s*rack|squat\s*rack/.test(n)) return 'rack';
+  if (/rope/.test(n)) return 'battle ropes';
+  if (/band/.test(n)) return 'resistance bands';
+  if (/plyo|box/.test(n)) return 'plyo box';
+  if (/bike|echo|airdyne/.test(n)) return 'air bike';
+  return name.trim(); // keep custom names too
+}
+
 async function getEquipmentForUser(userId: string | null): Promise<string[]> {
   if (!userId) return [];
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("equipment")
-    .eq("id", userId)
-    .maybeSingle();
+
+  // JOIN user_equipment -> equipment, prefer custom_name, respect is_available
+  const { data, error } = await admin
+    .from('user_equipment')
+    .select('custom_name, is_available, equipment:equipment_id ( name )')
+    .eq('user_id', userId);
+
   if (error || !data) return [];
-  const raw = data.equipment;
-  // Try JSON array, else CSV, else string
-  try {
-    const arr = typeof raw === "string" ? JSON.parse(raw) : raw;
-    if (Array.isArray(arr)) {
-      return arr.map((x) => String(x)).filter((x) => x.length > 0);
+
+  const names: string[] = [];
+  for (const row of data as any[]) {
+    if (row?.is_available === false) continue;
+    const base = (row?.equipment?.name ?? '').toString();
+    const custom = (row?.custom_name ?? '').toString();
+    const chosen = (custom || base).trim();
+    if (chosen) names.push(canon(chosen));
+  }
+  // Fallback to profiles.equipment if nothing found (legacy compatibility)
+  if (names.length === 0) {
+    const { data: prof } = await admin
+      .from('profiles')
+      .select('equipment')
+      .eq('id', userId)
+      .maybeSingle();
+    const legacy = (prof?.equipment ?? '').toString();
+    if (legacy) {
+      legacy.split(',').map((s: string) => s.trim()).filter(Boolean).forEach((s: string) => names.push(canon(s)));
     }
-  } catch {
-    /* fall through to CSV parse */
   }
-  if (typeof raw === "string") {
-    return raw
-      .split(",")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-  }
-  return [];
+  // Dedup
+  return Array.from(new Set(names));
+}
+
+async function getPreferredDuration(userId: string | null): Promise<number | null> {
+  if (!userId) return null;
+  const { data, error } = await admin
+    .from('profiles')
+    .select('preferred_workout_duration')
+    .eq('id', userId)
+    .maybeSingle();
+  if (error || !data) return null;
+  const n = Number(data.preferred_workout_duration);
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 async function callPlannerLLM(userMessage: string, cues: {
@@ -245,11 +287,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Missing message" }, { status: 400 });
   }
 
-  // derive minutes (message > ?min= > default 45)
+  // derive minutes: message > ?min= > profiles.preferred_workout_duration > 45
   const explicitMin = parseMinutesFromMessage(message);
-  const queryMin = Number(url.searchParams.get("min") || "");
-  const durationMin =
-    (explicitMin && explicitMin > 0 ? explicitMin : Number.isFinite(queryMin) ? queryMin : 45);
+  const minParam = url.searchParams.get("min");
+  const queryMin = minParam ? Number(minParam) : NaN;
+  let durationMin =
+    (explicitMin && explicitMin > 0 ? explicitMin : (Number.isFinite(queryMin) && queryMin > 0) ? queryMin : NaN);
+
+  if (!Number.isFinite(durationMin)) {
+    const pref = await getPreferredDuration(userId);
+    durationMin = pref ?? 45;
+  }
 
   const { cue: dowCue } = dayCueFor();
   const equipmentList = await getEquipmentForUser(userId);
