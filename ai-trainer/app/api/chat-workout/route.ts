@@ -5,6 +5,40 @@ import { planWorkout } from '@/lib/planner';
 
 export const runtime = 'nodejs';
 
+// --- JSON extraction helpers ---
+function findJsonObject(s: string): string | null {
+  let start = -1;
+  let depth = 0;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === '{') {
+      if (start === -1) start = i;
+      depth++;
+    } else if (ch === '}') {
+      if (depth > 0) depth--;
+      if (depth === 0 && start !== -1) return s.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+function extractAiText(resp: any): string {
+  // Anthropic SDK style
+  if (resp?.content && Array.isArray(resp.content)) {
+    return resp.content
+      .map((b: any) => (b && typeof b === 'object' && 'text' in b ? b.text : ''))
+      .join('\n')
+      .trim();
+  }
+  // OpenAI style
+  if (resp?.choices?.[0]?.message?.content) {
+    return String(resp.choices[0].message.content).trim();
+  }
+  // Already a string?
+  if (typeof resp === 'string') return resp.trim();
+  return '';
+}
+
 // --- Normalization + legacy shaping ---
 // Helper functions for normalizing LLM output and converting to legacy workout format
 
@@ -167,42 +201,63 @@ export async function POST(req: Request) {
       styleHint: intent.athleteName ? `inspired by ${intent.athleteName}` : undefined
     });
 
-    const aiText = String(raw ?? '');
-    const debugOn = new URL(req.url).searchParams.get("debug") === "1";
+    // Extract AI text using the helper
+    const aiText = extractAiText(raw);
 
-    // Parse and normalize the LLM output
-    let parsed: any;
+    // Try as-is first
+    let parsed: any = null;
+    let rawJsonExtract: string | null = null;
     try {
       parsed = JSON.parse(aiText);
+      rawJsonExtract = aiText;
     } catch {
-      // (Optional) attempt to extract the first {...} block if the model added chatter
-      const m = aiText.match(/\{[\s\S]*\}/);
-      if (m) {
+      // Try fenced ```json blocks
+      const fence = aiText.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+      if (fence?.[1]) {
         try {
-          parsed = JSON.parse(m[0]);
-        } catch {
-          parsed = null;
+          parsed = JSON.parse(fence[1]);
+          rawJsonExtract = fence[1];
+        } catch {}
+      }
+      // Try first balanced { ... }
+      if (!parsed) {
+        const chunk = findJsonObject(aiText);
+        if (chunk) {
+          try {
+            parsed = JSON.parse(chunk);
+            rawJsonExtract = chunk;
+          } catch {}
         }
       }
     }
 
     const { plan, warnings } = normalizePlan(parsed);
     if (!plan) {
-      return NextResponse.json({
-        ok: false,
-        error: 'Planner JSON failed validation',
-        details: warnings.join('; ') || 'could not normalize plan'
-      }, { status: 400 });
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'Failed to generate workout plan',
+          details: 'Planner JSON failed validation',
+          debug: {
+            aiTextHead: aiText.slice(0, 400),
+            hadJsonExtract: Boolean(rawJsonExtract),
+            parseType: typeof parsed,
+            warnings,
+          },
+        },
+        { status: 400 }
+      );
     }
 
-    // (Optional) enforce your "no oly lifts" rule at this layer too:
+    // Optional: remove oly lifts at server layer
     const banned = /snatch|power\s*clean|clean\s*&?\s*jerk|jerk/i;
-    plan.phases.forEach(ph => {
-      ph.items = ph.items.filter(it => !banned.test(it.name));
+    plan.phases.forEach((ph) => {
+      ph.items = ph.items.filter((it) => !banned.test(it.name));
     });
 
-    // bridge to your existing UI shape
     const workout = toLegacyWorkout(plan);
+    const title = plan.name || 'Planned Session';
+    const minutes = String(plan.est_total_minutes ?? plan.duration_min ?? '').trim();
 
     // Generate narrative if requested
     let narrative = '';
@@ -228,26 +283,18 @@ export async function POST(req: Request) {
       }
     }
 
-    // richer chat string:
-    const title = plan.name || 'Planned Session';
-    const minutes = String(plan.est_total_minutes ?? plan.duration_min ?? '').trim();
-    const summary = `Planned: ${title}${minutes ? ` (~${minutes} min)` : ''}.
-Warm-up: ${workout.warmup.map(i => i.name).join(', ') || '—'}
-Main: ${workout.main.map(i => i.name).join(', ') || '—'}
-Cooldown: ${workout.cooldown.map(i => i.name).join(', ') || '—'}`;
-
-    // return both shapes to future-proof UI
     return NextResponse.json({
       ok: true,
-      message: narrative || summary,
+      message: narrative || `Planned: ${title}${minutes ? ` (~${minutes} min)` : ''}.`,
       plan,
       workout,
       narrative: narrative || undefined,
-      debug: debugOn ? {
+      debug: {
         validation_ok: true,
         warnings,
-        raw_model_text: aiText
-      } : undefined
+        // helpful for us while we're hardening:
+        rawJsonPreview: (rawJsonExtract ?? '').slice(0, 400),
+      },
     });
 
   } catch (error) {
