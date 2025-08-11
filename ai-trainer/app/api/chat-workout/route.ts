@@ -6,6 +6,7 @@ import { planWorkout } from '@/lib/planner';
 export const runtime = 'nodejs';
 
 // --- Normalization + legacy shaping ---
+// Helper functions for normalizing LLM output and converting to legacy workout format
 
 type PlanItem = {
   name: string;
