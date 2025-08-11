@@ -1,13 +1,14 @@
 // app/api/chat-workout/route.ts
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { supabase } from "@/lib/supabaseClient";
 
 export const runtime = "nodejs";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
-const VERSION = "chat-workout:v3-normalizer-inline-2025-08-11";
+const VERSION = "chat-workout:v4-equip-dow-min-2025-08-11";
 
-/* ---------- helpers (no exports!) ---------- */
+/* ---------- types used internally ---------- */
 type PlanItem = {
   name: string;
   sets?: string | number;
@@ -25,6 +26,7 @@ type Plan = {
   est_total_minutes?: number | string;
 };
 
+/* ---------- helpers (no exports) ---------- */
 function coerceToString(v: unknown): string | undefined {
   if (v === undefined || v === null) return undefined;
   return String(v);
@@ -35,9 +37,7 @@ function normalizePlan(input: any): { plan: Plan | null; warnings: string[] } {
   if (!input || typeof input !== "object") {
     return { plan: null, warnings: ["LLM returned empty or non-object JSON"] };
   }
-
   const allowed: PlanPhase["phase"][] = ["warmup", "main", "accessory", "conditioning", "cooldown"];
-
   const plan: Plan = {
     name: String(input.name ?? "Workout"),
     duration_min: input.duration_min ?? input.est_total_minutes,
@@ -46,7 +46,6 @@ function normalizePlan(input: any): { plan: Plan | null; warnings: string[] } {
           const rawPhase = String(p?.phase ?? "").toLowerCase();
           const phase = (allowed.includes(rawPhase as any) ? rawPhase : "main") as PlanPhase["phase"];
           if (rawPhase !== phase) warnings.push(`Unknown phase "${rawPhase}" → coerced to "main"`);
-
           const items: PlanItem[] = Array.isArray(p?.items)
             ? p.items.map((it: any) => ({
                 name: String(it?.name ?? "Exercise"),
@@ -57,34 +56,28 @@ function normalizePlan(input: any): { plan: Plan | null; warnings: string[] } {
                 isAccessory: Boolean(it?.isAccessory),
               }))
             : [];
-
           return { phase, items };
         })
       : [],
     est_total_minutes: input.est_total_minutes ?? input.duration_min,
   };
-
-  // Ensure buckets your UI expects
-  const ensurePhase = (k: PlanPhase["phase"]) => {
+  const ensure = (k: PlanPhase["phase"]) => {
     if (!plan.phases.some((ph) => ph.phase === k)) plan.phases.push({ phase: k, items: [] });
   };
-  ensurePhase("warmup");
-  ensurePhase("main");
-  ensurePhase("cooldown");
-
+  ensure("warmup");
+  ensure("main");
+  ensure("cooldown");
   return { plan, warnings };
 }
 
 function toLegacyWorkout(plan: Plan) {
   const get = (k: PlanPhase["phase"]) => plan.phases.find((p) => p.phase === k)?.items ?? [];
-
   const warmup = get("warmup").map((it) => ({
     name: it.name,
     sets: it.sets ?? "1",
     reps: it.reps ?? "10-15",
     instruction: it.instruction ?? "",
   }));
-
   const mainCore = get("main").map((it) => ({
     name: it.name,
     sets: it.sets ?? "3",
@@ -92,7 +85,6 @@ function toLegacyWorkout(plan: Plan) {
     instruction: it.instruction ?? "",
     isAccessory: false,
   }));
-
   const accessories = get("accessory").map((it) => ({
     name: it.name,
     sets: it.sets ?? "3",
@@ -100,7 +92,6 @@ function toLegacyWorkout(plan: Plan) {
     instruction: it.instruction ?? "",
     isAccessory: true,
   }));
-
   const conditioning = get("conditioning").map((it) => ({
     name: it.name,
     sets: it.sets ?? "3",
@@ -108,18 +99,12 @@ function toLegacyWorkout(plan: Plan) {
     instruction: it.instruction ?? "",
     isAccessory: true,
   }));
-
   const cooldown = get("cooldown").map((it) => ({
     name: it.name,
     duration: it.duration ?? (it.reps ? String(it.reps) : "30-60s"),
     instruction: it.instruction ?? "",
   }));
-
-  return {
-    warmup,
-    main: [...mainCore, ...accessories, ...conditioning],
-    cooldown,
-  };
+  return { warmup, main: [...mainCore, ...accessories, ...conditioning], cooldown };
 }
 
 function findJsonObject(s: string): string | null {
@@ -149,7 +134,58 @@ function extractAiText(resp: any): string {
   return "";
 }
 
-async function callPlannerLLM(userMessage: string): Promise<string> {
+function parseMinutesFromMessage(msg: string): number | null {
+  const m = msg.match(/(\d{2,3}|\d{1,2})\s*(?:min|minutes?)\b/i);
+  if (!m) return null;
+  const n = parseInt(m[1], 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+function dayCueFor(date = new Date()): { label: string; cue: string } {
+  const day = date.toLocaleDateString(undefined, { weekday: "long" }).toLowerCase();
+  if (day.startsWith("mon")) return { label: "Monday", cue: "legs day (core: barbell back squat)" };
+  if (day.startsWith("tue")) return { label: "Tuesday", cue: "chest day (core: bench press)" };
+  if (day.startsWith("thu")) return { label: "Thursday", cue: "HIIT day (no olympic lifts)" };
+  if (day.startsWith("sat")) return { label: "Saturday", cue: "back day (core: deadlift or rows)" };
+  return { label: day[0]?.toUpperCase() + day.slice(1), cue: "cardio / conditioning focus" };
+}
+
+async function getEquipmentForUser(userId: string | null): Promise<string[]> {
+  if (!userId) return [];
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("equipment")
+    .eq("id", userId)
+    .maybeSingle();
+  if (error || !data) return [];
+  const raw = data.equipment;
+  // Try JSON array, else CSV, else string
+  try {
+    const arr = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (Array.isArray(arr)) {
+      return arr.map((x) => String(x)).filter((x) => x.length > 0);
+    }
+  } catch {
+    /* fall through to CSV parse */
+  }
+  if (typeof raw === "string") {
+    return raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+  }
+  return [];
+}
+
+async function callPlannerLLM(userMessage: string, cues: {
+  durationMin: number;
+  dowCue: string;
+  equipmentList: string[];
+}): Promise<string> {
+  const eq = cues.equipmentList.length
+    ? cues.equipmentList.join(", ")
+    : "bodyweight, dumbbells, barbell, kettlebell";
+
   const prompt = `
 Return ONLY JSON (no markdown or fences) that matches:
 {
@@ -164,9 +200,12 @@ Return ONLY JSON (no markdown or fences) that matches:
 }
 
 Constraints:
-- Use only equipment the user has (if specified elsewhere).
-- Do not include snatch/clean/jerk variants.
-- Sets and reps can be numbers or strings.
+- Target duration: ${cues.durationMin} minutes.
+- Today is ${cues.dowCue}.
+- Use only this equipment: ${eq}.
+- Do NOT include snatch/clean/jerk variants.
+- Sets and reps may be numbers or strings.
+- Keep names concise (e.g., "Barbell Back Squat", "Goblet Squat").
 
 User request: "${userMessage}"
 `.trim();
@@ -182,7 +221,6 @@ User request: "${userMessage}"
 }
 
 /* ---------- handlers ---------- */
-
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const probe = url.searchParams.get("probe");
@@ -199,46 +237,51 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const url = new URL(req.url);
   const debug = url.searchParams.get("debug") === "1";
+  const userId = url.searchParams.get("user"); // optional
 
   const body = await req.json().catch(() => ({}));
   const message = typeof body?.message === "string" ? body.message : "";
-
   if (!message) {
     return NextResponse.json({ ok: false, error: "Missing message" }, { status: 400 });
   }
 
+  // derive minutes (message > ?min= > default 45)
+  const explicitMin = parseMinutesFromMessage(message);
+  const queryMin = Number(url.searchParams.get("min") || "");
+  const durationMin =
+    (explicitMin && explicitMin > 0 ? explicitMin : Number.isFinite(queryMin) ? queryMin : 45);
+
+  const { cue: dowCue } = dayCueFor();
+  const equipmentList = await getEquipmentForUser(userId);
+
   let aiText = "";
-  let parsePath: "direct-json" | "as-is" | "fence" | "balanced" | "none" = "none";
+  let parsePath: "as-is" | "fence" | "balanced" | "none" = "none";
   let rawJsonExtract: string | null = null;
 
   try {
-    // TEST BYPASS: If the client pastes the JSON itself, skip the model entirely
+    // If the client sends raw JSON (for testing), skip the LLM
     if (message.trim().startsWith("{")) {
       aiText = message.trim();
       parsePath = "as-is";
     } else {
-      aiText = await callPlannerLLM(message);
+      aiText = await callPlannerLLM(message, { durationMin, dowCue, equipmentList });
     }
 
-    // Try to parse as-is
+    // Parse JSON (as-is → fenced → balanced)
     let parsed: any = null;
     try {
       parsed = JSON.parse(aiText);
       parsePath = parsePath === "none" ? "as-is" : parsePath;
       rawJsonExtract = aiText;
     } catch {
-      // Try fenced ```json blocks
       const fence = aiText.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
       if (fence?.[1]) {
         try {
           parsed = JSON.parse(fence[1]);
           parsePath = "fence";
           rawJsonExtract = fence[1];
-        } catch {
-          // fall through
-        }
+        } catch {}
       }
-      // Try first balanced { ... }
       if (!parsed) {
         const chunk = findJsonObject(aiText);
         if (chunk) {
@@ -246,9 +289,7 @@ export async function POST(req: Request) {
             parsed = JSON.parse(chunk);
             parsePath = "balanced";
             rawJsonExtract = chunk;
-          } catch {
-            // fall through
-          }
+          } catch {}
         }
       }
     }
@@ -260,13 +301,18 @@ export async function POST(req: Request) {
           ok: false,
           error: "Failed to generate workout plan",
           details: "Planner JSON failed validation",
-          debug: {
-            version: VERSION,
-            parsePath,
-            hadJsonExtract: Boolean(rawJsonExtract),
-            aiTextHead: aiText.slice(0, 400),
-            warnings,
-          },
+          debug: debug
+            ? {
+                version: VERSION,
+                parsePath,
+                hadJsonExtract: Boolean(rawJsonExtract),
+                aiTextHead: aiText.slice(0, 400),
+                warnings,
+                durationMin,
+                dowCue,
+                equipmentList,
+              }
+            : undefined,
         },
         { status: 400 }
       );
@@ -294,6 +340,9 @@ export async function POST(req: Request) {
             warnings,
             parsePath,
             rawJsonPreview: (rawJsonExtract ?? "").slice(0, 400),
+            durationMin,
+            dowCue,
+            equipmentList,
           }
         : undefined,
     });
@@ -306,7 +355,6 @@ export async function POST(req: Request) {
         debug: debug
           ? {
               version: VERSION,
-              aiTextHead: (aiText || "").slice(0, 400),
             }
           : undefined,
       },
