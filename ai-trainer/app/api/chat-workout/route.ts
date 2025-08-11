@@ -32,7 +32,7 @@ function coerceToString(v: unknown): string | undefined {
 }
 
 // Accept numbers or strings from the model and normalize to strings
-export function normalizePlan(input: any) {
+function normalizePlan(input: any) {
   const warnings: string[] = [];
   if (!input || typeof input !== 'object') {
     return { plan: null, warnings: ['LLM returned empty or non-object JSON'] };
@@ -71,7 +71,7 @@ export function normalizePlan(input: any) {
 }
 
 // Convert normalized Plan → legacy workout shape your UI already renders
-export function toLegacyWorkout(plan: Plan) {
+function toLegacyWorkout(plan: Plan) {
   const get = (k: PlanPhase['phase']) => plan.phases.find(p => p.phase === k)?.items ?? [];
 
   const warmup = get('warmup').map(it => ({
