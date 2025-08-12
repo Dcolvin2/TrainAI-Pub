@@ -5,7 +5,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
 export const runtime = "nodejs";
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
-const VERSION = "chat-workout:v8-exact-equipment-vocabulary-2025-08-11";
+const VERSION = "chat-workout:v9-duplicate-fix-hiit-stations-2025-08-11";
 
 const admin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -32,59 +32,62 @@ async function getEquipmentForUser(userId: string | null): Promise<string[]> {
 }
 
 function buildEquipmentVocabulary(allowed: string[]) {
-  const vocab = Array.from(new Set(allowed)); // exact case from DB
+  // Keep exact DB strings (case preserved)
+  const vocab = Array.from(new Set(allowed));
 
+  // Only map specific aliases → your exact DB terms.
+  // IMPORTANT: no generic tokens like "rope" or "box".
   const renameMap: Record<string, string> = {};
-  const has = (s: string) => vocab.includes(s);
 
-  if (has("Exercise Bike")) {
-    ["air bike", "assault bike", "echo bike", "airdyne", "bike"].forEach(k => renameMap[k] = "Exercise Bike");
+  if (vocab.includes("Exercise Bike")) {
+    ["air bike", "assault bike", "echo bike", "airdyne"].forEach(a => renameMap[a] = "Exercise Bike");
   }
-  if (has("Battle Rope")) {
-    ["battle rope", "battle ropes", "ropes", "rope"].forEach(k => renameMap[k] = "Battle Rope");
+  if (vocab.includes("Battle Rope")) {
+    ["battle ropes", "battle rope"].forEach(a => renameMap[a] = "Battle Rope");
   }
-  if (has("Kettlebells")) {
-    ["kettlebell", "kettlebells", "kb"].forEach(k => renameMap[k] = "Kettlebells");
+  if (vocab.includes("Kettlebells")) {
+    ["kettlebell", "kb"].forEach(a => renameMap[a] = "Kettlebells");
   }
-  if (has("Dumbbells")) {
-    ["dumbbell", "dumbbells", "db"].forEach(k => renameMap[k] = "Dumbbells");
+  if (vocab.includes("Dumbbells")) {
+    ["dumbbell", "db"].forEach(a => renameMap[a] = "Dumbbells");
   }
-  if (has("Barbells")) {
-    ["barbell", "barbells"].forEach(k => renameMap[k] = "Barbells");
+  if (vocab.includes("Barbells")) {
+    ["barbell"].forEach(a => renameMap[a] = "Barbells");
   }
-  if (has("Plyo Box")) {
-    ["plyo box", "box step overs", "box step-overs", "box"].forEach(k => renameMap[k] = "Plyo Box");
-  }
-  if (has("Superbands")) {
-    ["super bands", "heavy bands"].forEach(k => renameMap[k] = "Superbands");
-  }
-  if (has("Minibands")) {
-    ["mini bands", "minibands", "hip circle"].forEach(k => renameMap[k] = "Minibands");
-  }
-
+  // No plain "box" mapping — it caused "Plyo Plyo Plyo Box"
   return { vocab, renameMap };
 }
 
-function harmonizePlanEquipmentNames(plan: Plan, renameMap: Record<string,string>) {
-  const pairs: [RegExp, string][] = Object.entries(renameMap).map(
-    ([k, v]) => [new RegExp(`\\b${k.replace(/\s+/g, "\\s*")}\\b`, "ig"), v]
-  );
-  plan.phases.forEach(ph => {
-    ph.items = ph.items.map(it => {
-      let name = it.name || "";
-      for (const [rx, to] of pairs) name = name.replace(rx, to);
-      return { ...it, name };
-    });
+function replaceSynonymsOnce(text: string, renameMap: Record<string, string>) {
+  let out = text || "";
+  // longest aliases first
+  const entries = Object.entries(renameMap).sort((a, b) => b[0].length - a[0].length);
+
+  for (const [alias, target] of entries) {
+    const targetRe = new RegExp(`\\b${target.replace(/\s+/g, "\\s+")}\\b`, "i");
+    if (targetRe.test(out)) continue; // already contains target, skip
+
+    const aliasRe = new RegExp(`\\b${alias.replace(/\s+/g, "\\s+")}\\b`, "ig");
+    out = out.replace(aliasRe, target);
+  }
+
+  // Collapse accidental repeated words: "Exercise Exercise Bike" -> "Exercise Bike"
+  out = out.replace(/\b(\w+)(\s+\1\b)+/gi, "$1");
+  // Specific tidy-ups for common pairs
+  out = out.replace(/\b(Battle)\s+\1\s+Rope\b/gi, "Battle Rope");
+  out = out.replace(/\b(Plyo)\s+\1\s+Box\b/gi, "Plyo Box");
+
+  return out.trim().replace(/\s{2,}/g, " ");
+}
+
+function harmonizePlanEquipmentNames(plan: Plan, renameMap: Record<string, string>) {
+  plan.phases.forEach(p => {
+    p.items = p.items.map(it => ({ ...it, name: replaceSynonymsOnce(it.name || "", renameMap) }));
   });
 }
 
-function harmonizeCoachMessage(msg: string, renameMap: Record<string,string>) {
-  const pairs: [RegExp, string][] = Object.entries(renameMap).map(
-    ([k, v]) => [new RegExp(`\\b${k.replace(/\s+/g, "\\s*")}\\b`, "ig"), v]
-  );
-  let out = msg;
-  for (const [rx, to] of pairs) out = out.replace(rx, to);
-  return out;
+function harmonizeCoachMessage(msg: string, renameMap: Record<string, string>) {
+  return replaceSynonymsOnce(msg, renameMap);
 }
 
 function stripLegacySections(msg: string): string {
@@ -392,48 +395,45 @@ function normalizePlan(input: any): { plan: Plan | null; warnings: string[] } {
   return { plan, warnings };
 }
 
-function toLegacyWorkout(plan: Plan) {
-  const get = (k: PlanPhase["phase"]) => plan.phases.find((p) => p.phase === k)?.items ?? [];
+function toLegacyWorkout(plan: Plan, opts?: { theme?: "hiit" | "strength" | "hypertrophy" | "conditioning" | "balanced" }) {
+  const get = (k: PlanPhase["phase"]) => plan.phases.find(p => p.phase === k)?.items ?? [];
 
-  const warmup = get("warmup").map((it) => ({
-    name: it.name,
-    sets: it.sets ?? "1",
-    reps: it.reps ?? "10-15",
-    instruction: it.instruction ?? "",
+  const warmup = get("warmup").map(it => ({
+    name: it.name, sets: it.sets ?? "1", reps: it.reps ?? "10-15", instruction: it.instruction ?? ""
   }));
 
-  // ✅ Only the first N main items are "primary"; the rest become accessories
-  const PRIMARY_MAIN_COUNT = 2; // set to 1 if you only want a single "main lift"
+  const PRIMARY_MAIN_COUNT = 2;
   const mainItems = get("main");
-
   const mainPrimaryAndSecondary = mainItems.map((it, idx) => ({
-    name: it.name,
-    sets: it.sets ?? "3",
-    reps: it.reps ?? "8-12",
-    instruction: it.instruction ?? "",
-    isAccessory: idx >= PRIMARY_MAIN_COUNT, // first N = primary (false), others = accessory (true)
+    name: it.name, sets: it.sets ?? "3", reps: it.reps ?? "8-12",
+    instruction: it.instruction ?? "", isAccessory: idx >= PRIMARY_MAIN_COUNT
   }));
 
-  const accessories = get("accessory").map((it) => ({
-    name: it.name,
-    sets: it.sets ?? "3",
-    reps: it.reps ?? "10-15",
-    instruction: it.instruction ?? "",
-    isAccessory: true,
+  const accessories = get("accessory").map(it => ({
+    name: it.name, sets: it.sets ?? "3", reps: it.reps ?? "10-15",
+    instruction: it.instruction ?? "", isAccessory: true
   }));
 
-  // We keep conditioning out of the table; it still appears in the coach message
-  const cooldown = get("cooldown").map((it) => ({
-    name: it.name,
-    duration: it.duration ?? (it.reps ? String(it.reps) : "30-60s"),
-    instruction: it.instruction ?? "",
+  const cooldown = get("cooldown").map(it => ({
+    name: it.name, duration: it.duration ?? (it.reps ? String(it.reps) : "30-60s"),
+    instruction: it.instruction ?? ""
   }));
 
-  return {
-    warmup,
-    main: [...mainPrimaryAndSecondary, ...accessories],
-    cooldown,
-  };
+  let mainOut = [...mainPrimaryAndSecondary, ...accessories];
+
+  // ✅ HIIT fallback: if MAIN is empty, surface conditioning stations in the table
+  if ((opts?.theme === "hiit" || mainOut.length === 0) && get("conditioning").length > 0 && mainItems.length === 0) {
+    const stations = get("conditioning").map(it => ({
+      name: it.name,
+      sets: it.sets ?? "4-5 rounds",
+      reps: it.reps ?? (it.duration ? String(it.duration) : "40s/20s"),
+      instruction: it.instruction ?? "",
+      isAccessory: true
+    }));
+    mainOut = stations; // show stations as the main list for table rendering
+  }
+
+  return { warmup, main: mainOut, cooldown };
 }
 
 function findJsonObject(s: string): string | null {
@@ -497,24 +497,19 @@ export async function POST(req: Request) {
   const url = new URL(req.url);
   const debug = url.searchParams.get("debug") === "1";
   const userId = url.searchParams.get("user"); // optional
+  const styleParam = url.searchParams.get("style") || url.searchParams.get("type"); // e.g., ?style=hiit
 
   const body = await req.json().catch(() => ({}));
   const message = typeof body?.message === "string" ? body.message : "";
+
   if (!message) {
     return NextResponse.json({ ok: false, error: "Missing message" }, { status: 400 });
   }
 
-  // derive minutes: message > ?min= > profiles.preferred_workout_duration > 45
+  // derive minutes (message > ?min= > default 45)
   const explicitMin = parseMinutesFromMessage(message);
-  const minParam = url.searchParams.get("min");
-  const queryMin = minParam ? Number(minParam) : NaN;
-  let durationMin =
-    (explicitMin && explicitMin > 0 ? explicitMin : (Number.isFinite(queryMin) && queryMin > 0) ? queryMin : NaN);
-
-  if (!Number.isFinite(durationMin)) {
-    const pref = await getPreferredDuration(userId);
-    durationMin = pref ?? 45;
-  }
+  const queryMin = Number(url.searchParams.get("min") || "");
+  const durationMin = (explicitMin && explicitMin > 0 ? explicitMin : Number.isFinite(queryMin) ? queryMin : 45);
 
   const { cue: dowCue } = dayCueFor();
   const equipmentList = await getEquipmentForUser(userId);
@@ -527,6 +522,9 @@ export async function POST(req: Request) {
   else if (/hypertrophy|pump|volume|muscle/.test(msg)) theme = "hypertrophy";
   else if (/conditioning|cardio|hiit|endurance|metcon/.test(msg)) theme = "conditioning";
   else if (/hiit|intervals|stations|work.*rest|on.*off/.test(msg)) theme = "hiit";
+
+  // Force HIIT theme if style parameter indicates it
+  if (styleParam && /hiit|interval|emom|amrap|tabata/i.test(styleParam)) theme = "hiit";
 
   // Extract equipment exclusions from message
   const exclusions: string[] = [];
@@ -630,32 +628,27 @@ export async function POST(req: Request) {
       });
     });
 
-    // rename to your vocabulary (e.g., Air Bike -> Exercise Bike)
+    // Harmonize names to your DB vocabulary
     harmonizePlanEquipmentNames(plan, renameMap);
 
-    // light guardrail for unavailable machines (keeps LLM freedom, prevents impossible gear)
-    enforceEquipmentGuard(plan, equipmentList, exclusions, renameMap);
+    // Enforce availability / swaps if you kept that guard (optional)
+    // enforceEquipmentGuard(plan, vocab, exclusions, renameMap);
 
-    // HIIT fallback: guarantee station structure if the model forgot
-    if (theme === "hiit") ensureHiitStations(plan, vocab, durationMin);
+    // Build legacy workout (now with HIIT fallback)
+    const workout = toLegacyWorkout(plan, { theme });
 
-    // (Optional but UI-safe) Keep conditioning out of 'main' table shape
-    const workout = toLegacyWorkout(plan);
-
-    // Prefer model's coach message; fallback to your existing renderer if missing
+    // Calculate final minutes for message
     const minutes = Number(plan.est_total_minutes ?? plan.duration_min ?? durationMin) || durationMin;
 
-    let messageOut = (typeof parsed?.coach_message === "string" ? parsed.coach_message : "").trim();
-    messageOut = stripLegacySections(messageOut);
+    // Coach message: prefer model's, then harmonize text too
+    let messageOut = (typeof parsed?.coach_message === "string" ? parsed.coach_message : "").trim() || renderCoachMessage(plan, equipmentList, minutes);
+    messageOut = harmonizeCoachMessage(messageOut, renameMap);
 
     // If the LLM's narrative doesn't explicitly mention at least the first two MAIN items,
     // rebuild a precise narrative from the plan.
     if (!messageOut || !looksSpecific(messageOut, plan)) {
       messageOut = renderSpecificCoachMessage(plan, minutes);
     }
-
-    // rename inside the coach_message string too
-    messageOut = harmonizeCoachMessage(messageOut, renameMap);
 
     return NextResponse.json({
       ok: true,
