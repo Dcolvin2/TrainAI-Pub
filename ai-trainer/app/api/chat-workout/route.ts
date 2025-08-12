@@ -6,7 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 export const runtime = "nodejs";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
-const VERSION = "chat-workout:v6-exercise-enumeration-2025-08-11";
+const VERSION = "chat-workout:v7-hiit-stations-vocabulary-2025-08-11";
 
 // server-only client (service role) for reading user_equipment safely
 const admin = createClient(
@@ -214,6 +214,42 @@ async function getEquipmentForUser(userId: string | null): Promise<string[]> {
   return Array.from(new Set(names));
 }
 
+function buildEquipmentVocabulary(allowed: string[]) {
+  // exact-case canonical terms from DB (what you want to see in the UI/narrative)
+  const vocab = Array.from(new Set(allowed));
+
+  // map common synonyms → your exact terms
+  const renameMap: Record<string,string> = {};
+  const has = (s: string) => vocab.includes(s);
+
+  if (has("Exercise Bike")) {
+    ["air bike","assault bike","echo bike","airdyne","bike"].forEach(k => renameMap[k] = "Exercise Bike");
+  }
+  if (has("Battle Rope")) {
+    ["battle rope","battle ropes","ropes","rope"].forEach(k => renameMap[k] = "Battle Rope");
+  }
+  if (has("Kettlebells")) {
+    ["kettlebell","kettlebells","kb"].forEach(k => renameMap[k] = "Kettlebells");
+  }
+  if (has("Dumbbells")) {
+    ["dumbbell","dumbbells","db"].forEach(k => renameMap[k] = "Dumbbells");
+  }
+  if (has("Barbells")) {
+    ["barbell","barbells"].forEach(k => renameMap[k] = "Barbells");
+  }
+  if (has("Plyo Box")) {
+    ["box","plyo box","step ups","step-ups"].forEach(k => renameMap[k] = "Plyo Box");
+  }
+  if (has("Superbands")) {
+    ["super bands","resistance bands (heavy)"].forEach(k => renameMap[k] = "Superbands");
+  }
+  if (has("Minibands")) {
+    ["mini bands","minibands","hip circle"].forEach(k => renameMap[k] = "Minibands");
+  }
+
+  return { vocab, renameMap };
+}
+
 function stripLegacySections(msg: string): string {
   const lines = msg.split('\n');
   const isHeader = (s: string) => /^\s*(?:\*\*|\*)?\s*(?:🔥|💪|🧘)?\s*(warm[-\s]?up|main(?:\s*workout)?|cool[-\s]?down)\s*:?\s*(?:\*\*|\*)?\s*$/i.test(s.trim());
@@ -288,6 +324,55 @@ function renderSpecificCoachMessage(plan: Plan, durationMin: number): string {
   return lines.join('\n').trim();
 }
 
+function enforceEquipmentGuard(plan: Plan, available: string[], exclusions: string[]) {
+  const banned = exclusions.map(e => e.toLowerCase());
+  plan.phases.forEach(ph => {
+    ph.items = ph.items.filter(it => {
+      const name = String(it?.name ?? '').toLowerCase();
+      return !banned.some(b => name.includes(b));
+    });
+  });
+}
+
+function harmonizeEquipmentNames(plan: Plan, renameMap: Record<string,string>) {
+  const pairs: [RegExp, string][] = Object.entries(renameMap).map(
+    ([k, v]) => [new RegExp(`\\b${k.replace(/\s+/g,'\\s*')}\\b`, 'i'), v]
+  );
+  plan.phases.forEach(ph => {
+    ph.items = ph.items.map(it => {
+      let name = it.name || "";
+      for (const [rx, to] of pairs) {
+        if (rx.test(name)) name = name.replace(rx, to);
+      }
+      return { ...it, name };
+    });
+  });
+}
+
+function ensureHiitStations(plan: Plan, vocab: string[], durationMin: number) {
+  const cond = plan.phases.find(p => p.phase === "conditioning") ?? { phase: "conditioning", items: [] as PlanItem[] };
+  if (!plan.phases.includes(cond)) plan.phases.push(cond);
+
+  const hasWorkRest = (s?: string) => !!s && /(\d{1,3}\s*(s|sec|seconds?|min)|work\s*\/\s*rest|on\s*\/\s*off)/i.test(s);
+  const stationish = cond.items.filter(it => hasWorkRest(it.duration || String(it.reps || "")));
+
+  if (stationish.length >= 3) return; // already good
+
+  const pick = (want: string) => vocab.includes(want);
+  const stations: PlanItem[] = [];
+
+  if (pick("Battle Rope")) stations.push({ name: "Battle Rope Waves", duration: "40s work/20s rest" });
+  if (pick("Kettlebells")) stations.push({ name: "Kettlebell Swings", duration: "40s work/20s rest" });
+  if (pick("Plyo Box")) stations.push({ name: "Box Step-Overs", duration: "40s work/20s rest" });
+  if (pick("Exercise Bike")) stations.push({ name: "Exercise Bike Sprint", duration: "30s on/30s off" });
+  if (pick("Jump Rope")) stations.push({ name: "Jump Rope", duration: "40s work/20s rest" });
+  if (pick("Medicine Ball")) stations.push({ name: "Med Ball Slams", duration: "30s on/30s off" });
+  if (pick("Slam Ball")) stations.push({ name: "Slam Ball Slams", duration: "30s on/30s off" });
+
+  // ensure at least 3
+  cond.items = [...stationish, ...stations].slice(0, 4);
+}
+
 function renderCoachMessage(plan: Plan, equipment: string[], minutes: number): string {
   const title = plan.name || "Workout";
   const warmup = plan.phases.find(p => p.phase === "warmup")?.items.map(i => i.name).join(", ") || "—";
@@ -314,13 +399,19 @@ async function getPreferredDuration(userId: string | null): Promise<number | nul
 
 async function callPlannerLLM(
   userMessage: string,
-  cues: { durationMin: number; equipmentList: string[]; theme: "strength"|"hypertrophy"|"conditioning"|"balanced"; }
+  cues: {
+    durationMin: number;
+    equipmentList: string[];
+    theme: "strength" | "hypertrophy" | "conditioning" | "balanced" | "hiit";
+    exclusions: string[];
+    vocab: string[];
+  }
 ): Promise<string> {
-  const eq = cues.equipmentList.length ? cues.equipmentList.join(", ") : "kettlebell, dumbbells, barbell, trap bar, bench, bands, box, battle ropes, bodyweight";
+  const eq = cues.equipmentList.length ? cues.equipmentList.join(", ") : "Dumbbells, Kettlebells, Battle Rope, Plyo Box, Medicine Ball, Slam Ball, Exercise Bike, Rings, Pull Up Bar";
   const style = /kettlebell|kb\b|ocho|joe\s*holder/i.test(userMessage) ? "kettlebell_ocho" : "coach_general";
 
   const prompt = `
-Return ONLY JSON (no markdown or fences) shaped as:
+Return ONLY JSON (no markdown or fences):
 {
   "plan": {
     "name": string,
@@ -333,35 +424,31 @@ Return ONLY JSON (no markdown or fences) shaped as:
     "est_total_minutes"?: number
   },
   "coach_message": string,
-  "notes"?: { "style": "kettlebell_ocho"|"coach_general", "substitutions"?: string[] }
+  "notes"?: { "style": "kettlebell_ocho"|"coach_general"|"hiit", "substitutions"?: string[] }
 }
 
-Rules (must follow):
-- Duration target: ${cues.durationMin} minutes. Use time windows in coach_message.
-- Use only: ${eq}.
-- If style is kettlebell_ocho (user mentions kettlebell/Ocho), keep MAIN kettlebell-forward. Barbell/trap/machines can appear in ACCESSORY at most.
-- BANNED: snatch/clean/jerk. If requested, SUBSTITUTE (and list in notes.substitutions):
+Hard rules:
+- Target duration: ${cues.durationMin} minutes.
+- Use ONLY equipment from this exact, case-sensitive vocabulary: ${JSON.stringify(cues.vocab)}.
+  - If you would otherwise output "Air Bike", write exactly "Exercise Bike" when present in this vocabulary.
+- EXCLUSIONS (do not include): ${cues.exclusions.join(", ") || "none"}.
+- BANNED lifts: snatch/clean/jerk. If requested, SUBSTITUTE and list in notes.substitutions:
   - KB snatch → Kettlebell High Pull
-  - (KB) clean & press / clean → Kettlebell Push Press
+  - KB clean & press / clean → Kettlebell Push Press
   - jerk → Kettlebell Push Press
-- MAIN must use sets+reps; duration-only work belongs in CONDITIONING or ACCESSORY.
-- Exercise names must be specific (no "Bodyweight Circuit", "Exercise", or "Rest").
+- MAIN uses sets×reps; duration-only intervals belong in CONDITIONING.
 
-COACH MESSAGE (single narrative only; no second list):
+HIIT-specific (theme="hiit"):
+- Provide intervals as stations with clear work:rest (e.g., "40s work/20s rest" or "30s on/30s off").
+- Prefer mixed implements from the vocabulary: Battle Rope, Kettlebells, Dumbbells (thrusters), Plyo Box (step-overs), Jump Rope, Medicine/Slam Ball, Exercise Bike.
+- Return at least 3 distinct conditioning stations; if a bike exists in the vocabulary, one station may be "Exercise Bike Sprint".
+
+Coach message (single narrative only; no duplicate Warm-up/Main/Cool-down lists):
 - First line: acknowledge duration + style/equipment.
-- Then EXACTLY these blocks with numbered items in each block, where each item is an exercise FROM the plan with sets×reps or duration:
-  1) "0:00–.. – Prep"  (list warmup items)
-  2) "..–.. – Power & Strength A"  (list 1–2 exercises from MAIN)
-  3) "..–.. – Power & Strength B"  (list next 1–2 exercises from MAIN)
-  4) "..–.. – Unilateral + Pull"   (list 1–2 from ACCESSORY)
-  5) "..–.. – Finisher"            (list CONDITIONING item(s))
-  6) "..–${cues.durationMin.toString().padStart(2," ")}:00 – Cooldown" (list COOLDOWN items)
-- Each listed item must correspond to an item in plan.phases and include sets×reps or duration.
-- Do NOT include separate "Warm-up/Main/Cool-down" sections after the blocks.
-- If substitutions happened, end with a single-line note.
+- Then time blocks with numbered items per block; each item must match an entry in plan.phases and include sets×reps or work:rest duration.
+- End with a one-line substitutions note only if any were made.
 
-Theme: ${cues.theme}. Align volume/intensity.
-
+Theme: ${cues.theme}.
 User request: "${userMessage}"
 `.trim();
 
@@ -371,7 +458,6 @@ User request: "${userMessage}"
     max_tokens: 1900,
     messages: [{ role: "user", content: prompt }],
   });
-
   return extractAiText(resp);
 }
 
@@ -414,13 +500,35 @@ export async function POST(req: Request) {
 
   const { cue: dowCue } = dayCueFor();
   const equipmentList = await getEquipmentForUser(userId);
+  const { vocab, renameMap } = buildEquipmentVocabulary(equipmentList);
 
   // Auto-detect theme from message
   const msg = message.toLowerCase();
-  let theme: "strength" | "hypertrophy" | "conditioning" | "balanced" = "balanced";
+  let theme: "strength" | "hypertrophy" | "conditioning" | "balanced" | "hiit" = "balanced";
   if (/strength|heavy|power|max/.test(msg)) theme = "strength";
   else if (/hypertrophy|pump|volume|muscle/.test(msg)) theme = "hypertrophy";
   else if (/conditioning|cardio|hiit|endurance|metcon/.test(msg)) theme = "conditioning";
+  else if (/hiit|intervals|stations|work.*rest|on.*off/.test(msg)) theme = "hiit";
+
+  // Extract equipment exclusions from message
+  const exclusions: string[] = [];
+  const exclusionPatterns = [
+    /no\s+(barbell|trap\s*bar|machine|machines)/gi,
+    /without\s+(barbell|trap\s*bar|machine|machines)/gi,
+    /avoid\s+(barbell|trap\s*bar|machine|machines)/gi
+  ];
+  
+  exclusionPatterns.forEach(pattern => {
+    const matches = message.match(pattern);
+    if (matches) {
+      matches.forEach((match: string) => {
+        const equipment = match.replace(/^(no|without|avoid)\s+/i, '').trim();
+        if (equipment && !exclusions.includes(equipment)) {
+          exclusions.push(equipment);
+        }
+      });
+    }
+  });
 
   let aiText = "";
   let parsePath: "as-is" | "fence" | "balanced" | "none" = "none";
@@ -432,7 +540,7 @@ export async function POST(req: Request) {
       aiText = message.trim();
       parsePath = "as-is";
     } else {
-      aiText = await callPlannerLLM(message, { durationMin, equipmentList, theme });
+      aiText = await callPlannerLLM(message, { durationMin, equipmentList, theme, exclusions, vocab });
     }
 
     // Parse JSON (as-is → fenced → balanced)
@@ -503,6 +611,15 @@ export async function POST(req: Request) {
         return n.length > 0 && !/^rest$|^exercise$/i.test(n);
       });
     });
+
+    // rename to your vocabulary (e.g., Air Bike -> Exercise Bike)
+    harmonizeEquipmentNames(plan, renameMap);
+
+    // light guardrail for unavailable machines (keeps LLM freedom, prevents impossible gear)
+    enforceEquipmentGuard(plan, equipmentList, exclusions);
+
+    // HIIT fallback: guarantee station structure if the model forgot
+    if (theme === "hiit") ensureHiitStations(plan, vocab, durationMin);
 
     // (Optional but UI-safe) Keep conditioning out of 'main' table shape
     const workout = toLegacyWorkout(plan);
