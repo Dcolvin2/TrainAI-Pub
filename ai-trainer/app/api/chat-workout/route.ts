@@ -40,9 +40,23 @@ async function getEquipmentForUser(userId: string | null): Promise<string[]> {
     .from("user_equipment")
     .select("is_available, equipment:equipment_id(name)")
     .eq("user_id", userId);
-  const names = (data ?? [])
-    .filter(r => r?.is_available !== false && r?.equipment?.name)
-    .map(r => String(r.equipment.name).trim());
+
+  // Handle both shapes: equipment: { name }  OR  equipment: [{ name }]
+  type Row = {
+    is_available: boolean | null;
+    equipment: { name?: string } | { name?: string }[] | null;
+  };
+
+  const rows = (data as Row[] | null) ?? [];
+  const names: string[] = [];
+
+  for (const r of rows) {
+    if (r?.is_available === false || !r?.equipment) continue;
+    const eq = Array.isArray(r.equipment) ? r.equipment[0] : r.equipment;
+    const n = eq?.name?.trim();
+    if (n) names.push(n);
+  }
+
   return Array.from(new Set(names));
 }
 
