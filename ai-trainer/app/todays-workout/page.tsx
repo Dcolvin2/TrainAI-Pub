@@ -3,8 +3,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
-import { generateWorkoutForType, getWorkoutSuggestions, saveWorkout } from '@/lib/workoutGenerator';
-import { WorkoutDisplay } from '../components/WorkoutDisplay';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -39,9 +37,9 @@ const workoutTypes = [
     bgHover: 'hover:bg-orange-500/10'
   },
   {
-    id: 'full',
+    id: 'full_body',
     title: 'FULL BODY',
-    subtitle: 'Total Body Workout',
+    subtitle: 'Complete workout',
     color: 'border-red-500',
     bgHover: 'hover:bg-red-500/10'
   },
@@ -54,31 +52,68 @@ const workoutTypes = [
   }
 ];
 
+// Types + normalizer
+type DisplayItem = {
+  name: string;
+  sets?: string;
+  reps?: string;
+  duration?: string;
+  instruction?: string;
+  isAccessory?: boolean;
+};
+
 interface GeneratedWorkout {
   name: string;
-  warmup: (string | { name: string; sets?: string; reps?: string })[];
-  main: (string | { name: string; sets?: string; reps?: string })[];
-  accessories: (string | { name: string; sets?: string; reps?: string })[];
-  cooldown: (string | { name: string; sets?: string; reps?: string })[];
+  warmup: DisplayItem[];
+  main: DisplayItem[];          // primaries only
+  accessories: DisplayItem[];   // derived from LLM main
+  cooldown: DisplayItem[];
   duration?: number;
   focus?: string;
 }
 
-export default function TodaysWorkoutPage() {
+function normalizeFromLLM(raw: any): GeneratedWorkout {
+  const w = raw || {};
+  const toItem = (x: any): DisplayItem =>
+    typeof x === 'string' ? { name: x } : { ...x, name: x?.name ?? 'Exercise' };
+
+  const warmup = Array.isArray(w.warmup) ? w.warmup.map(toItem) : [];
+  const mainAll = Array.isArray(w.main) ? w.main.map(toItem) : [];
+  const cooldown = Array.isArray(w.cooldown) ? w.cooldown.map(toItem) : [];
+
+  const primaries = mainAll.filter(i => !i.isAccessory).map(i => ({ ...i, isAccessory: false }));
+  const accessories = mainAll.filter(i => i.isAccessory).map(i => ({ ...i, isAccessory: true }));
+
+  return {
+    name: w.name ?? 'Planned Session',
+    warmup,
+    main: primaries,
+    accessories,
+    cooldown,
+    duration: Number(w.est_total_minutes ?? w.duration_min ?? 0) || undefined,
+    focus: undefined,
+  };
+}
+
+export default function TodaysWorkout() {
+  const [timeAvailable, setTimeAvailable] = useState(45);
+  const [selectedWorkout, setSelectedWorkout] = useState<any>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const [suggestedType, setSuggestedType] = useState<string | null>(null);
+  const [userId] = useState('demo-user-id'); // In real app, get from auth
+
   const { user } = useAuth();
   const router = useRouter();
-  const [selectedTime, setSelectedTime] = useState(45);
-  const [chatMessages, setChatMessages] = useState<any[]>([]);
+
+  // Chat state
   const [inputMessage, setInputMessage] = useState('');
+  const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [generatedWorkout, setGeneratedWorkout] = useState<GeneratedWorkout | null>(null);
-  const [previousWorkoutData, setPreviousWorkoutData] = useState<any>({});
-  const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom when new messages are added
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatMessages]);
+  // Previous workout data for context
+  const [previousWorkoutData, setPreviousWorkoutData] = useState<Record<string, { weight: number; reps: number }>>({});
 
   // Fetch previous workout data
   useEffect(() => {
@@ -127,501 +162,533 @@ export default function TodaysWorkoutPage() {
         // Look for patterns like "nike 23", "nike workout 5", "nike wod 12"
         const nikeMatch = userMessage.match(/nike\s+(?:workout\s+)?(?:wod\s+)?(\d+)/i);
         if (nikeMatch) {
-          workoutNumber = parseInt(nikeMatch[1]);
-          // Ensure workout number is within valid range (1-24)
-          if (workoutNumber < 1) workoutNumber = 1;
-          if (workoutNumber > 24) workoutNumber = 24;
+          workoutNumber = parseInt(nikeMatch[1], 10);
         }
         
-        // Call Nike API with specific workout number
-        const nikeResponse = await fetch('/api/nike-workout', {
+        const response = await fetch('/api/nike-workout', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ workout: workoutNumber })
-        });
-        
-        if (nikeResponse.ok) {
-          const nikeData = await nikeResponse.json();
-          
-          // Add Nike response to chat
-          setChatMessages(prev => [...prev, { 
-            role: 'assistant', 
-            content: `Here's your Nike workout: ${nikeData.workout_name} (Workout #${nikeData.workout_number})` 
-          }]);
-          
-          // Update workout display
-          setGeneratedWorkout({
-            name: nikeData.workout_name,
-            warmup: nikeData.exercises.warmup.map((e: any) => e.exercise),
-            main: nikeData.exercises.main.map((e: any) => e.exercise),
-            accessories: nikeData.exercises.accessory.map((e: any) => e.exercise),
-            cooldown: nikeData.exercises.cooldown.map((e: any) => e.exercise)
-          });
-        } else {
-          setChatMessages(prev => [...prev, { 
-            role: 'assistant', 
-            content: "Sorry, I couldn't fetch a Nike workout right now. Please try again later." 
-          }]);
-        }
-      } else {
-        // Use regular chat endpoint for other requests
-        const response = await fetch(`/api/chat-workout?user=${user?.id}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            message: userMessage,
-            currentWorkout: generatedWorkout || null,
-            sessionId: null, // We can add session tracking later if needed
-            userId: user?.id
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            workoutNumber,
+            userId: user?.id || 'demo-user-id',
+            equipment: ['barbell', 'dumbbells', 'kettlebells']
           })
         });
 
+        if (!response.ok) {
+          throw new Error('Failed to generate Nike workout');
+        }
+
         const data = await response.json();
         
-        // Handle error responses
-        if (data.error) {
-          setChatMessages(prev => [...prev, { 
-            role: 'assistant', 
-            content: `Error: ${data.error}` 
-          }]);
-        } else {
-          // Handle modification responses
-          if (data.isModification && data.workout) {
-            // Update the workout with the modified version
-            setGeneratedWorkout(data.workout);
-            
-            // Show just the modification message
-            setChatMessages(prev => [...prev, {
-              role: 'assistant',
-              content: data.message
-            }]);
-            
-          } else if (data.workout && !data.isModification) {
-            // New workout generated
-            setGeneratedWorkout(data.workout);
-            
-            // Format and display the full workout
-            let workoutDisplay = data.message + '\n\n';
-            
-            if (data.workout.warmup && data.workout.warmup.length > 0) {
-              workoutDisplay += '**🔥 Warm-up:**\n';
-              data.workout.warmup.forEach((ex: any, i: number) => {
-                workoutDisplay += `${i+1}. ${ex.name} - ${ex.sets ? ex.sets + ' sets x ' + ex.reps + ' reps' : ex.duration}\n`;
-              });
-              workoutDisplay += '\n';
-            }
-            
-            if (data.workout.main && data.workout.main.length > 0) {
-              workoutDisplay += '**💪 Main Workout:**\n';
-              data.workout.main.forEach((ex: any, i: number) => {
-                workoutDisplay += `${i+1}. ${ex.name} - ${ex.sets} sets x ${ex.reps} reps\n`;
-              });
-              workoutDisplay += '\n';
-            }
-            
-            if (data.workout.cooldown && data.workout.cooldown.length > 0) {
-              workoutDisplay += '**🧘 Cool-down:**\n';
-              data.workout.cooldown.forEach((ex: any, i: number) => {
-                workoutDisplay += `${i+1}. ${ex.name} - ${ex.duration}\n`;
-              });
-            }
-            
-            setChatMessages(prev => [...prev, {
-              role: 'assistant',
-              content: workoutDisplay
-            }]);
-            
-          } else {
-            // Regular message without workout
-            setChatMessages(prev => [...prev, {
-              role: 'assistant',
-              content: data.message || data.response
-            }]);
-          }
+        if (data.workout) {
+          const normalized = normalizeFromLLM(data.workout);
+          setGeneratedWorkout(normalized);
           
-          // If workout data is returned, update the display
-          if (data.workout) {
-            setGeneratedWorkout(data.workout);
-          }
+          setChatMessages(prev => [...prev, {
+            role: 'assistant',
+            content: `Here's Nike WOD ${workoutNumber}:\n\n${data.message || 'Generated Nike workout'}`,
+          }]);
         }
+        return;
       }
-    } catch (error) {
-      console.error('Chat error:', error);
-      setChatMessages(prev => [...prev, { 
-        role: 'assistant', 
-        content: "Sorry, I encountered an error. Please try again." 
-      }]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
-  const handleWorkoutSelect = async (workoutType: string) => {
-    setIsLoading(true);
-    try {
-      console.log('Sending workout request:', {
-        type: workoutType,
-        timeMinutes: selectedTime,
-        userId: user?.id
-      });
-      
-      const response = await fetch('/api/generate-workout', {
+      // Regular workout generation via chat
+      const response = await fetch('/api/chat-workout', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
-          type: workoutType,
-          timeMinutes: selectedTime,
-          userId: user?.id
+          message: userMessage,
+          user: user?.id || 'demo-user-id'
         })
       });
 
-      console.log('Response status:', response.status);
-      
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('API Error:', errorText);
-        throw new Error(`API Error: ${response.status} - ${errorText}`);
+        throw new Error('Failed to generate workout');
       }
-      
+
       const data = await response.json();
-      console.log('API Response:', data);
-      console.log('API Response data:', data);        // Add this
-      console.log('data.main:', data.main);           // Add this
-      console.log('data.warmup:', data.warmup);       // Add this
-      console.log('data.accessories:', data.accessories); // Add this
       
-      // Set the generated workout to display
-      setGeneratedWorkout({
-        name: `${workoutType.toUpperCase()} Workout`,
-        warmup: data.warmup || [],
-        main: data.main || [],  // ← FIXED: Use data.main not data.mainLift
-        accessories: data.accessories || [],
-        cooldown: data.cooldown || [],
-        duration: data.duration || selectedTime,
-        focus: data.focus || workoutType
-      });
+      // Handle error responses
+      if (data.error) {
+        setChatMessages(prev => [...prev, { 
+          role: 'assistant', 
+          content: `Error: ${data.error}` 
+        }]);
+      } else {
+        // Handle modification responses
+        if (data.isModification && data.workout) {
+          // Update the workout with the modified version
+          const normalized = normalizeFromLLM(data.workout);
+          setGeneratedWorkout(normalized);
+          
+          // Show just the modification message
+          setChatMessages(prev => [...prev, {
+            role: 'assistant',
+            content: data.message
+          }]);
+          
+        } else if (data.workout && !data.isModification) {
+          // New workout generated
+          const normalized = normalizeFromLLM(data.workout);
+          setGeneratedWorkout(normalized);
+          
+          // Format and display the full workout
+          let workoutDisplay = data.message + '\n\n';
+          
+          if (normalized.warmup && normalized.warmup.length > 0) {
+            workoutDisplay += '**🔥 Warm-up:**\n';
+            normalized.warmup.forEach((ex: any, i: number) => {
+              workoutDisplay += `${i+1}. ${ex.name} - ${ex.sets ? ex.sets + ' sets x ' + ex.reps + ' reps' : ex.duration}\n`;
+            });
+            workoutDisplay += '\n';
+          }
+          
+          if (normalized.main && normalized.main.length > 0) {
+            workoutDisplay += '**💪 Main Workout:**\n';
+            normalized.main.forEach((ex: any, i: number) => {
+              workoutDisplay += `${i+1}. ${ex.name} - ${ex.sets} sets x ${ex.reps} reps\n`;
+            });
+            workoutDisplay += '\n';
+          }
+          
+          if (normalized.accessories && normalized.accessories.length > 0) {
+            workoutDisplay += '**🔧 Accessories:**\n';
+            normalized.accessories.forEach((ex: any, i: number) => {
+              workoutDisplay += `${i+1}. ${ex.name} - ${ex.sets} sets x ${ex.reps} reps\n`;
+            });
+            workoutDisplay += '\n';
+          }
+          
+          if (normalized.cooldown && normalized.cooldown.length > 0) {
+            workoutDisplay += '**🧘 Cool-down:**\n';
+            normalized.cooldown.forEach((ex: any, i: number) => {
+              workoutDisplay += `${i+1}. ${ex.name} - ${ex.duration}\n`;
+            });
+          }
+          
+          setChatMessages(prev => [...prev, {
+            role: 'assistant',
+            content: workoutDisplay
+          }]);
+        }
+      }
     } catch (error) {
       console.error('Error generating workout:', error);
       setChatMessages(prev => [...prev, {
         role: 'assistant',
-        content: `Sorry, I had trouble generating your ${workoutType} workout. Please try again or check your equipment settings.`
+        content: 'Sorry, I encountered an error while generating your workout. Please try again.',
       }]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Redirect if not authenticated
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-white text-xl mb-4">Please log in to access your workout</div>
-          <button
-            onClick={() => router.push('/login')}
-            className="bg-green-600 px-6 py-3 rounded-xl text-white font-semibold hover:bg-green-700 transition-colors"
-          >
-            Go to Login
-          </button>
-        </div>
-      </div>
-    );
-  }
+  // Replace handleWorkoutSelect to call /api/chat-workout (LLM) instead of /api/generate-workout
+  const handleWorkoutSelect = async (workoutType: string) => {
+    setIsLoading(true);
+    try {
+      const url = `/api/chat-workout?user=${user?.id}&split=${encodeURIComponent(workoutType)}&minutes=${timeAvailable}&style=${workoutType === 'hiit' ? 'hiit' : 'strength'}`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // body is optional but helps bias the model; safe for our route
+        body: JSON.stringify({ message: `${workoutType} ${timeAvailable} min — use only my equipment.` }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API Error: ${response.status} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      console.info('[SRC] LLM /api/chat-workout', { workoutType, timeAvailable, data });
+
+      // Prefer LLM legacy shape if present
+      if (data?.workout) {
+        const normalized = normalizeFromLLM(data.workout);
+        setGeneratedWorkout(normalized);
+        setChatMessages(prev => [...prev, { role: 'assistant', content: data.message || `Loaded ${normalized.name}` }]);
+      } else if (data?.plan) {
+        // Fallback if only plan shape returned
+        const planWorkoutShape = {
+          warmup: data.plan?.phases?.find((p: any) => p.phase === 'warmup')?.items ?? [],
+          main:   data.plan?.phases?.find((p: any) => p.phase === 'main')?.items ?? [],
+          cooldown: data.plan?.phases?.find((p: any) => p.phase === 'cooldown')?.items ?? [],
+          name: data.plan?.name,
+          est_total_minutes: data.plan?.est_total_minutes ?? data.plan?.duration_min,
+        };
+        const normalized = normalizeFromLLM(planWorkoutShape);
+        setGeneratedWorkout(normalized);
+        setChatMessages(prev => [...prev, { role: 'assistant', content: data.message || `Loaded ${normalized.name}` }]);
+      } else {
+        throw new Error('LLM did not return a workout.');
+      }
+    } catch (error) {
+      console.error('Error generating workout:', error);
+      setChatMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `Sorry, I had trouble generating your ${workoutType} workout. Please try again.`,
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleStartWorkout = () => {
+    // Navigate to workout execution screen
+    console.log('Starting workout...');
+  };
+
+  const handleTimeChange = (newTime: number) => {
+    setTimeAvailable(newTime);
+  };
+
+  const handleWorkoutTypeSelect = (type: string) => {
+    setSelectedWorkout(type);
+    handleWorkoutSelect(type);
+  };
+
+  const handleWorkoutComplete = () => {
+    // Handle workout completion
+    console.log('Workout completed');
+  };
+
+  const handleWorkoutModification = async (modification: string) => {
+    if (!generatedWorkout) return;
+    
+    setIsLoading(true);
+    try {
+      const response = await fetch('/api/modify-workout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          currentWorkout: generatedWorkout,
+          modification,
+          userId: user?.id || 'demo-user-id'
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to modify workout');
+      }
+
+      const data = await response.json();
+      
+      if (data.workout) {
+        const normalized = normalizeFromLLM(data.workout);
+        setGeneratedWorkout(normalized);
+        
+        setChatMessages(prev => [...prev, {
+          role: 'assistant',
+          content: `Modified workout: ${data.message}`
+        }]);
+      }
+    } catch (error) {
+      console.error('Error modifying workout:', error);
+      setChatMessages(prev => [...prev, {
+        role: 'assistant',
+        content: 'Sorry, I encountered an error while modifying your workout. Please try again.',
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleQuickEntry = async (exerciseName: string, sets: Array<{ weight: number; reps: number; completed: boolean }>) => {
+    if (!user?.id) return;
+    
+    try {
+      const response = await fetch('/api/quick-entry', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          exerciseName,
+          sets
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to log quick entry');
+      }
+
+      const data = await response.json();
+      console.log('Quick entry logged:', data);
+      
+      // Update previous workout data
+      const latestSet = sets[sets.length - 1];
+      setPreviousWorkoutData(prev => ({
+        ...prev,
+        [exerciseName]: {
+          weight: latestSet.weight,
+          reps: latestSet.reps
+        }
+      }));
+      
+    } catch (error) {
+      console.error('Error logging quick entry:', error);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-black text-white">
-      <div className="max-w-7xl mx-auto px-6 py-8 h-full">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-          {/* Left side - Workout Selection */}
-          <div className="lg:col-span-2 space-y-8">
-            {/* Time Selection */}
-            <div>
-              <h2 className="text-xl font-semibold mb-4">Time Available</h2>
-              <div className="flex gap-3">
-                {[15, 30, 45, 60].map((time) => (
-                  <button
-                    key={time}
-                    onClick={() => setSelectedTime(time)}
-                    className={`px-6 py-3 rounded-lg transition-all ${
-                      selectedTime === time
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+    <div className="min-h-screen bg-[#0F172A] text-white">
+      <div className="container mx-auto px-4 py-8">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold mb-4">Today's Workout</h1>
+          <p className="text-gray-400 text-lg">
+            Choose your workout type or chat with AI to create a personalized plan
+          </p>
+        </div>
+
+        {/* Time Selector */}
+        <div className="mb-8">
+          <h2 className="text-2xl font-semibold mb-4 text-center">How much time do you have?</h2>
+          <div className="flex justify-center space-x-4">
+            {[30, 45, 60, 90].map((time) => (
+              <button
+                key={time}
+                onClick={() => handleTimeChange(time)}
+                className={`px-6 py-3 rounded-lg font-medium transition-colors ${
+                  timeAvailable === time
+                    ? 'bg-[#22C55E] text-white'
+                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                }`}
+              >
+                {time} min
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Workout Type Selection */}
+        <div className="mb-8">
+          <h2 className="text-2xl font-semibold mb-4 text-center">Choose Your Workout Type</h2>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
+            {workoutTypes.map((type) => (
+              <button
+                key={type.id}
+                onClick={() => handleWorkoutTypeSelect(type.id)}
+                className={`p-6 rounded-lg border-2 transition-all duration-200 ${type.color} ${type.bgHover} hover:scale-105`}
+              >
+                <h3 className="text-xl font-bold mb-2">{type.title}</h3>
+                <p className="text-gray-400 text-sm">{type.subtitle}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Chat Interface */}
+        <div className="mb-8">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-2xl font-semibold">AI Workout Chat</h2>
+            <button
+              onClick={() => setShowChat(!showChat)}
+              className="px-4 py-2 bg-[#22C55E] text-white rounded-lg hover:bg-[#16a34a] transition-colors"
+            >
+              {showChat ? 'Hide Chat' : 'Show Chat'}
+            </button>
+          </div>
+
+          {showChat && (
+            <div className="bg-gray-800 rounded-lg p-6 max-w-4xl mx-auto">
+              <div className="mb-4 h-64 overflow-y-auto border border-gray-600 rounded p-4 bg-gray-900">
+                {chatMessages.map((message, index) => (
+                  <div
+                    key={index}
+                    className={`mb-3 ${
+                      message.role === 'user' ? 'text-right' : 'text-left'
                     }`}
                   >
-                    {time === 60 ? '60+' : time} min
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Workout Type Cards */}
-            <div>
-              <h2 className="text-xl font-semibold mb-4">Choose Your Workout</h2>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {workoutTypes.map((workout) => (
-          <button
-                    key={workout.id}
-                    onClick={() => handleWorkoutSelect(workout.id)}
-                    className={`p-6 rounded-lg bg-gray-900 border-t-4 ${workout.color} 
-                      ${workout.bgHover} transition-all hover:scale-105 text-left`}
-                    disabled={isLoading}
-                  >
-                    <h3 className="text-lg font-bold mb-2">{workout.title}</h3>
-                    <p className="text-sm text-gray-400">{workout.subtitle}</p>
-          </button>
-                ))}
-              </div>
-              
-              {/* Nike Test Button - REMOVED - Now integrated into chat */}
-            </div>
-
-            {/* Generated Workout Display */}
-            {generatedWorkout && (
-              <div className="bg-gray-900 rounded-lg p-6">
-                <h3 className="text-lg font-semibold mb-4">{generatedWorkout.name}</h3>
-                
-                {/* Warm-up Section */}
-                {generatedWorkout.warmup?.length > 0 && (
-                  <div className="mb-6">
-                    <h4 className="text-md font-semibold text-gray-300 mb-3">Warm-up</h4>
-                    <div className="space-y-2">
-                      {generatedWorkout.warmup.map((exercise, idx) => (
-                        <div key={idx} className="flex items-center">
-                          <span className="w-6 h-6 bg-gray-700 rounded-full flex items-center justify-center text-xs text-white mr-3">
-                            {idx + 1}
-                          </span>
-                          <span className="text-gray-200">
-                            {(typeof exercise === 'string' ? exercise : exercise.name || 'Exercise').replace(/^-\s*/, '')}
-                          </span>
-                        </div>
-                      ))}
+                    <div
+                      className={`inline-block p-3 rounded-lg max-w-xs lg:max-w-md ${
+                        message.role === 'user'
+                          ? 'bg-[#22C55E] text-white'
+                          : 'bg-gray-700 text-gray-300'
+                      }`}
+                    >
+                      {message.content}
                     </div>
                   </div>
-                )}
-                
-                {/* Main Exercises Section */}
-                {generatedWorkout.main?.length > 0 && (
-                  <div className="mb-6">
-                    {Array.isArray(generatedWorkout.main) && 
-                      generatedWorkout.main
-                        .filter(exercise => {
-                          // Filter out instruction text
-                          const name = typeof exercise === 'string' ? exercise : exercise.name;
-                          return !name.toLowerCase().includes('perform') && 
-                                 !name.toLowerCase().includes('rounds') &&
-                                 name.length > 3;
-                        })
-                        .map((exercise, exerciseIndex) => {
-                          // Parse exercise details
-                          let exerciseName = typeof exercise === 'string' ? exercise : exercise.name;
-                          let targetSets = typeof exercise === 'object' && exercise.sets ? 
-                            parseInt(exercise.sets) : 3;
-                          let targetReps = typeof exercise === 'object' && exercise.reps ? 
-                            exercise.reps : '10';
-                          
-                          // Clean exercise name
-                          exerciseName = exerciseName.replace(/^\d+\.\s*/, '');
-                          const repsMatch = exerciseName.match(/(.+?)\s*-\s*(\d+)\s*reps?/i);
-                          if (repsMatch) {
-                            exerciseName = repsMatch[1].trim();
-                            targetReps = repsMatch[2];
-                          }
-                          exerciseName = exerciseName.replace(/\s*\([^)]*\)\s*/g, '').trim();
-                          
-                          // Get previous workout data
-                          const previous = previousWorkoutData[exerciseName];
-                          
-                          return (
-                            <div key={exerciseIndex} className="mb-4">
-                              <div className="flex items-center mb-3">
-                                <h4 className="text-md font-semibold text-gray-300">
-                                  {exerciseName}
-                                </h4>
-                                <span className="ml-2 px-2 py-1 bg-green-600 text-xs text-white rounded">
-                                  Main Lift
-                                </span>
-                              </div>
-                              <div className="bg-gray-800 rounded-lg p-4">
-                                {/* Column headers */}
-                                <div className="grid grid-cols-5 gap-4 text-sm text-gray-400 mb-2">
-                                  <span>Set</span>
-                                  <span>Previous</span>
-                                  <span>lbs</span>
-                                  <span>Reps</span>
-                                  <span>Complete</span>
-                                </div>
-                                
-                                {/* Sets */}
-                                {[...Array(targetSets)].map((_, setIndex) => (
-                                  <div key={setIndex} className="grid grid-cols-5 gap-4 items-center mb-2">
-                                    <span className="text-gray-300">
-                                      {setIndex + 1}
-                                    </span>
-                                    <span className="text-gray-500 text-sm">
-                                      {/* Previous weight x reps - from DB or default */}
-                                      {previous ? `${previous.weight} lbs × ${previous.reps}` : 'N/A'}
-                                    </span>
-                                    <input
-                                      type="number"
-                                      className="bg-gray-700 rounded px-2 py-1 text-white"
-                                      placeholder="0"
-                                    />
-                                    <input
-                                      type="number"
-                                      className="bg-gray-700 rounded px-2 py-1 text-white"
-                                      placeholder={targetReps.toString()}
-                                      defaultValue={targetReps}
-                                    />
-                                    <input type="checkbox" className="w-5 h-5 cursor-pointer" />
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        })
-                    }
-                  </div>
-                )}
-                
-                {/* Accessories Section */}
-                {generatedWorkout.accessories?.length > 0 && (
-                  <div className="mb-6">
-                    {generatedWorkout.accessories.map((exercise, idx) => (
-                      <div key={idx} className="mb-4">
-                        <div className="flex items-center mb-3">
-                          <h4 className="text-md font-semibold text-gray-300">
-                            {typeof exercise === 'string' ? exercise : exercise.name || 'Exercise'}
-                          </h4>
-                          <span className="ml-2 px-2 py-1 bg-blue-600 text-xs text-white rounded">Accessory</span>
-                        </div>
-                        <div className="bg-gray-800 rounded-lg p-4">
-                          <div className="grid grid-cols-5 gap-4 text-sm text-gray-400 mb-2">
-                            <span>Set</span>
-                            <span>Previous</span>
-                            <span>lbs</span>
-                            <span>Reps</span>
-                            <span>Complete</span>
-                          </div>
-                          {[1, 2, 3].map((setNum) => (
-                            <div key={setNum} className="grid grid-cols-5 gap-4 items-center mb-2">
-                              <span className="text-gray-300">{setNum}</span>
-                              <span className="text-gray-500">N/A</span>
-                              <input
-                                type="number"
-                                className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-gray-200"
-                                placeholder="0"
-                              />
-                              <input
-                                type="number"
-                                className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-gray-200"
-                                placeholder="0"
-                              />
-                              <input type="checkbox" className="w-5 h-5 cursor-pointer" />
-                            </div>
-                          ))}
-                        </div>
+                ))}
+                {isLoading && (
+                  <div className="text-left">
+                    <div className="inline-block p-3 rounded-lg bg-gray-700 text-gray-300">
+                      <div className="flex items-center space-x-2">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        <span>Generating workout...</span>
                       </div>
-                    ))}
-        </div>
-                )}
-                
-                {/* Cool-down Section */}
-                {generatedWorkout.cooldown?.length > 0 && (
-                  <div className="mb-6">
-                    <h4 className="text-md font-semibold text-gray-300 mb-3">Cool-down</h4>
-                    <div className="space-y-2">
-                      {generatedWorkout.cooldown.map((exercise, idx) => (
-                        <div key={idx} className="flex items-center">
-                          <span className="w-6 h-6 bg-gray-700 rounded-full flex items-center justify-center text-xs text-white mr-3">
-                            {idx + 1}
-                          </span>
-                          <span className="text-gray-200">
-                            {(typeof exercise === 'string' ? exercise : exercise.name || 'Exercise').replace(/^-\s*/, '')}
-                          </span>
-                        </div>
-                      ))}
                     </div>
                   </div>
                 )}
-                
-                <button 
-                  onClick={() => console.log('Starting workout:', generatedWorkout)}
-                  className="mt-4 w-full bg-green-600 hover:bg-green-700 py-3 rounded-lg font-semibold"
+              </div>
+
+              <div className="flex space-x-2">
+                <input
+                  type="text"
+                  value={inputMessage}
+                  onChange={(e) => setInputMessage(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                  placeholder="Describe your workout needs..."
+                  className="flex-1 px-4 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-[#22C55E] focus:outline-none"
+                  disabled={isLoading}
+                />
+                <button
+                  onClick={handleSendMessage}
+                  disabled={isLoading || !inputMessage.trim()}
+                  className="px-6 py-2 bg-[#22C55E] text-white rounded-lg hover:bg-[#16a34a] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Send
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Generated Workout Display */}
+        {generatedWorkout && (
+          <div className="bg-gray-800 rounded-lg p-6 max-w-4xl mx-auto">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold">{generatedWorkout.name}</h2>
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => setShowChat(true)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Modify
+                </button>
+                <button
+                  onClick={handleStartWorkout}
+                  className="px-4 py-2 bg-[#22C55E] text-white rounded-lg hover:bg-[#16a34a] transition-colors"
                 >
                   Start Workout
                 </button>
               </div>
-            )}
-          </div>
-          
-          {/* Right side - Chat */}
-          <div className="lg:col-span-1">
-            <div className="bg-gray-900 rounded-lg h-[500px] flex flex-col">
-              <div className="p-4 border-b border-gray-800">
-                <h3 className="text-lg font-semibold">AI Workout Assistant</h3>
-              </div>
-              
-              {/* Chat Messages */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                {chatMessages.length === 0 && (
-                  <div className="text-gray-500 text-center mt-8">
-                    Ask me anything about workouts or say "Nike workouts" for your program
-                  </div>
-                )}
-                
-                {chatMessages.map((msg, idx) => (
-                  <div
-                    key={idx}
-                    className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div
-                      className={`max-w-[80%] rounded-lg px-4 py-2 ${
-                        msg.role === 'user'
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-800 text-gray-100'
-                      }`}
-                    >
-                      <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-                    </div>
-                </div>
-                ))}
-                
-                {isLoading && (
-                  <div className="flex justify-start">
-                    <div className="bg-gray-800 rounded-lg px-4 py-2">
-                      <span className="text-gray-400 animate-pulse">Thinking...</span>
-                    </div>
-                </div>
-              )}
-              
-              {/* Auto-scroll target */}
-              <div ref={chatEndRef} />
             </div>
 
-              {/* Chat Input */}
-              <div className="p-4 border-t border-gray-800">
-                <div className="flex gap-2">
-              <input
-                type="text"
-                    value={inputMessage}
-                    onChange={(e) => setInputMessage(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                    placeholder="Ask me anything..."
-                    className="flex-1 bg-gray-800 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <button
-                    onClick={handleSendMessage}
-                    disabled={isLoading || !inputMessage.trim()}
-                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Send
-                  </button>
+            {/* Warm-up Section */}
+            {generatedWorkout.warmup && generatedWorkout.warmup.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-xl font-semibold mb-3 text-yellow-400">🔥 Warm-up</h3>
+                <div className="space-y-2">
+                  {generatedWorkout.warmup.map((exercise, index) => (
+                    <div key={index} className="flex justify-between items-center bg-gray-700 p-3 rounded">
+                      <span>{exercise.name}</span>
+                      <span className="text-gray-400">
+                        {exercise.duration || exercise.reps || '1 set'}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
+            )}
+
+            {/* Main Workout Section */}
+            {generatedWorkout.main && generatedWorkout.main.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-xl font-semibold mb-3 text-red-400">💪 Main Workout</h3>
+                <div className="space-y-3">
+                  {generatedWorkout.main.map((exercise, index) => (
+                    <div key={index} className="bg-gray-700 p-4 rounded">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="font-medium">{exercise.name}</span>
+                        <span className={`ml-2 px-2 py-1 text-xs text-white rounded ${ (exercise as any).isAccessory ? 'bg-blue-600' : 'bg-green-600' }`}>
+                          {(exercise as any).isAccessory ? 'Accessory' : 'Main Lift'}
+                        </span>
+                      </div>
+                      <div className="text-gray-400 text-sm">
+                        {exercise.sets} sets × {exercise.reps || '8-12'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Accessories Section */}
+            {generatedWorkout.accessories && generatedWorkout.accessories.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-xl font-semibold mb-3 text-blue-400">🔧 Accessories</h3>
+                <div className="space-y-3">
+                  {generatedWorkout.accessories.map((exercise, index) => (
+                    <div key={index} className="bg-gray-700 p-4 rounded">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="font-medium">{exercise.name}</span>
+                        <span className="ml-2 px-2 py-1 text-xs text-white rounded bg-blue-600">
+                          Accessory
+                        </span>
+                      </div>
+                      <div className="text-gray-400 text-sm">
+                        {exercise.sets} sets × {exercise.reps || '10-15'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Cool-down Section */}
+            {generatedWorkout.cooldown && generatedWorkout.cooldown.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-xl font-semibold mb-3 text-green-400">🧘 Cool-down</h3>
+                <div className="space-y-2">
+                  {generatedWorkout.cooldown.map((exercise, index) => (
+                    <div key={index} className="flex justify-between items-center bg-gray-700 p-3 rounded">
+                      <span>{exercise.name}</span>
+                      <span className="text-gray-400">
+                        {exercise.duration || exercise.reps || '1 set'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Workout Actions */}
+            <div className="flex justify-center space-x-4 pt-6">
+              <button
+                onClick={handleWorkoutComplete}
+                className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+              >
+                Complete Workout
+              </button>
+              <button
+                onClick={() => setShowChat(true)}
+                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Modify Workout
+              </button>
             </div>
           </div>
-            </div>
+        )}
+
+        {/* Navigation Links */}
+        <div className="text-center mt-8">
+          <div className="flex justify-center space-x-4">
+            <Link
+              href="/workout/builder"
+              className="px-6 py-3 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
+            >
+              Custom Workout Builder
+            </Link>
+            <Link
+              href="/workout/active"
+              className="px-6 py-3 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
+            >
+              Active Workout
+            </Link>
           </div>
+        </div>
+      </div>
     </div>
   );
 }

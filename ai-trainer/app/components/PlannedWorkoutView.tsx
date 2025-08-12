@@ -46,9 +46,9 @@ export default function PlannedWorkoutView({
           // dev visibility
           console.groupCollapsed(`[LLM→UI] ${split} ${minutes}min`);
           console.table({
-            warmup: workout.warmup.map(i => i.name).join(' | '),
-            main: workout.main.map(i => `${i.name}${i.isAccessory ? ' (A)' : ' (M)'}`).join(' | '),
-            cooldown: workout.cooldown.map(i => i.name).join(' | '),
+            warmup: workout.warmup.map((i: any) => i.name).join(' | '),
+            main: workout.main.map((i: any) => `${i.name}${i.isAccessory ? ' (A)' : ' (M)'}`).join(' | '),
+            cooldown: workout.cooldown.map((i: any) => i.name).join(' | '),
           });
           console.groupEnd();
         }
