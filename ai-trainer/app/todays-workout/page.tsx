@@ -77,12 +77,18 @@ function normalizeFromLLM(raw: any): GeneratedWorkout {
   const toItem = (x: any): DisplayItem =>
     typeof x === 'string' ? { name: x } : { ...x, name: x?.name ?? 'Exercise' };
 
-  const warmup = Array.isArray(w.warmup) ? w.warmup.map(toItem) : [];
-  const mainAll = Array.isArray(w.main) ? w.main.map(toItem) : [];
-  const cooldown = Array.isArray(w.cooldown) ? w.cooldown.map(toItem) : [];
+  const warmup: DisplayItem[]  = Array.isArray(w.warmup)  ? w.warmup.map(toItem)  : [];
+  const mainAll: DisplayItem[] = Array.isArray(w.main)    ? w.main.map(toItem)    : [];
+  const cooldown: DisplayItem[] = Array.isArray(w.cooldown) ? w.cooldown.map(toItem) : [];
 
-  const primaries = mainAll.filter(i => !i.isAccessory).map(i => ({ ...i, isAccessory: false }));
-  const accessories = mainAll.filter(i => i.isAccessory).map(i => ({ ...i, isAccessory: true }));
+  // ✅ add explicit parameter types to satisfy noImplicitAny/strict
+  const primaries: DisplayItem[] = mainAll
+    .filter((i: DisplayItem) => !i.isAccessory)
+    .map((i: DisplayItem) => ({ ...i, isAccessory: false }));
+
+  const accessories: DisplayItem[] = mainAll
+    .filter((i: DisplayItem) => i.isAccessory)
+    .map((i: DisplayItem) => ({ ...i, isAccessory: true }));
 
   return {
     name: w.name ?? 'Planned Session',
