@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { DynamicWorkoutGenerator } from '@/lib/dynamicWorkoutGenerator';
+import { planWorkout, type LegacyWorkout } from '@/lib/planWorkout';
 
 interface WorkoutStarterProps {
   userId: string;
@@ -14,6 +14,8 @@ interface WorkoutTypeCardProps {
   onClick: () => void;
   isSuggested?: boolean;
 }
+
+type Split = "push" | "pull" | "legs" | "upper" | "full" | "hiit";
 
 function WorkoutTypeCard({ type, description, onClick, isSuggested }: WorkoutTypeCardProps) {
   const getTypeColor = (type: string) => {
@@ -64,56 +66,69 @@ function formatWorkoutType(type: string) {
 }
 
 export default function WorkoutStarter({ userId, onWorkoutSelected }: WorkoutStarterProps) {
-  const [workoutType, setWorkoutType] = useState<any>(null);
   const [suggestedType, setSuggestedType] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchWorkoutSuggestion();
-  }, [userId]);
-
-  const fetchWorkoutSuggestion = async () => {
-    try {
-      setLoading(true);
-      const generator = new DynamicWorkoutGenerator();
-      const suggestion = await generator.generateWorkout(userId);
-      
-      if (suggestion.type === 'suggested') {
-        setSuggestedType(suggestion);
-      } else if (suggestion.type === 'pattern_based') {
-        setWorkoutType(suggestion);
-      } else if (suggestion.requiresUserInput) {
-        setWorkoutType(suggestion);
-      }
-    } catch (err) {
-      setError('Failed to load workout suggestion');
-      console.error('Error fetching workout suggestion:', err);
-    } finally {
-      setLoading(false);
+  // Map old workout types to new split system
+  const mapWorkoutTypeToSplit = (type: string): Split => {
+    switch (type) {
+      case 'push': return 'push';
+      case 'pull': return 'pull';
+      case 'legs': return 'legs';
+      case 'full_body': return 'full';
+      case 'hiit': return 'hiit';
+      case 'upper': return 'upper';
+      default: return 'full';
     }
   };
 
   const startWorkout = async (type: string) => {
     try {
       setLoading(true);
-      const generator = new DynamicWorkoutGenerator();
+      setError(null);
       
-      // Create a mock workout type for the selected type
-      const workoutType = {
-        type: 'custom',
+      const split = mapWorkoutTypeToSplit(type);
+      const minutes = 45; // Default duration, could be made configurable
+      
+      const { workout, plan, coach, debug } = await planWorkout({
+        userId,
+        split,
+        minutes,
+        style: split === 'hiit' ? 'hiit' : 'strength', // HIIT forces hiit style, others use strength
+        message: `${type} workout, ${minutes} min, use my equipment`,
+        debug: 'none',
+      });
+      
+      // Transform the workout data to match your existing format
+      const transformedWorkout = {
+        type: type,
         dayType: type,
-        coreLift: type === 'push' ? 'Barbell Bench Press' : 
-                  type === 'pull' ? 'Barbell Deadlift' : 
-                  type === 'legs' ? 'Barbell Back Squat' : 'Barbell Back Squat'
+        coreLift: workout.main.find(item => !item.isAccessory)?.name || 'Compound Lift',
+        warmup: workout.warmup.map(item => item.name),
+        workout: workout.main.map(item => item.name),
+        cooldown: workout.cooldown.map(item => item.name),
+        // Include the new data for future use
+        plan,
+        coach,
+        debug,
+        // Legacy format for compatibility
+        details: workout.main.map(item => ({
+          name: item.name,
+          sets: Array.from({ length: parseInt(item.sets || '3') }, (_, i) => ({
+            setNumber: i + 1,
+            previous: null,
+            prescribed: null,
+            reps: item.reps || '8-12',
+            rest: 60,
+            rpe: 8,
+          })),
+        })),
       };
       
-      const equipment = await generator.getUserEquipment(userId);
-      const workout = await generator.buildWorkout(workoutType, equipment, userId);
-      
-      onWorkoutSelected(workout);
-    } catch (err) {
-      setError('Failed to start workout');
+      onWorkoutSelected(transformedWorkout);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to start workout');
       console.error('Error starting workout:', err);
     } finally {
       setLoading(false);
@@ -131,7 +146,7 @@ export default function WorkoutStarter({ userId, onWorkoutSelected }: WorkoutSta
       <div className="p-6 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-400 mx-auto mb-4"></div>
-          <p className="text-gray-400">Analyzing your training patterns...</p>
+          <p className="text-gray-400">Generating your workout plan...</p>
         </div>
       </div>
     );
@@ -142,7 +157,7 @@ export default function WorkoutStarter({ userId, onWorkoutSelected }: WorkoutSta
       <div className="p-6 text-center">
         <p className="text-red-400 mb-4">{error}</p>
         <button 
-          onClick={fetchWorkoutSuggestion}
+          onClick={() => setError(null)}
           className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
         >
           Try Again
@@ -202,20 +217,28 @@ export default function WorkoutStarter({ userId, onWorkoutSelected }: WorkoutSta
         />
       </div>
       
+      {/* Additional workout types */}
+      <div className="grid grid-cols-2 gap-4 mb-6">
+        <WorkoutTypeCard 
+          type="hiit" 
+          description="High Intensity Intervals"
+          onClick={() => startWorkout('hiit')}
+          isSuggested={suggestedType?.suggestion === 'hiit'}
+        />
+        <WorkoutTypeCard 
+          type="upper" 
+          description="Upper Body Focus"
+          onClick={() => startWorkout('upper')}
+          isSuggested={suggestedType?.suggestion === 'upper'}
+        />
+      </div>
+      
       {/* Quick options for other styles */}
       <div className="text-center">
         <button className="text-sm text-gray-400 hover:text-gray-300 transition-colors">
           Switch to: Upper/Lower • Full Body • 5/3/1
         </button>
       </div>
-      
-      {/* Training pattern info if available */}
-      {workoutType?.pattern && (
-        <div className="mt-6 p-4 bg-blue-900/20 rounded-lg border border-blue-500/30">
-          <p className="text-sm text-blue-400 mb-1">Following {workoutType.pattern} pattern</p>
-          <p className="text-xs text-blue-300">Today: {workoutType.dayType} • Core: {workoutType.coreLift}</p>
-        </div>
-      )}
     </div>
   );
 } 
