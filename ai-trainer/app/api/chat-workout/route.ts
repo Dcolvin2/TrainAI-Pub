@@ -74,6 +74,22 @@ async function getUserPreferences(userId: string | null): Promise<{ preferred: s
 }
 
 // ---- Params / routing helpers ----
+function parseMinutesFromMessage(msg: string): number | null {
+  const m = (msg || "").toLowerCase();
+
+  // e.g., "32 min", "32 minutes", "in 32", "for 32"
+  const num = m.match(/\b(\d{2,3})\s*(?:min|minutes?)?\b/);
+  if (num) {
+    const n = parseInt(num[1], 10);
+    if (n >= 10 && n <= 120) return n;
+  }
+
+  // phrases
+  if (/\bhalf\s*hour\b/.test(m)) return 30;
+  if (/\b(an?\s*)?hour\b/.test(m)) return 60;
+  return null;
+}
+
 function parseThemeFromMessage(msg: string): Theme {
   const m = (msg || "").toLowerCase();
   if (/hiit|metcon|interval|emom|amrap|tabata/.test(m)) return "hiit";
@@ -286,25 +302,30 @@ function renderSpecificCoachMessage(plan: Plan, durationMin: number): string {
   return lines.join("\n").trim();
 }
 function stripLegacySections(msg: string): string {
-  const lines = (msg || "").split("\n");
-  const isHeader = (s: string) =>
-    /^\s*(?:\*\*|\*)?\s*(?:🔥|💪|🧘)?\s*(warm[-\s]?up|main(?:\s*workout)?|cool[-\s]?down)\s*:?\s*(?:\*\*|\*)?\s*$/i.test(
-      s.trim()
-    );
-  const out: string[] = [];
-  let skipping = false;
-  for (const line of lines) {
-    if (!skipping && isHeader(line)) {
-      skipping = true;
-      continue;
-    }
-    if (skipping) {
-      if (line.trim() === "") skipping = false;
-      continue;
-    }
-    out.push(line);
+  const s = (msg || "").trim();
+  if (!s) return s;
+
+  // Find the first section header and truncate there.
+  const headerRx =
+    /(^|\n)\s*(?:\*\*|\*)?\s*(?:🔥|💪|🧘)?\s*(warm[-\s]?up|main(?:\s*workout)?|conditioning|cool[-\s]?down)\s*:?\s*(?:\*\*|\*)?\s*(?=\n|$)/i;
+
+  const m = s.match(headerRx);
+  if (!m) return s;
+
+  const cutIndex = m.index!; // start of first header
+  const trimmed = s.slice(0, cutIndex).trim();
+
+  // If nothing useful before header, fall back to removing headers+lists everywhere
+  if (trimmed.length < 20) {
+    return s
+      .split("\n")
+      .filter(line => !headerRx.test(line))
+      .join("\n")
+      .replace(/^\s*[\d\-\*]+\.\s+.*$/gim, "") // remove numbered/bulleted items that followed
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
   }
-  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return trimmed;
 }
 
 // ---- Split → primary requirements ----
@@ -529,10 +550,12 @@ export async function POST(req: Request) {
   const user = url.searchParams.get("user");
   const styleParam = url.searchParams.get("style") || url.searchParams.get("type");
   const split = parseSplitFromQuery(url);
-  const durationMin = Number(url.searchParams.get("min") || 45);
+  const queryMin = Number(url.searchParams.get("min") || 45);
 
   const body = await req.json().catch(() => ({}));
   const message: string = body?.message || "";
+  const msgMin = parseMinutesFromMessage(message);
+  const durationMin = msgMin ?? queryMin; // ← prefer what the user typed
 
   // DB: equipment + preferences
   const equipmentList = await getEquipmentForUser(user);
@@ -579,6 +602,14 @@ export async function POST(req: Request) {
       { ok: false, error: "Failed to generate workout plan", details: "Planner JSON failed validation" },
       { status: 400 }
     );
+  }
+
+  // If model ignored minutes, coerce to the user's target (±3 min tolerance)
+  const modelMin = Number(plan?.duration_min ?? plan?.est_total_minutes ?? 0);
+  if (!Number.isNaN(durationMin) && Math.abs((modelMin || 0) - durationMin) > 3) {
+    plan.duration_min = durationMin;
+    plan.est_total_minutes = durationMin;
+    warnings.push(`duration_mismatch: forced ${modelMin || "unknown"} → ${durationMin}`);
   }
 
   // Harmonize DB vocabulary; guard machines; ban oly terms
