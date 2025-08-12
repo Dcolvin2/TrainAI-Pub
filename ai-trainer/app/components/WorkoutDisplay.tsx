@@ -1,5 +1,8 @@
 'use client';
 
+// Enhanced workout display with Main Lift vs Accessory badges
+// Updated to use isAccessory flag from LLM workout data
+
 import React, { useState, useEffect } from 'react';
 
 interface Exercise {
