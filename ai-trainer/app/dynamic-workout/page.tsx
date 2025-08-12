@@ -2,6 +2,88 @@
 
 import { useState } from 'react';
 import WorkoutStarter from '@/app/components/WorkoutStarter';
+import PlannedWorkoutView from '@/app/components/PlannedWorkoutView';
+import { type LegacyWorkout } from '@/lib/planWorkout';
+
+// This is the table renderer that respects the isAccessory flag
+function WorkoutTableRenderer({ workout }: { workout: LegacyWorkout }) {
+  return (
+    <div className="space-y-6">
+      {/* Warmup */}
+      {workout.warmup && workout.warmup.length > 0 && (
+        <div className="bg-gray-700 rounded-lg p-4">
+          <h3 className="text-lg font-semibold mb-3 text-yellow-400">Warmup</h3>
+          <div className="space-y-2">
+            {workout.warmup.map((exercise: any, index: number) => (
+              <div key={index} className="flex justify-between items-center">
+                <span>{exercise.name}</span>
+                <span className="text-gray-400">{exercise.duration || exercise.reps || '1 set'}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Main Work - respect isAccessory for badges */}
+      {workout.main && workout.main.length > 0 && (
+        <div className="bg-gray-700 rounded-lg p-4">
+          <h3 className="text-lg font-semibold mb-3 text-red-400">Main Work</h3>
+          <div className="space-y-3">
+            {workout.main.map((exercise: any, index: number) => {
+              const badge = exercise.isAccessory ? 'Accessory' : 'Main Lift';
+              const badgeColor = exercise.isAccessory ? 'bg-blue-600' : 'bg-green-600';
+              
+              return (
+                <div key={index} className="flex justify-between items-center">
+                  <div className="flex items-center gap-3">
+                    <span className="font-medium">{exercise.name}</span>
+                    <span className={`px-2 py-1 text-xs text-white rounded ${badgeColor}`}>
+                      {badge}
+                    </span>
+                  </div>
+                  <span className="text-gray-400">
+                    {exercise.sets} sets × {exercise.reps || '8-12'}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Cooldown */}
+      {workout.cooldown && workout.cooldown.length > 0 && (
+        <div className="bg-gray-700 rounded-lg p-4">
+          <h3 className="text-lg font-semibold mb-3 text-green-400">Cooldown</h3>
+          <div className="space-y-2">
+            {workout.cooldown.map((exercise: any, index: number) => (
+              <div key={index} className="flex justify-between items-center">
+                <span>{exercise.name}</span>
+                <span className="text-gray-400">{exercise.duration || exercise.reps || '1 set'}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Action Buttons */}
+      <div className="flex gap-4 pt-4">
+        <button 
+          onClick={() => console.log('Workout completed:', workout)}
+          className="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+        >
+          Complete Workout
+        </button>
+        <button 
+          onClick={() => console.log('Starting workout:', workout)}
+          className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          Start Workout
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function DynamicWorkoutPage() {
   const [workoutStarted, setWorkoutStarted] = useState(false);
@@ -53,114 +135,14 @@ export default function DynamicWorkoutPage() {
                 </button>
               </div>
 
-              {selectedWorkout && (
-                <div className="space-y-6">
-                  {/* Workout Type Info */}
-                  <div className="bg-gray-700 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold mb-2">Workout Type</h3>
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <span className="text-gray-400">Type:</span>
-                        <span className="ml-2 capitalize">{selectedWorkout.type}</span>
-                      </div>
-                      {selectedWorkout.pattern && (
-                        <div>
-                          <span className="text-gray-400">Pattern:</span>
-                          <span className="ml-2">{selectedWorkout.pattern}</span>
-                        </div>
-                      )}
-                      {selectedWorkout.dayType && (
-                        <div>
-                          <span className="text-gray-400">Day Type:</span>
-                          <span className="ml-2 capitalize">{selectedWorkout.dayType}</span>
-                        </div>
-                      )}
-                      {selectedWorkout.coreLift && (
-                        <div>
-                          <span className="text-gray-400">Core Lift:</span>
-                          <span className="ml-2">{selectedWorkout.coreLift}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Warmup */}
-                  {selectedWorkout.warmup && (
-                    <div className="bg-gray-700 rounded-lg p-4">
-                      <h3 className="text-lg font-semibold mb-3 text-yellow-400">Warmup</h3>
-                      <div className="space-y-2">
-                        {selectedWorkout.warmup.map((exercise: any, index: number) => (
-                          <div key={index} className="flex justify-between items-center">
-                            <span>{exercise.name}</span>
-                            <span className="text-gray-400">{exercise.duration}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Main Work */}
-                  {selectedWorkout.mainWork && selectedWorkout.mainWork.length > 0 && (
-                    <div className="bg-gray-700 rounded-lg p-4">
-                      <h3 className="text-lg font-semibold mb-3 text-red-400">Main Work</h3>
-                      <div className="space-y-3">
-                        {selectedWorkout.mainWork.map((exercise: any, index: number) => (
-                          <div key={index} className="flex justify-between items-center">
-                            <span className="font-medium">{exercise}</span>
-                            <span className="text-gray-400">Primary Movement</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Accessories */}
-                  {selectedWorkout.accessories && selectedWorkout.accessories.length > 0 && (
-                    <div className="bg-gray-700 rounded-lg p-4">
-                      <h3 className="text-lg font-semibold mb-3 text-blue-400">Accessories</h3>
-                      <div className="space-y-3">
-                        {selectedWorkout.accessories.map((exercise: any, index: number) => (
-                          <div key={index} className="flex justify-between items-center">
-                            <span>{exercise}</span>
-                            <span className="text-gray-400">3 sets</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Cooldown */}
-                  {selectedWorkout.cooldown && (
-                    <div className="bg-gray-700 rounded-lg p-4">
-                      <h3 className="text-lg font-semibold mb-3 text-green-400">Cooldown</h3>
-                      <div className="space-y-2">
-                        {selectedWorkout.cooldown.map((exercise: any, index: number) => (
-                          <div key={index} className="flex justify-between items-center">
-                            <span>{exercise.name}</span>
-                            <span className="text-gray-400">{exercise.duration}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Action Buttons */}
-                  <div className="flex gap-4 pt-4">
-                    <button 
-                      onClick={() => handleWorkoutComplete(selectedWorkout)}
-                      className="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                    >
-                      Complete Workout
-                    </button>
-                    <button 
-                      onClick={() => console.log('Starting workout:', selectedWorkout)}
-                      className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                    >
-                      Start Workout
-                    </button>
-                  </div>
-                </div>
-              )}
+              {/* Use PlannedWorkoutView to drive the display */}
+              <PlannedWorkoutView
+                split={selectedWorkout?.type === 'full_body' ? 'full' : selectedWorkout?.type || 'push'}
+                userId="demo-user-id"
+                minutes={45}
+                message=""
+                renderTable={(workout) => <WorkoutTableRenderer workout={workout} />}
+              />
             </div>
           )}
         </div>
