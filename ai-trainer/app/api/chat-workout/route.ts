@@ -6,7 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 export const runtime = "nodejs";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
-const VERSION = "chat-workout:v4-equip-dow-min-2025-08-11";
+const VERSION = "chat-workout:v5-llm-narrative-2025-08-11";
 
 // server-only client (service role) for reading user_equipment safely
 const admin = createClient(
@@ -207,6 +207,18 @@ async function getEquipmentForUser(userId: string | null): Promise<string[]> {
   return Array.from(new Set(names));
 }
 
+function renderCoachMessage(plan: Plan, equipment: string[], minutes: number): string {
+  const title = plan.name || "Workout";
+  const warmup = plan.phases.find(p => p.phase === "warmup")?.items.map(i => i.name).join(", ") || "—";
+  const main = plan.phases.find(p => p.phase === "main")?.items.map(i => i.name).join(", ") || "—";
+  const cooldown = plan.phases.find(p => p.phase === "cooldown")?.items.map(i => i.name).join(", ") || "—";
+  
+  return `Planned: ${title} (~${minutes} min).
+Warm-up: ${warmup}
+Main: ${main}
+Cooldown: ${cooldown}`;
+}
+
 async function getPreferredDuration(userId: string | null): Promise<number | null> {
   if (!userId) return null;
   const { data, error } = await admin
@@ -219,35 +231,70 @@ async function getPreferredDuration(userId: string | null): Promise<number | nul
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-async function callPlannerLLM(userMessage: string, cues: {
-  durationMin: number;
-  dowCue: string;
-  equipmentList: string[];
-}): Promise<string> {
+async function callPlannerLLM(
+  userMessage: string,
+  cues: {
+    durationMin: number;
+    equipmentList: string[];
+    theme: "strength" | "hypertrophy" | "conditioning" | "balanced";
+  }
+): Promise<string> {
   const eq = cues.equipmentList.length
     ? cues.equipmentList.join(", ")
-    : "bodyweight, dumbbells, barbell, kettlebell";
+    : "kettlebell, dumbbells, barbell, trap bar, bench, bands, box, battle ropes, bodyweight";
+
+  // Style auto-hint from user message (kettlebell/ocho → kettlebell_ocho)
+  const m = userMessage.toLowerCase();
+  const kettlebellStyle = /kettlebell|kb\b|ocho|joe\s*holder/.test(m) ? "kettlebell_ocho" : "coach_general";
 
   const prompt = `
 Return ONLY JSON (no markdown or fences) that matches:
 {
-  "name": string,
-  "duration_min": number,
-  "phases": [
-    { "phase": "warmup"|"main"|"accessory"|"conditioning"|"cooldown",
-      "items": [ { "name": string, "sets"?: number|string, "reps"?: number|string, "duration"?: string, "instruction"?: string, "isAccessory"?: boolean } ]
-    }
-  ],
-  "est_total_minutes"?: number
+  "plan": {
+    "name": string,
+    "duration_min": number,
+    "phases": [
+      { "phase": "warmup"|"main"|"accessory"|"conditioning"|"cooldown",
+        "items": [
+          { "name": string,
+            "sets"?: string|number,
+            "reps"?: string|number,
+            "duration"?: string,
+            "instruction"?: string,
+            "isAccessory"?: boolean
+          }
+        ]
+      }
+    ],
+    "est_total_minutes"?: number
+  },
+  "coach_message": string,
+  "notes"?: {
+    "style": "kettlebell_ocho"|"coach_general",
+    "substitutions"?: string[]
+  }
 }
 
-Constraints:
-- Target duration: ${cues.durationMin} minutes.
-- Today is ${cues.dowCue}.
+Rules (strict):
+- Target duration: ${cues.durationMin} minutes. Use time windows in the coach_message.
 - Use only this equipment: ${eq}.
-- Do NOT include snatch/clean/jerk variants.
-- Sets and reps may be numbers or strings.
-- Keep names concise (e.g., "Barbell Back Squat", "Goblet Squat").
+- If the user mentions kettlebell or Ocho, set notes.style="kettlebell_ocho" and keep MAIN phase kettlebell-forward.
+  - In MAIN: avoid barbell/trap bar/machines unless explicitly asked; those may appear in ACCESSORY at most.
+- BANNED: snatch, clean, jerk variants. If requested, SUBSTITUTE instead of removing:
+  - kettlebell snatch → Kettlebell High Pull
+  - (kb) clean & press / clean → Kettlebell Push Press
+  - jerk → Kettlebell Push Press
+  Add each substitution string to notes.substitutions.
+- MAIN phase items must use sets+reps (strings ok). Duration-only work (EMOM, Tabata, carries) belongs in CONDITIONING or ACCESSORY, not MAIN.
+- Name specificity: avoid placeholders like "Bodyweight Circuit", "Exercise", or "Rest". Use concrete exercise names.
+- Keep names concise, e.g., "Kettlebell Swings", "Double Kettlebell Front Squat", "Front Rack Carry".
+- COACH MESSAGE STYLE:
+  - First line: acknowledge duration + style/equipment (one sentence).
+  - Then timed blocks (Prep, Power & Strength A/B, Unilateral + Pull, Carries/Core, Finisher, Cooldown).
+  - Bullet numbered lists within each block; include concise cues in parentheses.
+  - If any substitutions were made, include a one-line note at the end.
+
+Theme: ${cues.theme}. Align volume/intensity accordingly.
 
 User request: "${userMessage}"
 `.trim();
@@ -255,10 +302,11 @@ User request: "${userMessage}"
   const resp = await anthropic.messages.create({
     model: "claude-3-5-sonnet-20241022",
     temperature: 0.2,
-    max_tokens: 1600,
+    max_tokens: 1800,
     messages: [{ role: "user", content: prompt }],
   });
 
+  // Return raw text (JSON string)
   return extractAiText(resp);
 }
 
@@ -302,6 +350,13 @@ export async function POST(req: Request) {
   const { cue: dowCue } = dayCueFor();
   const equipmentList = await getEquipmentForUser(userId);
 
+  // Auto-detect theme from message
+  const msg = message.toLowerCase();
+  let theme: "strength" | "hypertrophy" | "conditioning" | "balanced" = "balanced";
+  if (/strength|heavy|power|max/.test(msg)) theme = "strength";
+  else if (/hypertrophy|pump|volume|muscle/.test(msg)) theme = "hypertrophy";
+  else if (/conditioning|cardio|hiit|endurance|metcon/.test(msg)) theme = "conditioning";
+
   let aiText = "";
   let parsePath: "as-is" | "fence" | "balanced" | "none" = "none";
   let rawJsonExtract: string | null = null;
@@ -312,7 +367,7 @@ export async function POST(req: Request) {
       aiText = message.trim();
       parsePath = "as-is";
     } else {
-      aiText = await callPlannerLLM(message, { durationMin, dowCue, equipmentList });
+      aiText = await callPlannerLLM(message, { durationMin, equipmentList, theme });
     }
 
     // Parse JSON (as-is → fenced → balanced)
@@ -342,7 +397,11 @@ export async function POST(req: Request) {
       }
     }
 
-    const { plan, warnings } = normalizePlan(parsed);
+    // Support both new ({ plan, coach_message }) and legacy (just plan) shapes
+    const rawPlan = parsed?.plan ?? parsed;
+    const coachMessage = typeof parsed?.coach_message === "string" ? parsed.coach_message : null;
+
+    const { plan, warnings } = normalizePlan(rawPlan);
     if (!plan) {
       return NextResponse.json(
         {
@@ -366,19 +425,32 @@ export async function POST(req: Request) {
       );
     }
 
-    // Remove oly lifts just in case
+    // Final guardrail only (we asked model to substitute already)
     const banned = /snatch|power\s*clean|clean\s*&?\s*jerk|jerk/i;
     plan.phases.forEach((ph) => {
       ph.items = ph.items.filter((it) => !banned.test(it.name));
     });
 
+    // (Optional) Minimal de-fluff that still leaves control to the model
+    plan.phases.forEach(ph => {
+      ph.items = ph.items.filter(it => {
+        const n = String(it?.name ?? '').trim();
+        return n.length > 0 && !/^rest$|^exercise$/i.test(n);
+      });
+    });
+
+    // (Optional but UI-safe) Keep conditioning out of 'main' table shape
     const workout = toLegacyWorkout(plan);
-    const title = plan.name || "Planned Session";
-    const minutes = String(plan.est_total_minutes ?? plan.duration_min ?? "").trim();
+
+    // Prefer model's coach message; fallback to your existing renderer if missing
+    const minutes = Number(plan.est_total_minutes ?? plan.duration_min ?? durationMin) || durationMin;
+    const messageOut = coachMessage && coachMessage.trim().length > 0
+      ? coachMessage.trim()
+      : renderCoachMessage(plan, equipmentList, minutes);
 
     return NextResponse.json({
       ok: true,
-      message: `Planned: ${title}${minutes ? ` (~${minutes} min)` : ""}.`,
+      message: messageOut,
       plan,
       workout,
       debug: debug
