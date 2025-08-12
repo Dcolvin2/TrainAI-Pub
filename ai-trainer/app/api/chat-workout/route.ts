@@ -79,19 +79,26 @@ function normalizePlan(input: any): { plan: Plan | null; warnings: string[] } {
 
 function toLegacyWorkout(plan: Plan) {
   const get = (k: PlanPhase["phase"]) => plan.phases.find((p) => p.phase === k)?.items ?? [];
+
   const warmup = get("warmup").map((it) => ({
     name: it.name,
     sets: it.sets ?? "1",
     reps: it.reps ?? "10-15",
     instruction: it.instruction ?? "",
   }));
-  const mainCore = get("main").map((it) => ({
+
+  // ✅ Only the first N main items are "primary"; the rest become accessories
+  const PRIMARY_MAIN_COUNT = 2; // set to 1 if you only want a single "main lift"
+  const mainItems = get("main");
+
+  const mainPrimaryAndSecondary = mainItems.map((it, idx) => ({
     name: it.name,
     sets: it.sets ?? "3",
     reps: it.reps ?? "8-12",
     instruction: it.instruction ?? "",
-    isAccessory: false,
+    isAccessory: idx >= PRIMARY_MAIN_COUNT, // first N = primary (false), others = accessory (true)
   }));
+
   const accessories = get("accessory").map((it) => ({
     name: it.name,
     sets: it.sets ?? "3",
@@ -99,19 +106,19 @@ function toLegacyWorkout(plan: Plan) {
     instruction: it.instruction ?? "",
     isAccessory: true,
   }));
-  const conditioning = get("conditioning").map((it) => ({
-    name: it.name,
-    sets: it.sets ?? "3",
-    reps: it.reps ?? (it.duration ?? "30s"),
-    instruction: it.instruction ?? "",
-    isAccessory: true,
-  }));
+
+  // We keep conditioning out of the table; it still appears in the coach message
   const cooldown = get("cooldown").map((it) => ({
     name: it.name,
     duration: it.duration ?? (it.reps ? String(it.reps) : "30-60s"),
     instruction: it.instruction ?? "",
   }));
-  return { warmup, main: [...mainCore, ...accessories], cooldown };
+
+  return {
+    warmup,
+    main: [...mainPrimaryAndSecondary, ...accessories],
+    cooldown,
+  };
 }
 
 function findJsonObject(s: string): string | null {
