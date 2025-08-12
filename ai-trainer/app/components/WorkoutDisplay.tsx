@@ -7,6 +7,7 @@ interface Exercise {
   previous?: string;
   sets?: number;
   reps?: string;
+  isAccessory?: boolean;
 }
 
 interface Workout {
@@ -139,9 +140,17 @@ function ExerciseCard({ exercise, onStartRest }: ExerciseCardProps) {
     ));
   };
 
+  const badge = exercise.isAccessory ? "Accessory" : "Main Lift";
+  const badgeColor = exercise.isAccessory ? "bg-blue-600" : "bg-green-600";
+
   return (
     <div className="bg-gray-900 rounded-lg p-6 mb-6">
-      <h3 className="text-xl font-semibold mb-4">{exercise.name}</h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-xl font-semibold">{exercise.name}</h3>
+        <span className={`px-2 py-1 text-xs text-white rounded ${badgeColor}`}>
+          {badge}
+        </span>
+      </div>
       <div className="space-y-3">
         <div className="grid grid-cols-5 gap-4 text-sm text-gray-400 mb-2">
           <span>Set</span>

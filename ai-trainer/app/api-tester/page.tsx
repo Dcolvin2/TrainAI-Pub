@@ -6,7 +6,7 @@ type Split = 'push' | 'pull' | 'legs' | 'upper' | 'full' | 'hiit';
 type Style = 'strength' | 'balanced' | 'hiit';
 
 const DEFAULT_USER_ID = '951f7485-0a47-44ba-b48c-9cd72178d1a7';
-const LS_KEY = 'tester.userId';
+const LS_USER = 'tester.userId';
 
 const SPLITS: Array<{ key: Split; label: string }> = [
   { key: 'push',  label: 'Push' },
@@ -18,41 +18,43 @@ const SPLITS: Array<{ key: Split; label: string }> = [
 ];
 
 export default function ApiTester() {
-  // inputs
-  const [userId, setUserId] = useState<string>(DEFAULT_USER_ID);
-  const [message, setMessage] = useState('');
-  const [minutes, setMinutes] = useState(45);
-  const [style, setStyle] = useState<Style>('strength'); // non-HIIT default
-  const [debugMode, setDebugMode] = useState<'none' | 'dry' | 'deep'>('none');
+  // Inputs
+  const [userId, setUserId]   = useState<string>(DEFAULT_USER_ID);
+  const [minutes, setMinutes] = useState<number>(45);
+  const [style, setStyle]     = useState<Style>('strength'); // used for non-HIIT split runs
 
-  // which splits to test
+  // Free-text Chat playground
+  const [chatMsg, setChatMsg]   = useState<string>('');
+  const [chatSplit, setChatSplit] = useState<Split | ''>(''); // optional split for chat
+  const [chatDebug, setChatDebug] = useState<'none' | 'dry' | 'deep'>('none');
+  const [chatOut, setChatOut]   = useState<string>('');
+  const [chatPrompt, setChatPrompt] = useState<string>('');
+
+  // Raw LLM checker (direct Anthropic echo)
+  const [llmMsg, setLlmMsg]   = useState<string>('');
+  const [llmOut, setLlmOut]   = useState<string>('');
+
+  // Menu (split) runner
   const [selected, setSelected] = useState<Record<Split, boolean>>({
     push: true, pull: false, legs: true, upper: true, full: false, hiit: true,
   });
+  const [splitResults, setSplitResults] =
+    useState<Record<Split, { json: string; prompt?: string; summary?: string }>>({} as any);
+  const [busy, setBusy] = useState<boolean>(false);
 
-  // outputs
-  const [equipOut, setEquipOut] = useState('');
-  const [results, setResults] = useState<Record<Split, { json: string; prompt?: string; summary?: string }>>({} as any);
-  const [running, setRunning] = useState(false);
-
-  // prefill from localStorage or ?user= query once
+  // Prefill/persist userId
   useEffect(() => {
     try {
       const urlUser = new URL(window.location.href).searchParams.get('user');
-      const saved = localStorage.getItem(LS_KEY);
+      const saved = localStorage.getItem(LS_USER);
       const initial = urlUser?.trim() || saved?.trim() || DEFAULT_USER_ID;
       if (initial && initial !== userId) setUserId(initial);
-    } catch {
-      // noop
-    }
+    } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  useEffect(() => { try { localStorage.setItem(LS_USER, userId || DEFAULT_USER_ID); } catch {} }, [userId]);
 
-  // persist on change
-  useEffect(() => {
-    try { localStorage.setItem(LS_KEY, userId || DEFAULT_USER_ID); } catch {}
-  }, [userId]);
-
+  // Styles
   const card = 'rounded-xl border p-4 space-y-3 bg-white';
   const box  = 'w-full rounded-md border px-3 py-2 text-gray-900 placeholder-gray-400 bg-white';
   const btn  = 'rounded-md bg-black text-white px-3 py-2';
@@ -62,17 +64,39 @@ export default function ApiTester() {
     [selected]
   );
 
-  function buildQS(split: Split, mode: 'live' | 'dry' | 'deep') {
-    const params = new URLSearchParams();
-    if (userId) params.set('user', userId);
-    if (minutes) params.set('min', String(minutes));
-    params.set('split', split);
-    params.set('style', split === 'hiit' ? 'hiit' : style);
-    if (mode === 'dry') params.set('debug', 'dry');
-    if (mode === 'deep') params.set('debug', 'deep');
-    return params.toString();
+  // ---------- helpers ----------
+  function buildQS(params: {
+    split?: Split | '';
+    mode?: 'live' | 'dry' | 'deep';
+    minutes?: number;
+    forcedStyle?: Style; // used for split runs
+  }) {
+    const u = new URLSearchParams();
+    if (userId) u.set('user', userId);
+    if (params.minutes) u.set('min', String(params.minutes));
+    if (params.split)  u.set('split', params.split);
+    // style logic: HIIT forces hiit; otherwise use provided style or strength
+    const s = params.split === 'hiit' ? 'hiit' : (params.forcedStyle || 'strength');
+    u.set('style', s);
+    if (params.mode === 'dry')  u.set('debug', 'dry');
+    if (params.mode === 'deep') u.set('debug', 'deep');
+    return u.toString();
   }
 
+  function summarize(json: any): string {
+    try {
+      const ver = json?.debug?.version || 'n/a';
+      const split = json?.debug?.split || 'n/a';
+      const mins = json?.debug?.durationMin || json?.plan?.duration_min || '—';
+      const primOK = json?.debug?.primaryAfter ?? json?.debug?.primaryBefore;
+      const swaps = (json?.debug?.swaps || []).length;
+      const title = json?.plan?.name || '—';
+      return `v=${ver} • split=${split} • ${mins}min • primaries:${primOK ? 'OK' : 'MISSING'} • swaps:${swaps} • plan="${title}"`;
+    } catch { return ''; }
+  }
+
+  // ---------- equipment ----------
+  const [equipOut, setEquipOut] = useState('');
   async function fetchEquipment() {
     setEquipOut('Loading…');
     const res = await fetch(`/api/debug/equipment?user=${encodeURIComponent(userId)}`);
@@ -80,31 +104,52 @@ export default function ApiTester() {
     setEquipOut(JSON.stringify(json, null, 2));
   }
 
-  function summarize(json: any): string {
-    try {
-      const ver = json?.debug?.version || 'n/a';
-      const primaryAfter = json?.debug?.primaryAfter;
-      const swaps = (json?.debug?.swaps || []).length;
-      const split = json?.debug?.split || 'n/a';
-      const theme = json?.debug?.theme || 'n/a';
-      const planName = json?.plan?.name || json?.workout?.name || '—';
-      const mins = json?.debug?.durationMin || json?.plan?.duration_min || '—';
-      return `v=${ver} • split=${split} • theme=${theme} • ${mins}min • primaries:${primaryAfter ? 'OK' : 'MISSING'} • swaps:${swaps} • plan="${planName}"`;
-    } catch {
-      return '';
-    }
-  }
-
-  async function runOne(split: Split, mode: 'live' | 'dry' | 'deep') {
-    const qs = buildQS(split, mode);
-    const bodyMsg = message || `${split} workout, ${minutes} min, use my equipment`;
+  // ---------- chat playground ----------
+  async function runChat(mode: 'live' | 'dry' | 'deep') {
+    setChatOut('Loading…'); setChatPrompt('');
+    const qs = buildQS({
+      split: chatSplit,
+      mode: mode === 'live' ? (chatDebug === 'deep' ? 'deep' : 'live') : mode,
+      minutes,
+      forcedStyle: style,
+    });
     const res = await fetch(`/api/chat-workout?${qs}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: bodyMsg }),
+      body: JSON.stringify({ message: chatMsg || 'plan a workout' }),
     });
     const json = await res.json();
-    setResults(prev => ({
+    setChatOut(JSON.stringify(json, null, 2));
+    if (json?.debug?.promptPreview) setChatPrompt(String(json.debug.promptPreview));
+  }
+
+  // ---------- raw llm ----------
+  async function runLLM() {
+    setLlmOut('Loading…');
+    const res = await fetch('/api/debug/llm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: llmMsg || 'barbell workout 45 min (no snatch/clean/jerk)' }),
+    });
+    const json = await res.json();
+    setLlmOut(JSON.stringify(json, null, 2));
+  }
+
+  // ---------- splits ----------
+  async function runSplit(split: Split, mode: 'live' | 'dry' | 'deep') {
+    const qs = buildQS({
+      split,
+      mode: mode === 'live' ? 'live' : mode,
+      minutes,
+      forcedStyle: style,
+    });
+    const res = await fetch(`/api/chat-workout?${qs}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: `${split} workout ${minutes} min use my equipment` }),
+    });
+    const json = await res.json();
+    setSplitResults(prev => ({
       ...prev,
       [split]: {
         json: JSON.stringify(json, null, 2),
@@ -115,19 +160,20 @@ export default function ApiTester() {
   }
 
   async function runSelected(mode: 'live' | 'dry') {
-    setRunning(true);
+    setBusy(true);
     try {
-      for (const split of selectedSplits) {
-        await runOne(split, mode === 'dry' ? 'dry' : (debugMode === 'deep' ? 'deep' : 'live'));
+      for (const s of selectedSplits) {
+        await runSplit(s, mode === 'dry' ? 'dry' : (chatDebug === 'deep' ? 'deep' : 'live'));
       }
     } finally {
-      setRunning(false);
+      setBusy(false);
     }
   }
 
+  // ---------- UI ----------
   return (
     <main className="mx-auto max-w-5xl p-6 space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">API Tester</h1>
+      <h1 className="text-2xl font-bold text-gray-100">API Tester</h1>
 
       {/* Equipment */}
       <section className={card}>
@@ -140,23 +186,29 @@ export default function ApiTester() {
         <textarea className="w-full h-40 rounded-md border p-2 font-mono text-sm text-gray-900" readOnly value={equipOut} />
       </section>
 
-      {/* Quick Split Tester */}
+      {/* Chat Playground (free text) */}
       <section className={card}>
-        <h2 className="font-semibold text-gray-900">Quick Split Tester (POST /api/chat-workout)</h2>
-
-        <div className="grid gap-3 md:grid-cols-2">
+        <h2 className="font-semibold text-gray-900">Chat Playground (POST /api/chat-workout)</h2>
+        <div className="grid gap-2 md:grid-cols-2">
           <div className="space-y-2">
-            <label className="text-sm text-gray-700">Message (optional)</label>
-            <input className={box} value={message} onChange={e => setMessage(e.target.value)} placeholder='e.g. "heavy strength focus, avoid bike"' />
+            <label className="text-sm text-gray-700">Message</label>
+            <input className={box} value={chatMsg} onChange={e => setChatMsg(e.target.value)}
+              placeholder='e.g. "I want a joe holder ocho style workout for 32 minutes (avoid bike)"' />
           </div>
-
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <div>
               <label className="text-sm text-gray-700">Minutes</label>
               <input className={box} type="number" value={minutes} onChange={e => setMinutes(Number(e.target.value || 45))} />
             </div>
             <div>
-              <label className="text-sm text-gray-700">Style (non-HIIT splits)</label>
+              <label className="text-sm text-gray-700">Split (optional)</label>
+              <select className={box} value={chatSplit} onChange={e => setChatSplit(e.target.value as Split | '')}>
+                <option value="">auto</option>
+                {SPLITS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-sm text-gray-700">Style (non-HIIT)</label>
               <select className={box} value={style} onChange={e => setStyle(e.target.value as Style)}>
                 <option value="strength">strength</option>
                 <option value="balanced">balanced</option>
@@ -164,9 +216,70 @@ export default function ApiTester() {
               </select>
             </div>
           </div>
+          <div>
+            <label className="text-sm text-gray-700">Debug</label>
+            <select className={box} value={chatDebug} onChange={e => setChatDebug(e.target.value as any)}>
+              <option value="none">none (live)</option>
+              <option value="dry">dry (show prompt, no LLM)</option>
+              <option value="deep">deep (include prompt in live response)</option>
+            </select>
+          </div>
         </div>
 
-        {/* Split checkboxes */}
+        <div className="flex gap-2 pt-2">
+          <button className={btn} onClick={() => runChat('live')}>Run Chat</button>
+          <button className={btn} onClick={() => runChat('dry')}>Preview Prompt (no tokens)</button>
+        </div>
+
+        <div className="grid gap-3 pt-3">
+          <h3 className="font-medium">Response JSON</h3>
+          <textarea className="w-full h-64 rounded-md border p-2 font-mono text-sm text-gray-900" readOnly value={chatOut} />
+          {chatPrompt ? <>
+            <h3 className="font-medium">Prompt Preview</h3>
+            <textarea className="w-full h-44 rounded-md border p-2 font-mono text-sm text-gray-900" readOnly value={chatPrompt} />
+          </> : null}
+        </div>
+      </section>
+
+      {/* Raw LLM JSON checker (direct Anthropic sanity) */}
+      <section className={card}>
+        <h2 className="font-semibold text-gray-900">Raw LLM JSON checker (POST /api/debug/llm)</h2>
+        <div className="grid gap-2 md:grid-cols-[1fr_auto]">
+          <input className={box} value={llmMsg} onChange={e => setLlmMsg(e.target.value)}
+            placeholder='e.g. "barbell workout 45 min (no snatch/clean/jerk)"' />
+          <button className={btn} onClick={runLLM}>Call LLM (raw)</button>
+        </div>
+        <textarea className="w-full h-48 rounded-md border p-2 font-mono text-sm text-gray-900" readOnly value={llmOut} />
+      </section>
+
+      {/* Menu (Split) Runner */}
+      <section className={card}>
+        <h2 className="font-semibold text-gray-900">Menu Generator — same as clicking PUSH/PULL/HIIT</h2>
+
+        <div className="grid gap-2 md:grid-cols-3">
+          <div>
+            <label className="text-sm text-gray-700">Minutes</label>
+            <input className={box} type="number" value={minutes} onChange={e => setMinutes(Number(e.target.value || 45))} />
+          </div>
+          <div>
+            <label className="text-sm text-gray-700">Style (non-HIIT splits)</label>
+            <select className={box} value={style} onChange={e => setStyle(e.target.value as Style)}>
+              <option value="strength">strength</option>
+              <option value="balanced">balanced</option>
+              <option value="hiit">hiit</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-sm text-gray-700">Debug for runs</label>
+            <select className={box} value={chatDebug} onChange={e => setChatDebug(e.target.value as any)}>
+              <option value="none">none (live)</option>
+              <option value="dry">dry (show prompt, no LLM)</option>
+              <option value="deep">deep (include prompt in live response)</option>
+            </select>
+          </div>
+        </div>
+
+        {/* checkboxes */}
         <div className="flex flex-wrap gap-3 pt-2">
           {SPLITS.map(s => (
             <label key={s.key} className="inline-flex items-center gap-2 text-sm text-gray-800">
@@ -180,29 +293,19 @@ export default function ApiTester() {
           ))}
         </div>
 
-        {/* Debug mode */}
-        <div className="pt-2">
-          <label className="text-sm text-gray-700">Debug mode</label>
-          <select className={box} value={debugMode} onChange={e => setDebugMode(e.target.value as any)}>
-            <option value="none">none (live)</option>
-            <option value="dry">dry (show prompt, no LLM)</option>
-            <option value="deep">deep (include prompt in live response)</option>
-          </select>
-        </div>
-
         <div className="flex flex-wrap gap-2 pt-2">
-          <button className={btn} disabled={running} onClick={() => runSelected('live')}>
-            {running ? 'Running…' : 'Run Selected (live)'}
+          <button className={btn} disabled={busy} onClick={() => runSelected('live')}>
+            {busy ? 'Running…' : 'Run Selected (live)'}
           </button>
-          <button className={btn} disabled={running} onClick={() => runSelected('dry')}>
-            {running ? 'Working…' : 'Preview Prompts (no tokens)'}
+          <button className={btn} disabled={busy} onClick={() => runSelected('dry')}>
+            {busy ? 'Working…' : 'Preview Prompts (no tokens)'}
           </button>
         </div>
 
-        {/* Results grid */}
+        {/* results */}
         <div className="grid gap-4 pt-4 md:grid-cols-2">
           {SPLITS.filter(s => selected[s.key]).map(s => {
-            const r = results[s.key];
+            const r = splitResults[s.key];
             return (
               <div key={s.key} className="rounded-lg border p-3">
                 <div className="flex items-center justify-between">
@@ -211,10 +314,15 @@ export default function ApiTester() {
                     <span className="text-xs rounded bg-gray-100 px-2 py-1 text-gray-700">{r.summary}</span>
                   ) : null}
                 </div>
+                <div className="flex gap-2 py-2">
+                  <button className={btn} onClick={() => runSplit(s.key, 'live')}>Run</button>
+                  <button className={btn} onClick={() => runSplit(s.key, 'dry')}>Preview Prompt</button>
+                  <button className={btn} onClick={() => runSplit(s.key, 'deep')}>Run (include prompt)</button>
+                </div>
                 {r?.prompt ? (
                   <>
                     <div className="mt-2 text-sm font-medium text-gray-700">Prompt Preview</div>
-                    <textarea className="w-full h-32 rounded-md border p-2 font-mono text-xs text-gray-900" readOnly value={r.prompt} />
+                    <textarea className="w-full h-28 rounded-md border p-2 font-mono text-xs text-gray-900" readOnly value={r.prompt} />
                   </>
                 ) : null}
                 <div className="mt-2 text-sm font-medium text-gray-700">Response JSON</div>
