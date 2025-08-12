@@ -52,7 +52,7 @@ const workoutTypes = [
   }
 ];
 
-// Types + normalizer
+// --- LLM → UI normalizer (minimal; keeps your current UI shape) ---
 type DisplayItem = {
   name: string;
   sets?: string;
@@ -66,32 +66,39 @@ interface GeneratedWorkout {
   name: string;
   warmup: DisplayItem[];
   main: DisplayItem[];          // primaries only
-  accessories: DisplayItem[];   // derived from LLM main
+  accessories: DisplayItem[];   // derived from LLM "main"
   cooldown: DisplayItem[];
   duration?: number;
   focus?: string;
 }
 
-function normalizeFromLLM(raw: any): GeneratedWorkout {
+// stringify helper
+const S = (v: any) => (v == null ? undefined : String(v));
+
+const toDisplayItem = (x: any): DisplayItem =>
+  typeof x === 'string'
+    ? { name: x }
+    : {
+        name: S(x?.name) ?? 'Exercise',
+        sets: S(x?.sets),
+        reps: S(x?.reps),
+        duration: S(x?.duration),
+        instruction: S(x?.instruction),
+        isAccessory: Boolean(x?.isAccessory),
+      };
+
+function llmToGeneratedWorkout(raw: any): GeneratedWorkout {
   const w = raw || {};
-  const toItem = (x: any): DisplayItem =>
-    typeof x === 'string' ? { name: x } : { ...x, name: x?.name ?? 'Exercise' };
+  const warmup: DisplayItem[]   = Array.isArray(w.warmup)   ? w.warmup.map(toDisplayItem)   : [];
+  const mainAll: DisplayItem[]  = Array.isArray(w.main)     ? w.main.map(toDisplayItem)     : [];
+  const cooldown: DisplayItem[] = Array.isArray(w.cooldown) ? w.cooldown.map(toDisplayItem) : [];
 
-  const warmup: DisplayItem[]  = Array.isArray(w.warmup)  ? w.warmup.map(toItem)  : [];
-  const mainAll: DisplayItem[] = Array.isArray(w.main)    ? w.main.map(toItem)    : [];
-  const cooldown: DisplayItem[] = Array.isArray(w.cooldown) ? w.cooldown.map(toItem) : [];
-
-  // ✅ add explicit parameter types to satisfy noImplicitAny/strict
-  const primaries: DisplayItem[] = mainAll
-    .filter((i: DisplayItem) => !i.isAccessory)
-    .map((i: DisplayItem) => ({ ...i, isAccessory: false }));
-
-  const accessories: DisplayItem[] = mainAll
-    .filter((i: DisplayItem) => i.isAccessory)
-    .map((i: DisplayItem) => ({ ...i, isAccessory: true }));
+  // explicit param typing to satisfy strict TS
+  const primaries: DisplayItem[]  = mainAll.filter((it: DisplayItem) => !it.isAccessory);
+  const accessories: DisplayItem[] = mainAll.filter((it: DisplayItem) => it.isAccessory);
 
   return {
-    name: w.name ?? 'Planned Session',
+    name: S(w.name) ?? 'Planned Session',
     warmup,
     main: primaries,
     accessories,
@@ -190,8 +197,7 @@ export default function TodaysWorkout() {
         const data = await response.json();
         
         if (data.workout) {
-          const normalized = normalizeFromLLM(data.workout);
-          setGeneratedWorkout(normalized);
+          setGeneratedWorkout(llmToGeneratedWorkout(data.workout));
           
           setChatMessages(prev => [...prev, {
             role: 'assistant',
@@ -229,8 +235,7 @@ export default function TodaysWorkout() {
         // Handle modification responses
         if (data.isModification && data.workout) {
           // Update the workout with the modified version
-          const normalized = normalizeFromLLM(data.workout);
-          setGeneratedWorkout(normalized);
+          setGeneratedWorkout(llmToGeneratedWorkout(data.workout));
           
           // Show just the modification message
           setChatMessages(prev => [...prev, {
@@ -240,39 +245,38 @@ export default function TodaysWorkout() {
           
         } else if (data.workout && !data.isModification) {
           // New workout generated
-          const normalized = normalizeFromLLM(data.workout);
-          setGeneratedWorkout(normalized);
+          setGeneratedWorkout(llmToGeneratedWorkout(data.workout));
           
           // Format and display the full workout
           let workoutDisplay = data.message + '\n\n';
           
-          if (normalized.warmup && normalized.warmup.length > 0) {
+          if (data.workout.warmup && data.workout.warmup.length > 0) {
             workoutDisplay += '**🔥 Warm-up:**\n';
-            normalized.warmup.forEach((ex: any, i: number) => {
+            data.workout.warmup.forEach((ex: any, i: number) => {
               workoutDisplay += `${i+1}. ${ex.name} - ${ex.sets ? ex.sets + ' sets x ' + ex.reps + ' reps' : ex.duration}\n`;
             });
             workoutDisplay += '\n';
           }
           
-          if (normalized.main && normalized.main.length > 0) {
+          if (data.workout.main && data.workout.main.length > 0) {
             workoutDisplay += '**💪 Main Workout:**\n';
-            normalized.main.forEach((ex: any, i: number) => {
+            data.workout.main.forEach((ex: any, i: number) => {
               workoutDisplay += `${i+1}. ${ex.name} - ${ex.sets} sets x ${ex.reps} reps\n`;
             });
             workoutDisplay += '\n';
           }
           
-          if (normalized.accessories && normalized.accessories.length > 0) {
+          if (data.workout.accessories && data.workout.accessories.length > 0) {
             workoutDisplay += '**🔧 Accessories:**\n';
-            normalized.accessories.forEach((ex: any, i: number) => {
+            data.workout.accessories.forEach((ex: any, i: number) => {
               workoutDisplay += `${i+1}. ${ex.name} - ${ex.sets} sets x ${ex.reps} reps\n`;
             });
             workoutDisplay += '\n';
           }
           
-          if (normalized.cooldown && normalized.cooldown.length > 0) {
+          if (data.workout.cooldown && data.workout.cooldown.length > 0) {
             workoutDisplay += '**🧘 Cool-down:**\n';
-            normalized.cooldown.forEach((ex: any, i: number) => {
+            data.workout.cooldown.forEach((ex: any, i: number) => {
               workoutDisplay += `${i+1}. ${ex.name} - ${ex.duration}\n`;
             });
           }
@@ -298,11 +302,14 @@ export default function TodaysWorkout() {
   const handleWorkoutSelect = async (workoutType: string) => {
     setIsLoading(true);
     try {
-      const url = `/api/chat-workout?user=${user?.id}&split=${encodeURIComponent(workoutType)}&minutes=${timeAvailable}&style=${workoutType === 'hiit' ? 'hiit' : 'strength'}`;
+      const url = `/api/chat-workout?user=${user?.id}&split=${encodeURIComponent(
+        workoutType
+      )}&minutes=${timeAvailable}&style=${workoutType === 'hiit' ? 'hiit' : 'strength'}`;
+
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // body is optional but helps bias the model; safe for our route
+        // lightweight bias; doesn't affect UI
         body: JSON.stringify({ message: `${workoutType} ${timeAvailable} min — use only my equipment.` }),
       });
 
@@ -312,34 +319,35 @@ export default function TodaysWorkout() {
       }
 
       const data = await response.json();
-      console.info('[SRC] LLM /api/chat-workout', { workoutType, timeAvailable, data });
+      console.info('[LLM split]', workoutType, { data });
 
-      // Prefer LLM legacy shape if present
       if (data?.workout) {
-        const normalized = normalizeFromLLM(data.workout);
-        setGeneratedWorkout(normalized);
-        setChatMessages(prev => [...prev, { role: 'assistant', content: data.message || `Loaded ${normalized.name}` }]);
+        // preferred legacy shape from your route
+        setGeneratedWorkout(llmToGeneratedWorkout(data.workout));
+        setChatMessages(prev => [...prev, { role: 'assistant', content: data.message || `Loaded ${data?.plan?.name || workoutType.toUpperCase()}` }]);
       } else if (data?.plan) {
-        // Fallback if only plan shape returned
-        const planWorkoutShape = {
-          warmup: data.plan?.phases?.find((p: any) => p.phase === 'warmup')?.items ?? [],
-          main:   data.plan?.phases?.find((p: any) => p.phase === 'main')?.items ?? [],
-          cooldown: data.plan?.phases?.find((p: any) => p.phase === 'cooldown')?.items ?? [],
+        // fallback: reshape plan.phases → workout-like for the normalizer
+        const planAsWorkout = {
           name: data.plan?.name,
+          warmup: data.plan?.phases?.find((p: any) => p.phase === 'warmup')?.items ?? [],
+          main: data.plan?.phases?.find((p: any) => p.phase === 'main')?.items ?? [],
+          cooldown: data.plan?.phases?.find((p: any) => p.phase === 'cooldown')?.items ?? [],
           est_total_minutes: data.plan?.est_total_minutes ?? data.plan?.duration_min,
         };
-        const normalized = normalizeFromLLM(planWorkoutShape);
-        setGeneratedWorkout(normalized);
-        setChatMessages(prev => [...prev, { role: 'assistant', content: data.message || `Loaded ${normalized.name}` }]);
+        setGeneratedWorkout(llmToGeneratedWorkout(planAsWorkout));
+        setChatMessages(prev => [...prev, { role: 'assistant', content: data.message || `Loaded ${data.plan?.name || workoutType.toUpperCase()}` }]);
       } else {
         throw new Error('LLM did not return a workout.');
       }
     } catch (error) {
       console.error('Error generating workout:', error);
-      setChatMessages(prev => [...prev, {
-        role: 'assistant',
-        content: `Sorry, I had trouble generating your ${workoutType} workout. Please try again.`,
-      }]);
+      setChatMessages(prev => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: `Sorry, I had trouble generating your ${workoutType} workout. Please try again.`,
+        },
+      ]);
     } finally {
       setIsLoading(false);
     }
@@ -388,8 +396,7 @@ export default function TodaysWorkout() {
       const data = await response.json();
       
       if (data.workout) {
-        const normalized = normalizeFromLLM(data.workout);
-        setGeneratedWorkout(normalized);
+        setGeneratedWorkout(llmToGeneratedWorkout(data.workout));
         
         setChatMessages(prev => [...prev, {
           role: 'assistant',
@@ -467,7 +474,7 @@ export default function TodaysWorkout() {
                 className={`px-6 py-3 rounded-lg font-medium transition-colors ${
                   timeAvailable === time
                     ? 'bg-[#22C55E] text-white'
-                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    : 'bg-gray-700 text-gray-300 hover:bg-gray-700'
                 }`}
               >
                 {time} min
