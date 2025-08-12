@@ -6,7 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 export const runtime = "nodejs";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
-const VERSION = "chat-workout:v5-llm-narrative-2025-08-11";
+const VERSION = "chat-workout:v6-exercise-enumeration-2025-08-11";
 
 // server-only client (service role) for reading user_equipment safely
 const admin = createClient(
@@ -207,6 +207,80 @@ async function getEquipmentForUser(userId: string | null): Promise<string[]> {
   return Array.from(new Set(names));
 }
 
+function stripLegacySections(msg: string): string {
+  const lines = msg.split('\n');
+  const isHeader = (s: string) => /^\s*(?:\*\*|\*)?\s*(?:🔥|💪|🧘)?\s*(warm[-\s]?up|main(?:\s*workout)?|cool[-\s]?down)\s*:?\s*(?:\*\*|\*)?\s*$/i.test(s.trim());
+  const out: string[] = [];
+  let skipping = false;
+  for (const line of lines) {
+    if (!skipping && isHeader(line)) { skipping = true; continue; }
+    if (skipping) { if (line.trim() === '') skipping = false; continue; }
+    out.push(line);
+  }
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function looksSpecific(msg: string, plan: Plan): boolean {
+  const mainNames = (plan.phases.find(p=>p.phase==='main')?.items ?? []).map(i=>i.name.toLowerCase());
+  const mustMention = mainNames.slice(0, 2); // at least 2 main moves referenced
+  const lower = msg.toLowerCase();
+  return mustMention.every(n => n && lower.includes(n));
+}
+
+function fmtItem(it: PlanItem): string {
+  if (it.sets && it.reps) return `${it.name} — ${String(it.sets)}×${String(it.reps)}`;
+  if (it.duration) return `${it.name} — ${String(it.duration)}`;
+  return it.name;
+}
+
+function renderSpecificCoachMessage(plan: Plan, durationMin: number): string {
+  const warm = plan.phases.find(p=>p.phase==='warmup')?.items ?? [];
+  const main = plan.phases.find(p=>p.phase==='main')?.items ?? [];
+  const acc  = plan.phases.find(p=>p.phase==='accessory')?.items ?? [];
+  const cond = plan.phases.find(p=>p.phase==='conditioning')?.items ?? [];
+  const cool = plan.phases.find(p=>p.phase==='cooldown')?.items ?? [];
+
+  // simple allocation
+  const wMin = Math.min(8, Math.max(5, Math.round(durationMin*0.14)));
+  const aMin = Math.max(10, Math.round(durationMin*0.28));
+  const bMin = Math.max(8,  Math.round(durationMin*0.22));
+  const uMin = Math.max(6,  Math.round(durationMin*0.18));
+  const fMin = Math.max(4,  durationMin - (wMin+aMin+bMin+uMin+3)); // 3 for cooldown
+
+  const A = main.slice(0, 2);
+  const B = main.slice(2, 4);
+  const U = acc.slice(0, 2);
+  const F = cond.slice(0, 2);
+
+  const lines: string[] = [];
+  lines.push(`Got it — ${durationMin} minutes, kettlebell-forward.`);
+  lines.push('');
+  lines.push(`0:00–${String(wMin).padStart(2,' ')}:00 – Prep`);
+  (warm.length ? warm : []).slice(0,4).forEach((it, i) => lines.push(`${i+1}. ${fmtItem(it)}`));
+
+  lines.push('');
+  lines.push(`${String(wMin).padStart(2,' ')}:00–${String(wMin+aMin).padStart(2,' ')}:00 – Power & Strength A`);
+  (A.length ? A : main.slice(0,2)).forEach((it, i) => lines.push(`${i+1}. ${fmtItem(it)}`));
+
+  lines.push('');
+  lines.push(`${String(wMin+aMin).padStart(2,' ')}:00–${String(wMin+aMin+bMin).padStart(2,' ')}:00 – Power & Strength B`);
+  (B.length ? B : main.slice(2,4)).forEach((it, i) => lines.push(`${i+1}. ${fmtItem(it)}`));
+
+  lines.push('');
+  lines.push(`${String(wMin+aMin+bMin).padStart(2,' ')}:00–${String(wMin+aMin+bMin+uMin).padStart(2,' ')}:00 – Unilateral + Pull`);
+  (U.length ? U : acc.slice(0,2)).forEach((it, i) => lines.push(`${i+1}. ${fmtItem(it)}`));
+
+  lines.push('');
+  lines.push(`${String(wMin+aMin+bMin+uMin).padStart(2,' ')}:00–${String(wMin+aMin+bMin+uMin+fMin).padStart(2,' ')}:00 – Finisher`);
+  (F.length ? F : [{ name: 'EMOM — Swings', reps: '20', sets: '4' } as PlanItem]).forEach((it, i) => lines.push(`${i+1}. ${fmtItem(it)}`));
+
+  lines.push('');
+  lines.push(`${String(durationMin-3).padStart(2,' ')}:00–${String(durationMin).padStart(2,' ')}:00 – Cooldown`);
+  (cool.length ? cool : []).slice(0,3).forEach((it, i) => lines.push(`${i+1}. ${fmtItem(it)}`));
+
+  return lines.join('\n').trim();
+}
+
 function renderCoachMessage(plan: Plan, equipment: string[], minutes: number): string {
   const title = plan.name || "Workout";
   const warmup = plan.phases.find(p => p.phase === "warmup")?.items.map(i => i.name).join(", ") || "—";
@@ -233,68 +307,53 @@ async function getPreferredDuration(userId: string | null): Promise<number | nul
 
 async function callPlannerLLM(
   userMessage: string,
-  cues: {
-    durationMin: number;
-    equipmentList: string[];
-    theme: "strength" | "hypertrophy" | "conditioning" | "balanced";
-  }
+  cues: { durationMin: number; equipmentList: string[]; theme: "strength"|"hypertrophy"|"conditioning"|"balanced"; }
 ): Promise<string> {
-  const eq = cues.equipmentList.length
-    ? cues.equipmentList.join(", ")
-    : "kettlebell, dumbbells, barbell, trap bar, bench, bands, box, battle ropes, bodyweight";
-
-  // Style auto-hint from user message (kettlebell/ocho → kettlebell_ocho)
-  const m = userMessage.toLowerCase();
-  const kettlebellStyle = /kettlebell|kb\b|ocho|joe\s*holder/.test(m) ? "kettlebell_ocho" : "coach_general";
+  const eq = cues.equipmentList.length ? cues.equipmentList.join(", ") : "kettlebell, dumbbells, barbell, trap bar, bench, bands, box, battle ropes, bodyweight";
+  const style = /kettlebell|kb\b|ocho|joe\s*holder/i.test(userMessage) ? "kettlebell_ocho" : "coach_general";
 
   const prompt = `
-Return ONLY JSON (no markdown or fences) that matches:
+Return ONLY JSON (no markdown or fences) shaped as:
 {
   "plan": {
     "name": string,
     "duration_min": number,
     "phases": [
       { "phase": "warmup"|"main"|"accessory"|"conditioning"|"cooldown",
-        "items": [
-          { "name": string,
-            "sets"?: string|number,
-            "reps"?: string|number,
-            "duration"?: string,
-            "instruction"?: string,
-            "isAccessory"?: boolean
-          }
-        ]
+        "items": [ { "name": string, "sets"?: string|number, "reps"?: string|number, "duration"?: string, "instruction"?: string, "isAccessory"?: boolean } ]
       }
     ],
     "est_total_minutes"?: number
   },
   "coach_message": string,
-  "notes"?: {
-    "style": "kettlebell_ocho"|"coach_general",
-    "substitutions"?: string[]
-  }
+  "notes"?: { "style": "kettlebell_ocho"|"coach_general", "substitutions"?: string[] }
 }
 
-Rules (strict):
-- Target duration: ${cues.durationMin} minutes. Use time windows in the coach_message.
-- Use only this equipment: ${eq}.
-- If the user mentions kettlebell or Ocho, set notes.style="kettlebell_ocho" and keep MAIN phase kettlebell-forward.
-  - In MAIN: avoid barbell/trap bar/machines unless explicitly asked; those may appear in ACCESSORY at most.
-- BANNED: snatch, clean, jerk variants. If requested, SUBSTITUTE instead of removing:
-  - kettlebell snatch → Kettlebell High Pull
-  - (kb) clean & press / clean → Kettlebell Push Press
+Rules (must follow):
+- Duration target: ${cues.durationMin} minutes. Use time windows in coach_message.
+- Use only: ${eq}.
+- If style is kettlebell_ocho (user mentions kettlebell/Ocho), keep MAIN kettlebell-forward. Barbell/trap/machines can appear in ACCESSORY at most.
+- BANNED: snatch/clean/jerk. If requested, SUBSTITUTE (and list in notes.substitutions):
+  - KB snatch → Kettlebell High Pull
+  - (KB) clean & press / clean → Kettlebell Push Press
   - jerk → Kettlebell Push Press
-  Add each substitution string to notes.substitutions.
-- MAIN phase items must use sets+reps (strings ok). Duration-only work (EMOM, Tabata, carries) belongs in CONDITIONING or ACCESSORY, not MAIN.
-- Name specificity: avoid placeholders like "Bodyweight Circuit", "Exercise", or "Rest". Use concrete exercise names.
-- Keep names concise, e.g., "Kettlebell Swings", "Double Kettlebell Front Squat", "Front Rack Carry".
-- COACH MESSAGE STYLE:
-  - First line: acknowledge duration + style/equipment (one sentence).
-  - Then timed blocks (Prep, Power & Strength A/B, Unilateral + Pull, Carries/Core, Finisher, Cooldown).
-  - Bullet numbered lists within each block; include concise cues in parentheses.
-  - If any substitutions were made, include a one-line note at the end.
+- MAIN must use sets+reps; duration-only work belongs in CONDITIONING or ACCESSORY.
+- Exercise names must be specific (no "Bodyweight Circuit", "Exercise", or "Rest").
 
-Theme: ${cues.theme}. Align volume/intensity accordingly.
+COACH MESSAGE (single narrative only; no second list):
+- First line: acknowledge duration + style/equipment.
+- Then EXACTLY these blocks with numbered items in each block, where each item is an exercise FROM the plan with sets×reps or duration:
+  1) "0:00–.. – Prep"  (list warmup items)
+  2) "..–.. – Power & Strength A"  (list 1–2 exercises from MAIN)
+  3) "..–.. – Power & Strength B"  (list next 1–2 exercises from MAIN)
+  4) "..–.. – Unilateral + Pull"   (list 1–2 from ACCESSORY)
+  5) "..–.. – Finisher"            (list CONDITIONING item(s))
+  6) "..–${cues.durationMin.toString().padStart(2," ")}:00 – Cooldown" (list COOLDOWN items)
+- Each listed item must correspond to an item in plan.phases and include sets×reps or duration.
+- Do NOT include separate "Warm-up/Main/Cool-down" sections after the blocks.
+- If substitutions happened, end with a single-line note.
+
+Theme: ${cues.theme}. Align volume/intensity.
 
 User request: "${userMessage}"
 `.trim();
@@ -302,11 +361,10 @@ User request: "${userMessage}"
   const resp = await anthropic.messages.create({
     model: "claude-3-5-sonnet-20241022",
     temperature: 0.2,
-    max_tokens: 1800,
+    max_tokens: 1900,
     messages: [{ role: "user", content: prompt }],
   });
 
-  // Return raw text (JSON string)
   return extractAiText(resp);
 }
 
@@ -444,9 +502,15 @@ export async function POST(req: Request) {
 
     // Prefer model's coach message; fallback to your existing renderer if missing
     const minutes = Number(plan.est_total_minutes ?? plan.duration_min ?? durationMin) || durationMin;
-    const messageOut = coachMessage && coachMessage.trim().length > 0
-      ? coachMessage.trim()
-      : renderCoachMessage(plan, equipmentList, minutes);
+
+    let messageOut = (typeof parsed?.coach_message === 'string' ? parsed.coach_message : '').trim();
+    messageOut = stripLegacySections(messageOut);
+
+    // If the LLM's narrative doesn't explicitly mention at least the first two MAIN items,
+    // rebuild a precise narrative from the plan.
+    if (!messageOut || !looksSpecific(messageOut, plan)) {
+      messageOut = renderSpecificCoachMessage(plan, minutes);
+    }
 
     return NextResponse.json({
       ok: true,
