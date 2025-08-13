@@ -6,6 +6,131 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 
+// ── LLM → UI helpers (non-UI; keeps your current table layout) ─────────────────
+type DisplayItem = {
+  name: string;
+  sets?: string;
+  reps?: string;
+  duration?: string;
+  instruction?: string;
+  isAccessory?: boolean;
+};
+
+interface GeneratedWorkout {
+  name: string;
+  warmup: DisplayItem[];
+  main: DisplayItem[];          // primaries only
+  accessories: DisplayItem[];   // flagged or overflow from main
+  cooldown: DisplayItem[];
+  duration?: number;
+  focus?: string;
+}
+
+// stringify
+const S = (v: any) => (v == null ? undefined : String(v));
+
+// collapse duplicates like "Battle Battle Rope", unify common equipment names
+const cleanName = (raw?: string) => {
+  let s = S(raw)?.replace(/^\d+\.\s*/, "").trim() ?? "Exercise";
+  s = s.replace(/\b(\w+)\s+\1\b/gi, "$1"); // repeated words
+  s = s.replace(/\bBarbells?\b/gi, "Barbell")
+       .replace(/\bDumbbells?\b/gi, "Dumbbell")
+       .replace(/\bKettlebells?\b/gi, "Kettlebell")
+       .replace(/\bBattle\s*Ropes?\b/gi, "Battle Rope")
+       .replace(/\bExercise\s*Bike\b/gi, "Exercise Bike"); // keep exact
+  // strip trailing " - 10 reps" artifacts if they got inline-appended
+  s = s.replace(/\s*-\s*\d+.*$/, "").trim();
+  return s;
+};
+
+const toKey = (name: string) => cleanName(name).toLowerCase().replace(/[^a-z0-9]+/g, "");
+const isNoiseLine = (name: string) =>
+  /\b(rounds?|perform|interval|emom|amrap|tabata|work\/rest|rest)\b/i.test(name);
+
+const toDisplayItem = (x: any): DisplayItem => {
+  const name = cleanName(typeof x === "string" ? x : x?.name);
+  if (!name || isNoiseLine(name)) return { name: "" }; // will be filtered out
+  return {
+    name,
+    sets: S(x?.sets),
+    reps: S(x?.reps),
+    duration: S(x?.duration),
+    instruction: S(x?.instruction),
+    isAccessory: Boolean(x?.isAccessory),
+  };
+};
+
+function dedup(items: DisplayItem[]): DisplayItem[] {
+  const seen = new Set<string>();
+  const out: DisplayItem[] = [];
+  for (const it of items) {
+    const k = toKey(it.name || "");
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    out.push(it);
+  }
+  return out;
+}
+
+function llmToGeneratedWorkout(raw: any): GeneratedWorkout {
+  const w = raw || {};
+  const warmup = Array.isArray(w.warmup) ? w.warmup.map(toDisplayItem).filter((i: DisplayItem) => i.name) : [];
+  const mainAll = Array.isArray(w.main) ? w.main.map(toDisplayItem).filter((i: DisplayItem) => i.name) : [];
+  const cooldown = Array.isArray(w.cooldown) ? w.cooldown.map(toDisplayItem).filter((i: DisplayItem) => i.name) : [];
+
+  // Separate primaries vs accessories using isAccessory, with a sensible fallback
+  let primaries = mainAll.filter((it: DisplayItem) => !it.isAccessory);
+  let accessories = mainAll.filter((it: DisplayItem) => it.isAccessory);
+
+  if (primaries.length === 0 && mainAll.length) {
+    // Fallback: treat first 2 as primaries, rest as accessories
+    const splitN = Math.min(2, mainAll.length);
+    primaries = mainAll.slice(0, splitN).map((it: DisplayItem) => ({ ...it, isAccessory: false }));
+    accessories = mainAll.slice(splitN).map((it: DisplayItem) => ({ ...it, isAccessory: true }));
+  }
+
+  // De-dupe with priority: main > accessories, and keep cooldown independent
+  const mainDedup = dedup(primaries);
+  const mainKeys = new Set(mainDedup.map((i: DisplayItem) => toKey(i.name)));
+  const accDedup = dedup(accessories.filter((a: DisplayItem) => !mainKeys.has(toKey(a.name))));
+
+  return {
+    name: S(w.name) ?? "Planned Session",
+    warmup: dedup(warmup),
+    main: mainDedup,
+    accessories: accDedup,
+    cooldown: dedup(cooldown),
+    duration: Number(w.est_total_minutes ?? w.duration_min ?? 0) || undefined,
+    focus: undefined,
+  };
+}
+
+// Pretty, multi-line coach text for chat bubble
+const asCoachMessage = (gw: GeneratedWorkout, title?: string, minutes?: number) => {
+  const header = `${title || gw.name}${minutes ? ` (~${minutes} min)` : ""}`;
+  const line = (it: DisplayItem, idx: number) =>
+    it.duration
+      ? `${idx}. ${it.name} - ${it.duration}`
+      : `${idx}. ${it.name} - ${it.sets ? `${it.sets} sets x ` : ""}${it.reps ?? ""}`.trim();
+
+  const mainPlusAcc = [...gw.main, ...gw.accessories]; // show both in "Main Workout" section
+
+  const parts = [
+    header,
+    "",
+    "🔥 Warm-up:",
+    ...gw.warmup.map((it, i) => line(it, i + 1)),
+    "",
+    "💪 Main Workout:",
+    ...mainPlusAcc.map((it, i) => line(it, i + 1)),
+    "",
+    "🧘 Cool-down:",
+    ...gw.cooldown.map((it, i) => line(it, i + 1)),
+  ].filter(Boolean);
+
+  return parts.join("\n");
+};
+
 // Define workout types with proper text
 const workoutTypes = [
   {
@@ -51,49 +176,6 @@ const workoutTypes = [
     bgHover: 'hover:bg-yellow-500/10'
   }
 ];
-
-// Types + normalizer
-type DisplayItem = {
-  name: string;
-  sets?: string;
-  reps?: string;
-  duration?: string;
-  instruction?: string;
-  isAccessory?: boolean;
-};
-
-interface GeneratedWorkout {
-  name: string;
-  warmup: DisplayItem[];
-  main: DisplayItem[];          // primaries only
-  accessories: DisplayItem[];   // derived from LLM main
-  cooldown: DisplayItem[];
-  duration?: number;
-  focus?: string;
-}
-
-function normalizeFromLLM(raw: any): GeneratedWorkout {
-  const w = raw || {};
-  const toItem = (x: any): DisplayItem =>
-    typeof x === 'string' ? { name: x } : { ...x, name: x?.name ?? 'Exercise' };
-
-  const warmup = Array.isArray(w.warmup) ? w.warmup.map(toItem) : [];
-  const mainAll = Array.isArray(w.main) ? w.main.map(toItem) : [];
-  const cooldown = Array.isArray(w.cooldown) ? w.cooldown.map(toItem) : [];
-
-  const primaries = mainAll.filter((i: DisplayItem) => !i.isAccessory).map((i: DisplayItem) => ({ ...i, isAccessory: false }));
-  const accessories = mainAll.filter((i: DisplayItem) => i.isAccessory).map((i: DisplayItem) => ({ ...i, isAccessory: true }));
-
-  return {
-    name: w.name ?? 'Planned Session',
-    warmup,
-    main: primaries,
-    accessories,
-    cooldown,
-    duration: Number(w.est_total_minutes ?? w.duration_min ?? 0) || undefined,
-    focus: undefined,
-  };
-}
 
 export default function TodaysWorkoutPage() {
   const { user } = useAuth();
@@ -220,8 +302,8 @@ export default function TodaysWorkoutPage() {
           if (data.isModification && data.workout) {
             // Update the workout with the modified version
             if (data.workout) {
-              const normalized = normalizeFromLLM(data.workout);
-              setGeneratedWorkout(normalized);
+              const gw = llmToGeneratedWorkout(data.workout);
+              setGeneratedWorkout(gw);
             }
             
             // Show just the modification message
@@ -232,41 +314,16 @@ export default function TodaysWorkoutPage() {
             
           } else if (data.workout && !data.isModification) {
             // New workout generated
+            let gw: GeneratedWorkout;
             if (data.workout) {
-              const normalized = normalizeFromLLM(data.workout);
-              setGeneratedWorkout(normalized);
+              gw = llmToGeneratedWorkout(data.workout);
+              setGeneratedWorkout(gw);
             }
             
-            // Format and display the full workout
-            let workoutDisplay = data.message + '\n\n';
-            
-            if (data.workout.warmup && data.workout.warmup.length > 0) {
-              workoutDisplay += '**🔥 Warm-up:**\n';
-              data.workout.warmup.forEach((ex: any, i: number) => {
-                workoutDisplay += `${i+1}. ${ex.name} - ${ex.sets ? ex.sets + ' sets x ' + ex.reps + ' reps' : ex.duration}\n`;
-              });
-              workoutDisplay += '\n';
-            }
-            
-            if (data.workout.main && data.workout.main.length > 0) {
-              workoutDisplay += '**💪 Main Workout:**\n';
-              data.workout.main.forEach((ex: any, i: number) => {
-                workoutDisplay += `${i+1}. ${ex.name} - ${ex.sets} sets x ${ex.reps} reps\n`;
-              });
-              workoutDisplay += '\n';
-            }
-            
-            if (data.workout.cooldown && data.workout.cooldown.length > 0) {
-              workoutDisplay += '**🧘 Cool-down:**\n';
-              data.workout.cooldown.forEach((ex: any, i: number) => {
-                workoutDisplay += `${i+1}. ${ex.name} - ${ex.duration}\n`;
-              });
-            }
-            
-            setChatMessages(prev => [...prev, {
-              role: 'assistant',
-              content: workoutDisplay
-            }]);
+            setChatMessages(prev => [
+              ...prev,
+              { role: 'assistant', content: asCoachMessage(gw, data?.plan?.name || gw.name, gw.duration) },
+            ]);
             
           } else {
             // Regular message without workout
@@ -278,8 +335,8 @@ export default function TodaysWorkoutPage() {
           
           // If workout data is returned, update the display
           if (data.workout) {
-            const normalized = normalizeFromLLM(data.workout);
-            setGeneratedWorkout(normalized);
+            const gw = llmToGeneratedWorkout(data.workout);
+            setGeneratedWorkout(gw);
           }
         }
       }
@@ -297,11 +354,13 @@ export default function TodaysWorkoutPage() {
   const handleWorkoutSelect = async (workoutType: string) => {
     setIsLoading(true);
     try {
-      const url = `/api/chat-workout?user=${user?.id}&split=${encodeURIComponent(workoutType)}&minutes=${selectedTime}&style=${workoutType === 'hiit' ? 'hiit' : 'strength'}`;
+      const url = `/api/chat-workout?user=${user?.id}&split=${encodeURIComponent(
+        workoutType
+      )}&minutes=${selectedTime}&style=${workoutType === 'hiit' ? 'hiit' : 'strength'}`;
+
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // body is optional but helps bias the model; safe for our route
         body: JSON.stringify({ message: `${workoutType} ${selectedTime} min — use only my equipment.` }),
       });
 
@@ -311,34 +370,32 @@ export default function TodaysWorkoutPage() {
       }
 
       const data = await response.json();
-      console.info('[SRC] LLM /api/chat-workout', { workoutType, selectedTime, data });
 
-      // Prefer LLM legacy shape if present
-      if (data?.workout) {
-        const normalized = normalizeFromLLM(data.workout);
-        setGeneratedWorkout(normalized);
-        setChatMessages(prev => [...prev, { role: 'assistant', content: data.message || `Loaded ${normalized.name}` }]);
-      } else if (data?.plan) {
-        // Fallback if only plan shape returned
-        const planWorkoutShape = {
-          warmup: data.plan?.phases?.find((p: any) => p.phase === 'warmup')?.items ?? [],
-          main:   data.plan?.phases?.find((p: any) => p.phase === 'main')?.items ?? [],
-          cooldown: data.plan?.phases?.find((p: any) => p.phase === 'cooldown')?.items ?? [],
-          name: data.plan?.name,
-          est_total_minutes: data.plan?.est_total_minutes ?? data.plan?.duration_min,
-        };
-        const normalized = normalizeFromLLM(planWorkoutShape);
-        setGeneratedWorkout(normalized);
-        setChatMessages(prev => [...prev, { role: 'assistant', content: data.message || `Loaded ${normalized.name}` }]);
-      } else {
-        throw new Error('LLM did not return a workout.');
-      }
+      // Prefer legacy workout; otherwise shape from plan.phases
+      const legacy = data?.workout
+        ? data.workout
+        : {
+            name: data?.plan?.name,
+            warmup: data?.plan?.phases?.find((p: any) => p.phase === 'warmup')?.items ?? [],
+            main: data?.plan?.phases?.find((p: any) => p.phase === 'main')?.items ?? [],
+            cooldown: data?.plan?.phases?.find((p: any) => p.phase === 'cooldown')?.items ?? [],
+            est_total_minutes: data?.plan?.est_total_minutes ?? data?.plan?.duration_min,
+          };
+
+      const gw = llmToGeneratedWorkout(legacy);
+      setGeneratedWorkout(gw);
+
+      // Pretty multi-line coach message (no giant paragraph)
+      setChatMessages(prev => [
+        ...prev,
+        { role: 'assistant', content: asCoachMessage(gw, legacy?.name, selectedTime) },
+      ]);
     } catch (error) {
       console.error('Error generating workout:', error);
-      setChatMessages(prev => [...prev, {
-        role: 'assistant',
-        content: `Sorry, I had trouble generating your ${workoutType} workout. Please try again.`,
-      }]);
+      setChatMessages(prev => [
+        ...prev,
+        { role: 'assistant', content: `Sorry, I had trouble generating your ${workoutType} workout. Please try again.` },
+      ]);
     } finally {
       setIsLoading(false);
     }
