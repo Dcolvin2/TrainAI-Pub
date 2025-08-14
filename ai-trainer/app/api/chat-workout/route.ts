@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabaseClient";
 
 export const runtime = "nodejs";
 
@@ -12,6 +13,125 @@ const admin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
   { auth: { persistSession: false } }
 );
+
+// ───────────────────────── helpers: equipment, prefs, recent, names ─────────────────────────
+const S = (v: any) => (v == null ? undefined : String(v).trim());
+const keyOf = (name: string) => String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+
+function hasEq(list: string[], q: RegExp) { return list.some(n => q.test(n)); }
+
+async function getEquipmentNames(userId: string) {
+  const { data, error } = await supabase
+    .from("user_equipment")
+    .select("is_available, equipment:equipment_id(name)")
+    .eq("user_id", userId);
+  if (error) return [];
+  const names = (data ?? [])
+    .filter((r: any) => r?.is_available !== false && r?.equipment?.name)
+    .map((r: any) => String(r.equipment.name).trim());
+  return Array.from(new Set(names));
+}
+
+async function getUserPrefs(userId: string) {
+  const { data } = await supabase
+    .from("user_preferences")
+    .select("preferred_exercises, avoided_exercises, coaching_style, conditioning_bias, detail_level")
+    .eq("user_id", userId)
+    .maybeSingle();
+  return {
+    preferred: Array.isArray(data?.preferred_exercises) ? data!.preferred_exercises : [],
+    avoided: Array.isArray(data?.avoided_exercises) ? data!.avoided_exercises : [],
+    coaching_style: data?.coaching_style || null,
+    conditioning_bias: data?.conditioning_bias || null,  // 'hiit' | 'steady' | 'mixed'
+    detail_level: typeof data?.detail_level === "number" ? data!.detail_level : null, // 1..3
+  };
+}
+
+// Pull recent exercises from both planned sessions and logged sets
+// NO_REPEAT_DAYS: window to consider "recent"; MAX_RECENT: cap to keep set small
+const NO_REPEAT_DAYS = 7;
+const MAX_RECENT = 25;
+
+async function buildRecentExerciseSet(userId: string) {
+  const since = new Date();
+  since.setDate(since.getDate() - NO_REPEAT_DAYS);
+  const sinceISO = since.toISOString().slice(0, 10);
+
+  const seen = new Set<string>();
+
+  // 1) From workout_sessions.planned_exercises (JSON)
+  const { data: sess } = await supabase
+    .from("workout_sessions")
+    .select("planned_exercises, date")
+    .eq("user_id", userId)
+    .gte("date", sinceISO)
+    .order("date", { ascending: false })
+    .limit(12);
+
+  for (const s of sess || []) {
+    const pe = s?.planned_exercises;
+    if (pe && typeof pe === "object") {
+      const phases = ["warmup", "main", "cooldown", "accessory", "conditioning"];
+      for (const ph of phases) {
+        const items = Array.isArray(pe[ph]) ? pe[ph] : [];
+        for (const it of items) {
+          const k = keyOf(it?.name);
+          if (k) seen.add(k);
+          if (seen.size >= MAX_RECENT) break;
+        }
+      }
+    }
+    if (seen.size >= MAX_RECENT) break;
+  }
+
+  // 2) From workout_entries/exercise_name (logged sets)
+  if (seen.size < MAX_RECENT) {
+    const { data: entries } = await supabase
+      .from("workout_entries")
+      .select("exercise_name, date")
+      .eq("user_id", userId)
+      .gte("date", sinceISO)
+      .order("date", { ascending: false })
+      .limit(200);
+    for (const e of entries || []) {
+      const k = keyOf(e?.exercise_name);
+      if (k) seen.add(k);
+      if (seen.size >= MAX_RECENT) break;
+    }
+  }
+
+  return seen;
+}
+
+// Canonicalize & filter names according to owned equipment
+function canonicalizeNameByEquipment(rawName: string, owned: string[]) {
+  let name = String(rawName || "").trim();
+  const L = owned.map(s => s.toLowerCase());
+
+  // Bike synonyms → Exercise Bike (only if owned)
+  if (/\b(air\s*bike|assault|echo|airdyne)\b/i.test(name)) {
+    if (L.includes("exercise bike")) {
+      name = name.replace(/\b(air\s*bike|assault|echo|airdyne)\b/gi, "Exercise Bike");
+    } else {
+      return null; // drop non-owned bike
+    }
+  }
+
+  // Disallow rower/treadmill/skierg unless explicitly in user's equipment list
+  if (/\b(row(er|ing)|erg|treadmill|ski\s*erg|skierg)\b/i.test(name)) {
+    const ok = L.includes("rower") || L.includes("treadmill") || L.includes("ski erg");
+    if (!ok) return null;
+  }
+
+  // Canonical plurals
+  name = name
+    .replace(/\bBarbells?\b/gi, "Barbell")
+    .replace(/\bDumbbells?\b/gi, "Dumbbell")
+    .replace(/\bKettlebells?\b/gi, "Kettlebell")
+    .replace(/\bBattle\s*Ropes?\b/gi, "Battle Rope");
+
+  return name;
+}
 
 // ---- Types ----
 type PlanItem = {
@@ -560,43 +680,68 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const url = new URL(req.url);
-  const user = url.searchParams.get("user");
-  const styleParam = url.searchParams.get("style") || url.searchParams.get("type");
-  const split = parseSplitFromQuery(url);
-  const queryMin = Number(url.searchParams.get("min") || 45);
-
+  const searchParams = url.searchParams;
   const body = await req.json().catch(() => ({}));
   const message: string = body?.message || "";
-  const msgMin = parseMinutesFromMessage(message);
-  const durationMin = msgMin ?? queryMin; // ← prefer what the user typed
 
-  // DB: equipment + preferences
-  const equipmentList = await getEquipmentForUser(user);
-  const { vocab, renameMap } = buildEquipmentVocabulary(equipmentList);
-  const prefs = await getUserPreferences(user);
+  // 0) context
+  const userId = String(searchParams.get("user") || body.userId || "").trim();
+  const equipmentList = await getEquipmentNames(userId);
+  const prefs = await getUserPrefs(userId);
+  const recentSet = await buildRecentExerciseSet(userId);
 
-  // Theme + exclusions
-  let theme: Theme = parseThemeFromMessage(message);
-  if (styleParam && /hiit|interval|emom|amrap|tabata/i.test(styleParam)) theme = "hiit";
-  const exclusions = extractEquipmentExclusions(message);
+  // 1) strengthen prompt (append to your existing prompt text)
+  const preferLine = prefs.preferred.length ? `Prefer: ${prefs.preferred.join(", ")}.` : "";
+  const avoidLine  = prefs.avoided.length   ? `Avoid: ${prefs.avoided.join(", ")}.` : "";
+  const styleLine  = prefs.coaching_style   ? `Tone: ${prefs.coaching_style}.` : "Tone: concise.";
+  const condBias   = prefs.conditioning_bias || "mixed";
+  const detail     = prefs.detail_level || 2;
 
-  // Split rules
-  const splitSpec = split ? primarySpecForSplit(split, equipmentList) : null;
+  let prompt = `
+Return ONLY JSON (no markdown/fences):
+{
+  "plan": {
+    "name": string,
+    "duration_min": number,
+    "phases": [
+      { "phase": "warmup"|"main"|"accessory"|"conditioning"|"cooldown",
+        "items": [ { "name": string, "sets"?: string|number, "reps"?: string|number, "duration"?: string, "instruction"?: string, "isAccessory"?: boolean } ]
+      }
+    ],
+    "est_total_minutes"?: number
+  },
+  "coach_message": string
+}
 
-  // ---- LLM call
-  let aiText = await callPlannerLLM(message || `${split ?? "full"} workout`, {
-    durationMin,
-    equipmentList,
-    theme,
-    exclusions,
-    vocab,
-    split,
-    splitBullets: splitSpec?.promptBullets,
-    prefer: prefs.preferred,
-    avoid: prefs.avoided,
+Context:
+- Equipment you may use exactly: ${equipmentList.join(", ")}.
+- ${preferLine}
+- ${avoidLine}
+- Conditioning preference: ${condBias}. Detail level: ${detail} (1=min, 2=normal, 3=rich).
+
+Output rules (must follow):
+- Use ONLY the equipment listed (do not invent devices). Normalize names: "Exercise Bike", "Battle Rope", "Barbell", "Dumbbell", "Kettlebell".
+- No olympic lifts (no snatch, clean, jerk or variants).
+- Return ONLY JSON. sets/reps/duration MUST be strings.
+- Include a brief "instruction" cue for EVERY item (1–2 crisp coaching tips).
+- If HIIT/conditioning is present, give exact intervals (e.g., "40s work / 20s rest") + intensity (e.g., "RPE 8") + a breath/tempo cue.
+${styleLine}
+
+User: "${message}"
+`.trim();
+
+  // 2) ... you already parse model text → parsed → const { plan, warnings } = normalizePlan(parsed);
+  const resp = await anthropic.messages.create({
+    model: "claude-3-5-sonnet-20241022",
+    temperature: 0.2,
+    max_tokens: 1900,
+    messages: [{ role: "user", content: prompt }],
   });
 
-  // ---- Parse JSON
+  const aiText = (resp?.content ?? [])
+    .map((b: any) => (b && typeof b === "object" && "text" in b ? b.text : ""))
+    .join("\n");
+
   let parsed: any = null;
   try {
     parsed = JSON.parse(aiText);
@@ -604,10 +749,11 @@ export async function POST(req: Request) {
     const fence = aiText.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
     if (fence?.[1]) parsed = JSON.parse(fence[1]);
     else {
-      const chunk = findJsonObject(aiText);
-      if (chunk) parsed = JSON.parse(chunk);
+      const chunk = aiText.match(/\{[\s\S]*\}/);
+      if (chunk) parsed = JSON.parse(chunk[0]);
     }
   }
+
   const rawPlan = parsed?.plan ?? parsed;
   let { plan, warnings } = normalizePlan(rawPlan);
   if (!plan) {
@@ -617,312 +763,183 @@ export async function POST(req: Request) {
     );
   }
 
-  // ───────────────────────── Universal Plan Guard ─────────────────────────
-  // Keeps model content; fills only what's missing. Uses user_equipment strictly.
-  // Works for ALL splits (push/pull/legs/upper/full/hiit/custom).
+  // 3) Universal Guard + No-Repeat (non-destructive; fills gaps; rotates recent)
+  (function guardAndRotate() {
+    const equipmentLower = equipmentList.map(s => s.toLowerCase());
+    const hasTrapBar      = hasEq(equipmentLower, /\btrap\s*bar\b/);
+    const hasBarbell      = hasEq(equipmentLower, /\bbarbells?\b/);
+    const hasBench        = hasEq(equipmentLower, /\b(adjustable\s+)?bench\b/);
+    const hasRack         = hasEq(equipmentLower, /\bsquat\s*rack\b/);
+    const hasDumbbell     = hasEq(equipmentLower, /\bdumbbells?\b/);
+    const hasKettlebell   = hasEq(equipmentLower, /\bkettlebells?\b/);
+    const hasPullupBar    = hasEq(equipmentLower, /\bpull\s*up\s*bar\b/);
+    const hasCables       = hasEq(equipmentLower, /\bcables?\b/);
+    const hasBattleRope   = hasEq(equipmentLower, /\bbattle\s*rope\b/);
+    const hasExerciseBike = hasEq(equipmentLower, /\bexercise\s*bike\b/);
+    const hasJumpRope     = hasEq(equipmentLower, /\bjump\s*rope\b/);
+    const hasPlyoBox      = hasEq(equipmentLower, /\bplyo\s*box\b/);
+    const hasMedBall      = hasEq(equipmentLower, /\bmedicine\s*ball\b/);
+    const hasBall         = hasEq(equipmentLower, /\bexercise\s*ball\b/);
+    const hasBands        = hasEq(equipmentLower, /\b(mini|super)bands?\b/);
 
-  // local helpers
-  const S = (v: any) => (v == null ? undefined : String(v).trim());
-  const hasEq = (list: string[], q: RegExp) => list.some(n => q.test(n));
-  const makeItem = (
-    name: string,
-    opts: Partial<{sets: string; reps: string; duration: string; instruction: string; isAccessory: boolean}> = {}
-  ) => ({
-    name,
-    ...(opts.sets ? { sets: String(opts.sets) } : {}),
-    ...(opts.reps ? { reps: String(opts.reps) } : {}),
-    ...(opts.duration ? { duration: String(opts.duration) } : {}),
-    ...(opts.instruction ? { instruction: String(opts.instruction) } : {}),
-    isAccessory: Boolean(opts.isAccessory),
-  });
-  const ensurePhase = (phase: PlanPhase['phase']) => {
-    let ph = plan.phases.find(p => p.phase === phase);
-    if (!ph) { ph = { phase, items: [] as any[] }; plan.phases.push(ph); }
-    return ph;
-  };
-  const hasName = (ph: {items: any[]}, re: RegExp) =>
-    ph.items?.some(it => re.test(String(it?.name || '').toLowerCase()));
-  const addIfMissing = (ph: {items: any[]}, re: RegExp, add: () => any | null) => {
-    if (!hasName(ph, re)) {
-      const next = add();
-      if (next) ph.items.push(next);
-    }
-  };
-  const ensureMinItems = (ph: {items: any[]}, min: number, picks: Array<() => any | null>) => {
-    let i = 0;
-    while (ph.items.length < min && i < picks.length) {
-      const cand = picks[i++]();
-      if (cand) ph.items.push(cand);
-    }
-  };
-  const keyOf = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '');
-  const dedupPhaseItems = (ph: {items: any[]}, seen: Set<string>) => {
-    const out: any[] = [];
-    for (const it of ph.items || []) {
-      const k = keyOf(String(it?.name || ''));
-      if (!k || seen.has(k)) continue;
-      seen.add(k);
-      out.push(it);
-    }
-    ph.items = out;
-  };
-
-  // request context
-  const guardUrl = new URL(req.url);
-  const searchParams = guardUrl.searchParams;
-  const msg = String(message || '').toLowerCase();
-  const splitQ = String(searchParams.get('split') || '').toLowerCase();   // push/pull/legs/upper/full/hiit
-  const styleQ = String(searchParams.get('style') || '').toLowerCase();   // strength/hiit
-  const minutesQ = Number(searchParams.get('minutes') || '') || undefined;
-
-  // equipment map (from user_equipment)
-  const equipmentListLower = (equipmentList ?? []).map(s => String(s).toLowerCase());
-  const hasTrapBar      = hasEq(equipmentListLower, /\btrap\s*bar\b/);
-  const hasBarbell      = hasEq(equipmentListLower, /\bbarbells?\b/);
-  const hasBench        = hasEq(equipmentListLower, /\b(adjustable\s+)?bench\b/);
-  const hasRack         = hasEq(equipmentListLower, /\bsquat\s*rack\b/);
-  const hasDumbbell     = hasEq(equipmentListLower, /\bdumbbells?\b/);
-  const hasKettlebell   = hasEq(equipmentListLower, /\bkettlebells?\b/);
-  const hasPullupBar    = hasEq(equipmentListLower, /\bpull\s*up\s*bar\b/);
-  const hasRings        = hasEq(equipmentListLower, /\brings?\b/);
-  const hasCables       = hasEq(equipmentListLower, /\bcables?\b/);
-  const hasBattleRope   = hasEq(equipmentListLower, /\bbattle\s*rope\b/);
-  const hasExerciseBike = hasEq(equipmentListLower, /\bexercise\s*bike\b/);
-  const hasJumpRope     = hasEq(equipmentListLower, /\bjump\s*rope\b/);
-  const hasPlyoBox      = hasEq(equipmentListLower, /\bplyo\s*box\b/);
-  const hasMedBall      = hasEq(equipmentListLower, /\bmedicine\s*ball\b/);
-  const hasBall         = hasEq(equipmentListLower, /\bexercise\s*ball\b/);
-  const hasBands        = hasEq(equipmentListLower, /\b(mini|super)bands?\b/);
-
-  // prefs: normalize and type
-  type GuardPrefs = { preferred?: string[]; avoided?: string[] };
-
-  const guardPrefs: GuardPrefs = {
-    preferred: Array.isArray(prefs?.preferred) ? (prefs!.preferred as string[]) : [],
-    avoided:   Array.isArray(prefs?.avoided)   ? (prefs!.avoided as string[])   : [],
-  };
-
-  const preferred: string[] = (guardPrefs.preferred || []).map((s) => String(s).toLowerCase());
-  const avoided: string[]   = (guardPrefs.avoided   || []).map((s) => String(s).toLowerCase());
-
-  // helpers using typed arrays
-  const isAvoided = (name: string): boolean =>
-    avoided.some((a: string) => name.toLowerCase().includes(a));
-
-  const preferFirst = <T extends { name: string }>(cands: T[]): T[] => {
-    return [...cands].sort((a, b) => {
-      const ap = preferred.some((p: string) => a.name.toLowerCase().includes(p)) ? 1 : 0;
-      const bp = preferred.some((p: string) => b.name.toLowerCase().includes(p)) ? 1 : 0;
-      return bp - ap;
-    });
-  };
-
-  // sanitize names to canonical equipment, drop non-owned cardio devices
-  function canonicalizeNameByEquipment(rawName: string): string | null {
-    let name = rawName;
-
-    // Bike: normalize to Exercise Bike or drop if not owned
-    if (/\b(air\s*bike|assault|echo|airdyne)\b/i.test(name)) {
-      if (hasExerciseBike) name = name.replace(/\b(air\s*bike|assault|echo|airdyne)\b/gi, 'Exercise Bike');
-      else return null;
-    }
-    // Rower / Treadmill / SkiErg: drop if not owned (you don't list these)
-    if (/\b(row(er|ing)|erg|treadmill|ski\s*erg|skierg)\b/i.test(name)) return null;
-
-    // Canonical plurals → singular tool labels
-    name = name
-      .replace(/\bBarbells?\b/gi, 'Barbell')
-      .replace(/\bDumbbells?\b/gi, 'Dumbbell')
-      .replace(/\bKettlebells?\b/gi, 'Kettlebell')
-      .replace(/\bBattle\s*Ropes?\b/gi, 'Battle Rope');
-
-    return name;
-  }
-  // apply canonicalization & non-owned filter to all items
-  for (const ph of plan.phases) {
-    const kept: any[] = [];
-    for (const it of (ph.items || [])) {
-      const n0 = String(it?.name || '').trim();
-      const n1 = canonicalizeNameByEquipment(n0);
-      if (!n1) continue; // drop non-owned device suggestion
-      it.name = n1;
-      kept.push(it);
-    }
-    ph.items = kept;
-  }
-
-  // infer split if not provided
-  function inferSplit(): 'push'|'pull'|'legs'|'upper'|'full'|'hiit'|'custom' {
-    if (splitQ) {
-      if (['push','pull','legs','upper','full','hiit'].includes(splitQ)) return splitQ as any;
-    }
-    if (styleQ === 'hiit' || /\b(hiit|interval|tabata|emom|finisher|conditioning)\b/.test(msg)) return 'hiit';
-    if (/\bleg(s)?\b/.test(msg)) return 'legs';
-    if (/\bpush\b/.test(msg)) return 'push';
-    if (/\bpull\b/.test(msg)) return 'pull';
-    if (/\bupper\b/.test(msg)) return 'upper';
-    if (/\bfull\b/.test(msg)) return 'full';
-    if (/\bocho\b/.test(msg) || /joe\s*holder/.test(msg)) return 'full'; // map Ocho to balanced full-body
-    return 'custom';
-  }
-  const guardSplit = inferSplit();
-
-  // Title + minutes (non-destructive)
-  if (!plan.name) {
-    const titleMap: Record<string,string> = {
-      push:  'Push — Strength Focus',
-      pull:  'Pull — Strength Focus',
-      legs:  'Legs — Strength Focus',
-      upper: 'Upper Body — Strength Focus',
-      full:  'Full Body — Strength Focus',
-      hiit:  'High-Intensity Interval Session',
-      custom:'Planned Session',
+    const ensurePhase = (k: any) => {
+      let ph = plan.phases.find((p: any) => p.phase === k);
+      if (!ph) { ph = { phase: k, items: [] }; plan.phases.push(ph); }
+      return ph;
     };
-    plan.name = titleMap[guardSplit] || 'Planned Session';
-  }
-  if (minutesQ) {
-    plan.est_total_minutes = minutesQ;
-    plan.duration_min = minutesQ;
-  }
+    const warmupPh = ensurePhase("warmup");
+    const mainPh   = ensurePhase("main");
+    const accPh    = ensurePhase("accessory");
+    const condPh   = ensurePhase("conditioning");
+    const coolPh   = ensurePhase("cooldown");
 
-  // Ensure phases for ALL workouts
-  const warmupPh = ensurePhase('warmup');
-  const mainPh   = ensurePhase('main');
-  const accPh    = ensurePhase('accessory');
-  const condPh   = ensurePhase('conditioning');
-  const coolPh   = ensurePhase('cooldown');
-
-  // MAIN LIFT presence per split (only add if missing)
-  function ensureMainLift() {
-    if (guardSplit === 'push' || guardSplit === 'upper') {
-      const cands = preferFirst([
-        ...(hasBarbell && hasBench ? [makeItem('Barbell Bench Press', { sets: '4', reps: '6-8', instruction: 'Feet set, controlled descent' })] : []),
-        ...(hasDumbbell && hasBench ? [makeItem('Dumbbell Bench Press', { sets: '4', reps: '6-8', instruction: 'Neutral wrist, leg drive' })] : []),
-        ...(hasBarbell ? [makeItem('Barbell Overhead Press', { sets: '4', reps: '5-8', instruction: 'Glutes on, ribs down' })] : []),
-        ...(hasDumbbell ? [makeItem('Dumbbell Overhead Press', { sets: '4', reps: '6-10', instruction: 'Finish biceps-by-ears' })] : []),
-      ]).filter(c => !isAvoided(c.name));
-      if (!hasName(mainPh, /(bench|overhead\s*press)/)) addIfMissing(mainPh, /(bench|overhead\s*press)/, () => cands[0] || null);
-    }
-    if (guardSplit === 'pull' || guardSplit === 'upper') {
-      const cands = preferFirst([
-        ...(hasTrapBar ? [makeItem('Trap Bar Deadlift', { sets: '4', reps: '4-6', instruction: 'Hinge at hips, neutral spine' })] : []),
-        ...(hasBarbell ? [makeItem('Barbell Deadlift', { sets: '4', reps: '3-5', instruction: 'Bar close, wedge hard' })] : []),
-        [makeItem('Barbell Row', { sets: '4', reps: '6-10', instruction: 'Hinge torso, pull to ribs' })][0],
-        ...(hasPullupBar ? [makeItem('Pull Ups', { sets: '3', reps: '6-10', instruction: 'Full hang, strong scap pull' })] : []),
-      ] as any).filter(Boolean).filter(c => !isAvoided(c.name));
-      if (!hasName(mainPh, /(deadlift|row|pull\s*ups?)/)) addIfMissing(mainPh, /(deadlift|row|pull\s*ups?)/, () => cands[0] || null);
-    }
-    if (guardSplit === 'legs' || guardSplit === 'full') {
-      const cands = preferFirst([
-        ...(hasBarbell && hasRack ? [makeItem('Barbell Back Squat', { sets: '5', reps: '3-5', instruction: 'Brace 360°, control descent' })] : []),
-        ...(hasBarbell && hasRack ? [makeItem('Barbell Front Squat', { sets: '4', reps: '5-8', instruction: 'Elbows high, tall chest' })] : []),
-        ...(hasTrapBar ? [makeItem('Trap Bar Deadlift', { sets: '4', reps: '4-6', instruction: 'Drive floor away, lats on' })] : []),
-      ] as any).filter(Boolean).filter(c => !isAvoided(c.name));
-      if (!hasName(mainPh, /(squat|deadlift)/)) addIfMissing(mainPh, /(squat|deadlift)/, () => cands[0] || null);
-    }
-    if (guardSplit === 'full') {
-      addIfMissing(mainPh, /(press)/, () => {
-        if (isAvoided('press')) return null;
-        if (hasDumbbell && hasBench) return makeItem('Dumbbell Bench Press', { sets: '3', reps: '6-10', instruction: 'Controlled tempo' });
-        if (hasBarbell && hasBench)  return makeItem('Barbell Bench Press', { sets: '3', reps: '5-8', instruction: 'Solid arch, leg drive' });
-        if (hasDumbbell)             return makeItem('Dumbbell Overhead Press', { sets: '3', reps: '8-10', instruction: 'Stacked lockout' });
-        return null;
-      });
-      addIfMissing(mainPh, /(row|pull\s*ups?)/, () => {
-        if (isAvoided('row') && isAvoided('pull up')) return null;
-        if (!isAvoided('pull up') && hasPullupBar) return makeItem('Pull Ups', { sets: '3', reps: '6-10', instruction: 'Full hang, controlled rep' });
-        return makeItem('Barbell Row', { sets: '3', reps: '8-10', instruction: 'Strong hinge, no shrug' });
-      });
-    }
-  }
-  ensureMainLift();
-
-  // ACCESSORIES (ensure at least 2 for non-HIIT)
-  const isHIIT = guardSplit === 'hiit' || styleQ === 'hiit' || /\b(hiit|interval|tabata|emom|finisher|conditioning)\b/.test(msg);
-  if (!isHIIT) {
-    ensureMinItems(accPh, Math.min(2, 5), [
-      () => hasCables && !isAvoided('face pull') ? makeItem('Cable Face Pull', { sets: '3', reps: '12-15', instruction: 'High elbows, pause', isAccessory: true }) : null,
-      () => hasDumbbell && !isAvoided('lateral raise') ? makeItem('Dumbbell Lateral Raise', { sets: '3', reps: '12-15', instruction: 'Small arc, no shrug', isAccessory: true }) : null,
-      () => hasKettlebell && !isAvoided('rdl') ? makeItem('Kettlebell RDL', { sets: '3', reps: '10-12', instruction: 'Soft knees, hinge back', isAccessory: true }) : null,
-      () => hasCables && !isAvoided('tricep') ? makeItem('Cable Tricep Pushdown', { sets: '3', reps: '10-12', instruction: 'Elbows pinned', isAccessory: true }) : null,
-      () => hasDumbbell && !isAvoided('curl') ? makeItem('Dumbbell Curl', { sets: '3', reps: '10-12', instruction: 'No sway, full supination', isAccessory: true }) : null,
-    ]);
-  }
-
-  // CONDITIONING (ensure stations if HIIT-ish request)
-  if (isHIIT) {
-    ensureMinItems(condPh, 2, [
-      () => hasBattleRope ? makeItem('Battle Rope Waves', { duration: '40s work / 20s rest', instruction: 'RPE 8, braced torso' }) : null,
-      () => hasKettlebell ? makeItem('Kettlebell Swings', { duration: '40s work / 20s rest', instruction: 'Hinge snap, neutral neck' }) : null,
-      () => hasExerciseBike ? makeItem('Exercise Bike Sprint', { duration: '40s work / 20s rest', instruction: 'RPE 9 work / 3 rest' }) : null,
-      () => hasMedBall ? makeItem('Medicine Ball Slams', { duration: '30s work / 30s rest', instruction: 'Full reach, exhale on slam' }) : null,
-      () => hasJumpRope ? makeItem('Jump Rope', { duration: '40s work / 20s rest', instruction: 'Small hops, steady cadence' }) : null,
-      () => hasPlyoBox ? makeItem('Box Step-Overs', { duration: '40s work / 20s rest', instruction: 'Soft landings, upright chest' }) : null,
-    ]);
-  }
-
-  // WARMUP & COOLDOWN minimums for any plan
-  ensureMinItems(warmupPh, 2, [
-    () => hasJumpRope ? makeItem('Jump Rope', { duration: '2-3 min', instruction: 'Light bounce, relaxed shoulders' }) : null,
-    () => hasBands ? makeItem('Band Pull Aparts', { sets: '2', reps: '12-15', instruction: 'Squeeze mid-back' }) : null,
-    () => makeItem('Bodyweight Squats', { sets: '2', reps: '10', instruction: 'Controlled depth' }),
-  ]);
-  ensureMinItems(coolPh, 2, [
-    () => hasBall ? makeItem('Exercise Ball Back Extension', { duration: '1-2 min', instruction: 'Gentle range' }) : null,
-    () => makeItem('Standing Forward Fold', { duration: '1 min', instruction: 'Soft knees, long exhales' }),
-  ]);
-
-  // De-dup across phases in a stable order
-  const seen = new Set<string>();
-  for (const phaseName of ['warmup','main','accessory','conditioning','cooldown'] as PlanPhase['phase'][]) {
-    const ph = plan.phases.find(p => p.phase === phaseName);
-    if (ph) dedupPhaseItems(ph, seen);
-  }
-  // ─────────────────────── End Universal Plan Guard ───────────────────────
-
-  // If model ignored minutes, coerce to the user's target (±3 min tolerance)
-  const modelMin = Number(plan?.duration_min ?? plan?.est_total_minutes ?? 0);
-  if (!Number.isNaN(durationMin) && Math.abs((modelMin || 0) - durationMin) > 3) {
-    plan.duration_min = durationMin;
-    plan.est_total_minutes = durationMin;
-    warnings.push(`duration_mismatch: forced ${modelMin || "unknown"} → ${durationMin}`);
-  }
-
-  // Harmonize DB vocabulary; guard machines; ban oly terms
-  harmonizePlanEquipmentNames(plan, renameMap);
-  enforceEquipmentGuard(plan, vocab, exclusions);
-  const banned = /snatch|power\s*clean|clean\s*&?\s*jerk|jerk\b/i;
-  plan.phases.forEach(ph => (ph.items = ph.items.filter(it => !banned.test(it.name))));
-
-  // If split primaries are missing, auto-repair once (LLM stays in charge)
-  if (split && splitSpec && !mainSatisfies(plan, splitSpec)) {
-    const fixText = await repairPlanWithPrimaries(parsed?.plan ?? parsed, {
-      durationMin,
-      vocab,
-      split,
-      spec: splitSpec,
-    });
-    try {
-      const fixed = JSON.parse(fixText);
-      const r = normalizePlan(fixed?.plan ?? fixed);
-      if (r.plan && mainSatisfies(r.plan, splitSpec)) {
-        plan = r.plan;
-        harmonizePlanEquipmentNames(plan, renameMap);
+    // Canonicalize & drop non-owned devices
+    for (const ph of plan.phases) {
+      const kept: any[] = [];
+      for (const it of ph.items || []) {
+        const n0 = S(it?.name);
+        if (!n0) continue;
+        const n1 = canonicalizeNameByEquipment(n0, equipmentList);
+        if (!n1) continue;
+        it.name = n1;
+        kept.push(it);
       }
-    } catch {
-      // keep original if repair fails
+      ph.items = kept;
     }
-  }
+
+    const hasName = (ph: any, re: RegExp) =>
+      ph.items?.some((it: any) => re.test(String(it?.name || "").toLowerCase()));
+
+    // Ensure a main lift depending on message/split hints (simple inference)
+    const msg = String(body?.message || "").toLowerCase();
+    const wantHIIT = /\b(hiit|interval|tabata|emom|finisher|conditioning|ocho)\b/.test(msg);
+
+    function addMainIfMissing() {
+      if (wantHIIT) return; // HIIT may not require heavy main lift
+      // Push/upper: bench/press
+      if (/\bpush|upper\b/.test(msg)) {
+        if (!hasName(mainPh, /(bench|overhead\s*press)/)) {
+          if (hasBarbell && hasBench) mainPh.items.unshift({ name: "Barbell Bench Press", sets: "4", reps: "6-8", instruction: "Feet set, controlled descent" });
+          else if (hasDumbbell && hasBench) mainPh.items.unshift({ name: "Dumbbell Bench Press", sets: "4", reps: "6-8", instruction: "Neutral wrist, leg drive" });
+          else if (hasBarbell) mainPh.items.unshift({ name: "Barbell Overhead Press", sets: "4", reps: "5-8", instruction: "Glutes on, ribs down" });
+          else if (hasDumbbell) mainPh.items.unshift({ name: "Dumbbell Overhead Press", sets: "4", reps: "6-10", instruction: "Stack lockout" });
+        }
+      }
+      // Pull/upper: deadlift/row/pull-up
+      if (/\bpull|upper\b/.test(msg)) {
+        if (!hasName(mainPh, /(deadlift|row|pull\s*ups?)/)) {
+          if (hasTrapBar) mainPh.items.unshift({ name: "Trap Bar Deadlift", sets: "4", reps: "4-6", instruction: "Hips back, brace 360°" });
+          else if (hasBarbell) mainPh.items.unshift({ name: "Barbell Deadlift", sets: "4", reps: "3-5", instruction: "Bar close, wedge hard" });
+          else mainPh.items.unshift({ name: "Barbell Row", sets: "4", reps: "6-10", instruction: "Hinge torso, pull to ribs" });
+        }
+      }
+      // Legs/full: squat/deadlift
+      if (/\blegs|full\b/.test(msg) || (!/\bpush|pull|upper|hiit\b/.test(msg) && !wantHIIT)) {
+        if (!hasName(mainPh, /(squat|deadlift)/)) {
+          if (hasBarbell && hasRack) mainPh.items.unshift({ name: "Barbell Back Squat", sets: "5", reps: "3-5", instruction: "Control down, drive up" });
+          else if (hasTrapBar) mainPh.items.unshift({ name: "Trap Bar Deadlift", sets: "4", reps: "4-6", instruction: "Drive floor away" });
+        }
+      }
+    }
+    addMainIfMissing();
+
+    // No-Repeat: rotate out items that appeared recently (within NO_REPEAT_DAYS)
+    function rotatePhase(ph: any, pool: string[]) {
+      const out: any[] = [];
+      for (const it of ph.items || []) {
+        const k = keyOf(it?.name);
+        if (!k) continue;
+        if (!recentSet.has(k)) { out.push(it); continue; }
+        // choose first alt that isn't recent & is owned
+        const alt = pool.find(n => !recentSet.has(keyOf(n)) && canonicalizeNameByEquipment(n, equipmentList));
+        if (alt) {
+          out.push({ name: alt, sets: it.sets || "3", reps: it.reps || "8-12", duration: it.duration, instruction: it.instruction || "Crisp form", isAccessory: it.isAccessory || false });
+        } else {
+          // keep original if no safe alt
+          out.push(it);
+        }
+      }
+      ph.items = out;
+    }
+
+    // Alternate pools by category (lean, safe swaps only)
+    const pushAlts = [
+      hasBarbell && hasBench ? "Barbell Bench Press" : null,
+      hasDumbbell && hasBench ? "Dumbbell Bench Press" : null,
+      hasBarbell ? "Barbell Overhead Press" : null,
+      hasDumbbell ? "Dumbbell Overhead Press" : null,
+      hasCables ? "Cable Chest Fly" : null,
+      hasDumbbell ? "Dumbbell Incline Press" : null,
+    ].filter(Boolean) as string[];
+
+    const pullAlts = [
+      hasTrapBar ? "Trap Bar Deadlift" : null,
+      hasBarbell ? "Barbell Deadlift" : null,
+      "Barbell Row",
+      hasPullupBar ? "Pull Ups" : null,
+      hasDumbbell ? "Single Arm Dumbbell Row" : null,
+      hasCables ? "Cable Face Pull" : null,
+    ].filter(Boolean) as string[];
+
+    const legsAlts = [
+      hasBarbell && hasRack ? "Barbell Back Squat" : null,
+      hasBarbell && hasRack ? "Barbell Front Squat" : null,
+      hasTrapBar ? "Trap Bar Deadlift" : null,
+      hasKettlebell ? "Kettlebell Goblet Squat" : null,
+      hasDumbbell ? "Dumbbell RDL" : null,
+    ].filter(Boolean) as string[];
+
+    const condAlts = [
+      hasBattleRope ? "Battle Rope Waves" : null,
+      hasKettlebell ? "Kettlebell Swings" : null,
+      hasExerciseBike ? "Exercise Bike Sprint" : null,
+      hasMedBall ? "Medicine Ball Slams" : null,
+      hasJumpRope ? "Jump Rope" : null,
+      hasPlyoBox ? "Box Step-Overs" : null,
+    ].filter(Boolean) as string[];
+
+    // Apply rotation (don't mutate warmup/cooldown too aggressively)
+    rotatePhase(mainPh,   [...pushAlts, ...pullAlts, ...legsAlts]);
+    rotatePhase(accPh,    [...pushAlts, ...pullAlts, ...legsAlts]);
+    rotatePhase(condPh,   condAlts);
+
+    // Ensure some basics exist
+    const ensureMin = (ph: any, n: number, picks: string[]) => {
+      let i = 0;
+      while (ph.items.length < n && i < picks.length) {
+        const cand = picks[i++];
+        if (recentSet.has(keyOf(cand))) continue;
+        const okName = canonicalizeNameByEquipment(cand, equipmentList);
+        if (!okName) continue;
+        ph.items.push({ name: okName, sets: "3", reps: "8-12", instruction: "Controlled tempo", isAccessory: true });
+      }
+    };
+    if (accPh.items.length < 2 && !wantHIIT) ensureMin(accPh, 2, [...pushAlts, ...pullAlts, ...legsAlts]);
+    if (condPh.items.length < 1 && (wantHIIT || /\bfinisher|conditioning\b/.test(msg))) ensureMin(condPh, 2, condAlts);
+
+    // De-dup across phases
+    const seen = new Set<string>();
+    for (const p of ["warmup","main","accessory","conditioning","cooldown"]) {
+      const ph = plan.phases.find((x: any) => x.phase === p);
+      if (!ph) continue;
+      const out: any[] = [];
+      for (const it of ph.items || []) {
+        const k = keyOf(it?.name);
+        if (!k || seen.has(k)) continue;
+        seen.add(k);
+        out.push(it);
+      }
+      ph.items = out;
+    }
+  })();
 
   // Legacy shape for your UI
-  const workout = toLegacyWorkout(plan, { theme });
-  const minutes = Number(plan.est_total_minutes ?? plan.duration_min ?? durationMin) || durationMin;
+  const workout = toLegacyWorkout(plan, { theme: "balanced" });
+  const minutes = Number(plan.est_total_minutes ?? plan.duration_min ?? 45) || 45;
 
   // Narrative
   let messageOut = (typeof parsed?.coach_message === "string" ? parsed.coach_message : "").trim();
-  if (!messageOut) messageOut = renderSpecificCoachMessage(plan, minutes);
-  messageOut = stripLegacySections(messageOut);
-  messageOut = harmonizeCoachMessage(messageOut, renameMap);
+  if (!messageOut) messageOut = "Workout generated successfully!";
 
   return NextResponse.json({
     ok: true,
@@ -930,25 +947,13 @@ export async function POST(req: Request) {
     plan,
     workout,
     debug: {
-      version: "chat-workout:v10-splits-prefs-vocab-only-guard",
+      version: "chat-workout:v11-universal-guard-no-repeat",
       validation_ok: true,
       warnings,
       durationMin: minutes,
-      split,
-      theme,
-      equipmentList: vocab,
-      preferences: prefs,
-      guard: {
-        split: guardSplit,
-        minutes: minutesQ ?? plan.est_total_minutes ?? plan.duration_min,
-        has: {
-          trapBar: hasTrapBar, barbell: hasBarbell, bench: hasBench, rack: hasRack,
-          dumbbell: hasDumbbell, kettlebell: hasKettlebell, pullupBar: hasPullupBar,
-          rings: hasRings, cables: hasCables, battleRope: hasBattleRope,
-          exerciseBike: hasExerciseBike, jumpRope: hasJumpRope, plyoBox: hasPlyoBox,
-          medBall: hasMedBall, exerciseBall: hasBall, bands: hasBands
-        }
-      }
+      equipmentList,
+      recentWindowDays: NO_REPEAT_DAYS,
+      recentCount: recentSet.size,
     },
   });
 }
