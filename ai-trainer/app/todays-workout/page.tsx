@@ -88,7 +88,7 @@ function llmToGeneratedWorkout(raw: any): GeneratedWorkout {
   const accDedup = dedup(accessories.filter((a: DisplayItem) => !mainKeys.has(toKey(a.name))));
 
   return {
-    name: S(w.name) ?? 'Planned Session',
+          name: S(w.name) ?? 'Workout',
     warmup: dedup(warmup),
     main: mainDedup,
     accessories: accDedup,
@@ -121,7 +121,7 @@ const fmtLine = (it: DisplayItem, idx: number, phase: 'warmup'|'main'|'condition
 };
 
 const asCoachMessage = (gw: GeneratedWorkout, title?: string, minutes?: number) => {
-  const header = `${title || gw.name || 'Planned Session'}${minutes ? ` (~${minutes} min)` : ''}`;
+  const header = `${title || gw.name || 'Workout'}${minutes ? ` (~${minutes} min)` : ''}`;
   const mainBlock: DisplayItem[] = [...gw.main, ...gw.accessories];
 
   const lines: string[] = [
@@ -337,7 +337,7 @@ export default function TodaysWorkoutPage() {
             
             setChatMessages(prev => [
               ...prev,
-              { role: 'assistant', content: asCoachMessage(gw, gw.name, gw.duration) },
+              { role: 'assistant', content: asCoachMessage(gw, data?.name || gw.name, gw.duration) },
             ]);
             
           } else {
@@ -404,7 +404,7 @@ export default function TodaysWorkoutPage() {
       // Pretty multi-line coach message (no giant paragraph)
       setChatMessages(prev => [
         ...prev,
-        { role: 'assistant', content: asCoachMessage(gw, legacy?.name, selectedTime) },
+        { role: 'assistant', content: asCoachMessage(gw, data?.name || legacy?.name, selectedTime) },
       ]);
     } catch (error) {
       console.error('Error generating workout:', error);

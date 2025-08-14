@@ -105,12 +105,12 @@ type PlanItem = {
   instruction?: string;
   isAccessory?: boolean;
 };
-type PlanPhase = { phase: "warmup" | "main" | "accessory" | "conditioning" | "cooldown"; items: PlanItem[] };
+type PlanPhase = { phase: "prep" | "activation" | "strength" | "carry_block" | "conditioning" | "cooldown"; items: PlanItem[] };
 type Plan = { name: string; duration_min?: number | string; est_total_minutes?: number | string; phases: PlanPhase[] };
 
 function normalizePlan(input: any): { plan: Plan; warnings: string[] } {
   const warnings: string[] = [];
-  const allowed = new Set(["warmup","main","accessory","conditioning","cooldown"]);
+  const allowed = new Set(["prep","activation","strength","carry_block","conditioning","cooldown"]);
 
   const plan: Plan = {
     name: S(input?.name) || "Planned Session",
@@ -138,7 +138,7 @@ function normalizePlan(input: any): { plan: Plan; warnings: string[] } {
   const ensure = (k: PlanPhase["phase"]) => {
     if (!plan.phases.some(ph => ph.phase === k)) plan.phases.push({ phase: k, items: [] });
   };
-  ensure("warmup"); ensure("main"); ensure("cooldown");
+  ensure("prep"); ensure("activation"); ensure("strength"); ensure("carry_block"); ensure("conditioning"); ensure("cooldown");
 
   return { plan, warnings };
 }
@@ -146,12 +146,13 @@ function normalizePlan(input: any): { plan: Plan; warnings: string[] } {
 /** Legacy bridge for your UI */
 function toLegacyWorkout(plan: Plan) {
   const get = (k: PlanPhase["phase"]) => plan.phases.find(p => p.phase === k)?.items ?? [];
-  const warmup = get("warmup").map(i => ({ name: i.name, sets: i.sets ?? "1", reps: i.reps ?? "10-15", instruction: i.instruction ?? "" }));
-  const mainPrim = get("main").map(i => ({ name: i.name, sets: i.sets ?? "3", reps: i.reps ?? (i.duration ?? "8-12"), instruction: i.instruction ?? "", isAccessory: !!i.isAccessory }));
-  const acc = get("accessory").map(i => ({ name: i.name, sets: i.sets ?? "3", reps: i.reps ?? "10-15", instruction: i.instruction ?? "", isAccessory: true }));
+  const warmup = get("prep").map(i => ({ name: i.name, sets: i.sets ?? "1", reps: i.reps ?? "10-15", instruction: i.instruction ?? "" }));
+  const mainPrim = get("strength").map(i => ({ name: i.name, sets: i.sets ?? "3", reps: i.reps ?? (i.duration ?? "8-12"), instruction: i.instruction ?? "", isAccessory: !!i.isAccessory }));
+  const acc = get("activation").map(i => ({ name: i.name, sets: i.sets ?? "3", reps: i.reps ?? "10-15", instruction: i.instruction ?? "", isAccessory: true }));
+  const carry = get("carry_block").map(i => ({ name: i.name, sets: i.sets ?? "3", reps: i.reps ?? "10-15", instruction: i.instruction ?? "", isAccessory: true }));
   const cond = get("conditioning").map(i => ({ name: i.name, sets: i.sets ?? "4", reps: i.reps ?? (i.duration ?? "30s"), instruction: i.instruction ?? "", isAccessory: true }));
   const cooldown = get("cooldown").map(i => ({ name: i.name, duration: i.duration ?? (i.reps || "60s"), instruction: i.instruction ?? "" }));
-  return { warmup, main: [...mainPrim, ...acc, ...cond], cooldown };
+  return { warmup, main: [...mainPrim, ...acc, ...carry, ...cond], cooldown };
 }
 
 /** Pretty "coach" narrative */
@@ -173,8 +174,8 @@ function formatCoach(plan: Plan, workout: ReturnType<typeof toLegacyWorkout>): s
     });
   };
 
-  add("🔥 Warm-up", workout.warmup);
-  add("💪 Main", workout.main);
+  add("🔥 Prep", workout.warmup);
+  add("💪 Strength", workout.main);
   add("🧘 Cool-down", workout.cooldown);
   return lines.join("\n");
 }
@@ -220,44 +221,79 @@ export async function POST(req: Request) {
 
     // ---------- Pass 1: Draft plan (LLM uses its own knowledge) ----------
     const sysCapsule = `
-You are a collegiate strength & conditioning coach.
+You are a strength coach producing "Joe Holder / Ocho System" workouts.
 
-You deeply understand training formats and when to use them. Examples (not exhaustive):
-- Tabata = 20s work / 10s rest, typically 8 rounds per station, 4 minutes per station.
-- EMOM = every minute on the minute; AMRAP = as many reps/rounds as possible.
-- Strength splits (push/pull/legs/upper/full) emphasize at least one heavy compound "main lift" that fits the split.
-- Conditioning integrates intervals, clear work:rest, and RPE when relevant.
+Constraints:
+- Name each session "Ocho System <descriptor>" (e.g., "Ocho System Power Flow").
+- Duration target: ${minutes} minutes total (±3). Budget time across phases.
+- Phases in order: ["prep", "activation", "strength", "carry_block", "conditioning", "cooldown"].
+- Strength = unilateral bias + tempo notes; no Olympic barbell cycling.
+- Conditioning = low‑skill cyclical or med‑ball work. Prefer rope/bike/row, jumps, slams.
+- Every item MUST include a short coaching cue ("— …").
+- Prefer minimal equipment swaps. Offer obvious substitutions if an item is missing.
 
-Output: ONLY JSON matching
+Return BOTH:
+1) \`coach\` = a chat‑ready markdown summary for users.
+2) \`plan\` = structured JSON with fields exactly as below.
+
+JSON schema (must match):
 {
-  "name": string,
-  "duration_min": number,
+  "name": "Ocho System Power Flow",
+  "duration_min": ${minutes},
   "phases": [
-    { "phase": "warmup"|"main"|"accessory"|"conditioning"|"cooldown",
-      "items": [ { "name": string, "sets"?: string|number, "reps"?: string|number, "duration"?: string|number, "instruction"?: string, "isAccessory"?: boolean } ]
+    {
+      "phase": "prep",
+      "items": [
+        { "name": "Box Breathing", "duration": "2 min", "instruction": "nasal, tall ribcage" }
+      ]
+    },
+    {
+      "phase": "activation",
+      "items": [
+        { "name": "Dead Bug + Band Pulldown", "sets": "2", "reps": "8/side", "instruction": "ribs down" }
+      ]
+    },
+    {
+      "phase": "strength",
+      "items": [
+        { "name": "Front-Foot Elevated Split Squat", "sets": "4", "reps": "6/side", "instruction": "3-1-1 tempo" },
+        { "name": "Ring Row", "sets": "4", "reps": "8-10", "instruction": "pause 1s at chest" },
+        { "name": "DB Half-Kneeling OH Press", "sets": "4", "reps": "6/side", "instruction": "ribs stacked" }
+      ]
+    },
+    {
+      "phase": "carry_block",
+      "items": [
+        { "name": "Suitcase Carry", "sets": "4", "duration": "45s", "instruction": "tall, no lean" }
+      ]
+    },
+    {
+      "phase": "conditioning",
+      "items": [
+        { "name": "Jump Rope", "sets": "8", "reps": "30s on/30s off", "instruction": "smooth wrists" },
+        { "name": "Med Ball Slams", "sets": "8", "reps": "30s on/30s off", "instruction": "hips drive" }
+      ]
+    },
+    {
+      "phase": "cooldown",
+      "items": [
+        { "name": "Box Breathing", "duration": "2", "instruction": "longer exhale" }
+      ]
     }
-  ],
-  "est_total_minutes"?: number
+  ]
 }
 
-Rules:
-- Use ONLY the user's equipment list given below (do not invent devices). If a device is absent, choose an alternate station that uses owned equipment.
-- Normalize device names to EXACT matches when used: "Exercise Bike", "Battle Rope", "Barbell", "Dumbbell", "Kettlebell", "Plyo Box", "Medicine Ball", "Rings", "Pull Up Bar", "Squat Rack", "Superbands", "Minibands", "Cable Attachments", "Cables", "Exercise Ball", "Adjustable Bench".
-- No Olympic lifts (no snatch / clean / jerk).
-- Provide 1 short "instruction" cue per item (form, tempo, breathing).
-- Keep phases compact and time-realistic for the requested duration.
+Also include:
+- \`message\`: short one-line title like "Ocho System Power Flow (~${minutes} min)".
+- Ensure time adds up to \`duration_min\`. If it won't, reduce reps/sets first, then shorten conditioning.
 
 Context:
 - User message: "${message || "(none)"}"
-- Desired minutes: ${minutes}
 - Split hint (optional): ${split || "(none)"}
 - Equipment: ${equipmentList.join(", ") || "(none)"}
 - Preferences: prefer ${(prefs.preferred_exercises || []).join(", ") || "(none)"}; avoid ${(prefs.avoided_exercises || []).join(", ") || "(none)"}.
 - Conditioning bias: ${prefs.conditioning_bias || "mixed"}
 - Detail level: ${prefs.detail_level ?? 2}
-
-Title guidance:
-- Set "name" to a short, vivid title reflecting the style and split. Avoid generic "Planned Session".
 `;
 
     const pass1 = await llmJSON({
@@ -269,13 +305,15 @@ Title guidance:
 
     // ---------- Pass 2: Refine to constraints (no-repeat, canonical, prefs) ----------
     const refineSystem = `
-You are revising a workout plan to strictly adhere to constraints.
+You are revising an Ocho System workout plan to strictly adhere to constraints.
 
 - Use ONLY these equipment names and their implements: ${equipmentList.join(", ") || "(none)"}.
 - If cardio bike is used and "Exercise Bike" exists, call it exactly "Exercise Bike".
-- Avoid exercises whose names match any of: ${recentLower.slice(0, 40).join(", ") || "(none recently)"} (recent window ${NO_REPEAT_DAYS} days). If something is essential (e.g., main lift for the chosen split), you may keep a close variant; otherwise swap to a comparable movement that uses owned equipment.
+- Avoid exercises whose names match any of: ${recentLower.slice(0, 40).join(", ") || "(none recently)"} (recent window ${NO_REPEAT_DAYS} days). If something is essential, you may keep a close variant; otherwise swap to a comparable movement that uses owned equipment.
 - Respect user preferences: Prefer ${(prefs.preferred_exercises || []).join(", ") || "(none)"}; Avoid ${(prefs.avoided_exercises || []).join(", ") || "(none)"}.
-- Favor including at least one heavy compound main lift aligned with split hint if a split is provided (push/pull/legs/upper/full). If HIIT/Tabata/EMOM/AMRAP is requested in the message, ensure the appropriate interval scheme is explicit (e.g., Tabata 20s/10s).
+- Maintain Ocho System structure: prep → activation → strength → carry_block → conditioning → cooldown.
+- Keep unilateral bias in strength phase with tempo notes.
+- Ensure conditioning uses low-skill cyclical work or med-ball movements.
 - Keep structure and time realism; do not add fluff.
 - Return ONLY JSON in the exact schema of the input.
 
@@ -288,19 +326,23 @@ Refine this plan JSON:
       temperature: 0.2
     });
 
-    // Normalize → legacy
-    const { plan, warnings } = normalizePlan(pass2);
-    // If the model still gives a generic name, leave as-is (no extra rules).
-    const workout = toLegacyWorkout(plan);
-    const coach = formatCoach(plan, workout);
-    const summary = `${plan.name}${S(plan.est_total_minutes ?? plan.duration_min) ? ` (~${S(plan.est_total_minutes ?? plan.duration_min)} min)` : ""}`;
+    // Extract coach message and plan from LLM response
+    const coach = pass2?.coach || "";
+    const plan = pass2?.plan || pass2;
+    
+    // Normalize plan structure
+    const { plan: normalizedPlan, warnings } = normalizePlan(plan);
+    const workout = toLegacyWorkout(normalizedPlan);
+    
+    // Use LLM-generated message or fallback
+    const messageText = pass2?.message || `${normalizedPlan.name}${S(normalizedPlan.est_total_minutes ?? normalizedPlan.duration_min) ? ` (~${S(normalizedPlan.est_total_minutes ?? normalizedPlan.duration_min)} min)` : ""}`;
 
     return NextResponse.json({
       ok: true,
-      name: plan.name,
-      message: summary,
+      name: normalizedPlan.name,
+      message: messageText,
       coach,
-      plan,
+      plan: normalizedPlan,
       workout,
       debug: {
         validation_ok: true,
