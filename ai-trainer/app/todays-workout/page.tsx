@@ -121,7 +121,13 @@ const fmtLine = (it: DisplayItem, idx: number, phase: 'warmup'|'main'|'condition
 };
 
 const asCoachMessage = (gw: GeneratedWorkout, title?: string, minutes?: number) => {
-  const header = `${title || gw.name || 'Workout'}${minutes ? ` (~${minutes} min)` : ''}`;
+  // Title: use top-level name/message first
+  const displayTitle =
+    title ||              // passed parameter
+    gw.name ||            // generated workout name
+    'Workout';            // last resort
+  
+  const header = `${displayTitle}${minutes ? ` (~${minutes} min)` : ''}`;
   const mainBlock: DisplayItem[] = [...gw.main, ...gw.accessories];
 
   const lines: string[] = [
@@ -333,12 +339,25 @@ export default function TodaysWorkoutPage() {
             if (data.workout) {
               gw = llmToGeneratedWorkout(data.workout);
               setGeneratedWorkout(gw);
+              
+              // Title: use top-level name/message first
+              const title =
+                data?.name ||       // "Ocho System Power Endurance (~45 min)"
+                data?.message ||    // fallback
+                gw.name ||          // last resort
+                'Workout';
+
+              // Body: prefer coach text, otherwise format the plan
+              const body =
+                data?.coach ||                      // if LLM wrote nice text
+                data?.message ||                    // fallback to message
+                asCoachMessage(gw, title, gw.duration); // format the plan
+
+              setChatMessages(prev => [
+                ...prev,
+                { role: 'assistant', content: body },
+              ]);
             }
-            
-            setChatMessages(prev => [
-              ...prev,
-              { role: 'assistant', content: asCoachMessage(gw, data?.name || gw.name, gw.duration) },
-            ]);
             
           } else {
             // Regular message without workout
@@ -401,10 +420,23 @@ export default function TodaysWorkoutPage() {
       const gw = llmToGeneratedWorkout(legacy);
       setGeneratedWorkout(gw);
 
+      // Title: use top-level name/message first
+      const title =
+        data?.name ||       // "Ocho System Power Endurance (~45 min)"
+        data?.message ||    // fallback
+        legacy?.name ||     // last resort
+        'Workout';
+
+      // Body: prefer coach text, otherwise format the plan
+      const body =
+        data?.coach ||                      // if LLM wrote nice text
+        data?.message ||                    // fallback to message
+        asCoachMessage(gw, title, selectedTime); // format the plan
+
       // Pretty multi-line coach message (no giant paragraph)
       setChatMessages(prev => [
         ...prev,
-        { role: 'assistant', content: asCoachMessage(gw, data?.name || legacy?.name, selectedTime) },
+        { role: 'assistant', content: body },
       ]);
     } catch (error) {
       console.error('Error generating workout:', error);

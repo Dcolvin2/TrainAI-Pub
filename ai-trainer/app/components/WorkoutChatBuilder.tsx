@@ -288,18 +288,23 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
         throw new Error(data.error || 'Failed to send message')
       }
 
-      // Smart title and content rendering
-      const title = data?.name || data?.plan?.name || data?.message || 'Workout';
-      
-      const pretty =
-        data?.coach ||
-        data?.message ||
-        ''; // you can add your own formatter for plan next
+      // Title: use top-level name/message first
+      const title =
+        data?.name ||       // "Ocho System Power Endurance (~45 min)"
+        data?.message ||    // fallback
+        data?.plan?.name || // last resort
+        'Workout';
+
+      // Body: prefer coach text, otherwise format the plan
+      const body =
+        data?.coach ||                      // if LLM wrote nice text
+        data?.message ||                    // fallback to message
+        'No details available.';            // last resort
 
       // Add assistant message to chat
       setMessages(msgs => [...msgs, { 
         role: 'assistant', 
-        content: pretty || title 
+        content: body 
       }])
 
       // Set editable workout
