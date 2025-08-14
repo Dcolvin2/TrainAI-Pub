@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 
-// ── LLM → UI helpers (non-UI; keeps your current table layout) ─────────────────
+// ── LLM → UI helpers (keeps your table layout) ─────────────────
 type DisplayItem = {
   name: string;
   sets?: string;
@@ -19,37 +19,32 @@ type DisplayItem = {
 interface GeneratedWorkout {
   name: string;
   warmup: DisplayItem[];
-  main: DisplayItem[];          // primaries only
-  accessories: DisplayItem[];   // flagged or overflow from main
+  main: DisplayItem[];            // primaries only
+  accessories: DisplayItem[];     // flagged or overflow
   cooldown: DisplayItem[];
+  conditioning?: DisplayItem[];   // optional (for chat only; table stays the same)
   duration?: number;
   focus?: string;
 }
 
-// stringify
 const S = (v: any) => (v == null ? undefined : String(v));
-
-// collapse duplicates like "Battle Battle Rope", unify common equipment names
 const cleanName = (raw?: string) => {
-  let s = S(raw)?.replace(/^\d+\.\s*/, "").trim() ?? "Exercise";
-  s = s.replace(/\b(\w+)\s+\1\b/gi, "$1"); // repeated words
-  s = s.replace(/\bBarbells?\b/gi, "Barbell")
-       .replace(/\bDumbbells?\b/gi, "Dumbbell")
-       .replace(/\bKettlebells?\b/gi, "Kettlebell")
-       .replace(/\bBattle\s*Ropes?\b/gi, "Battle Rope")
-       .replace(/\bExercise\s*Bike\b/gi, "Exercise Bike"); // keep exact
-  // strip trailing " - 10 reps" artifacts if they got inline-appended
-  s = s.replace(/\s*-\s*\d+.*$/, "").trim();
+  let s = S(raw)?.replace(/^\d+\.\s*/, '').trim() ?? 'Exercise';
+  s = s.replace(/\b(\w+)\s+\1\b/gi, '$1');
+  s = s.replace(/\bBarbells?\b/gi, 'Barbell')
+       .replace(/\bDumbbells?\b/gi, 'Dumbbell')
+       .replace(/\bKettlebells?\b/gi, 'Kettlebell')
+       .replace(/\bBattle\s*Ropes?\b/gi, 'Battle Rope')
+       .replace(/\bAir\s*Bike|Assault|Echo|Airdyne\b/gi, 'Exercise Bike');
+  s = s.replace(/\s*-\s*\d+.*$/, '').trim();
   return s;
 };
-
-const toKey = (name: string) => cleanName(name).toLowerCase().replace(/[^a-z0-9]+/g, "");
-const isNoiseLine = (name: string) =>
-  /\b(rounds?|perform|interval|emom|amrap|tabata|work\/rest|rest)\b/i.test(name);
+const toKey = (name: string) => cleanName(name).toLowerCase().replace(/[^a-z0-9]+/g, '');
+const isNoise = (name: string) => /\b(rounds?|perform|interval|emom|amrap|tabata|work\/rest|rest)\b/i.test(name);
 
 const toDisplayItem = (x: any): DisplayItem => {
-  const name = cleanName(typeof x === "string" ? x : x?.name);
-  if (!name || isNoiseLine(name)) return { name: "" }; // will be filtered out
+  const name = cleanName(typeof x === 'string' ? x : x?.name);
+  if (!name || isNoise(name)) return { name: '' };
   return {
     name,
     sets: S(x?.sets),
@@ -64,7 +59,7 @@ function dedup(items: DisplayItem[]): DisplayItem[] {
   const seen = new Set<string>();
   const out: DisplayItem[] = [];
   for (const it of items) {
-    const k = toKey(it.name || "");
+    const k = toKey(it.name || '');
     if (!k || seen.has(k)) continue;
     seen.add(k);
     out.push(it);
@@ -77,58 +72,78 @@ function llmToGeneratedWorkout(raw: any): GeneratedWorkout {
   const warmup = Array.isArray(w.warmup) ? w.warmup.map(toDisplayItem).filter((i: DisplayItem) => i.name) : [];
   const mainAll = Array.isArray(w.main) ? w.main.map(toDisplayItem).filter((i: DisplayItem) => i.name) : [];
   const cooldown = Array.isArray(w.cooldown) ? w.cooldown.map(toDisplayItem).filter((i: DisplayItem) => i.name) : [];
+  const conditioning = Array.isArray(w.conditioning) ? w.conditioning.map(toDisplayItem).filter((i: DisplayItem) => i.name) : [];
 
-  // Separate primaries vs accessories using isAccessory, with a sensible fallback
   let primaries = mainAll.filter((it: DisplayItem) => !it.isAccessory);
   let accessories = mainAll.filter((it: DisplayItem) => it.isAccessory);
 
   if (primaries.length === 0 && mainAll.length) {
-    // Fallback: treat first 2 as primaries, rest as accessories
     const splitN = Math.min(2, mainAll.length);
     primaries = mainAll.slice(0, splitN).map((it: DisplayItem) => ({ ...it, isAccessory: false }));
     accessories = mainAll.slice(splitN).map((it: DisplayItem) => ({ ...it, isAccessory: true }));
   }
 
-  // De-dupe with priority: main > accessories, and keep cooldown independent
   const mainDedup = dedup(primaries);
   const mainKeys = new Set(mainDedup.map((i: DisplayItem) => toKey(i.name)));
   const accDedup = dedup(accessories.filter((a: DisplayItem) => !mainKeys.has(toKey(a.name))));
 
   return {
-    name: S(w.name) ?? "Planned Session",
+    name: S(w.name) ?? 'Planned Session',
     warmup: dedup(warmup),
     main: mainDedup,
     accessories: accDedup,
     cooldown: dedup(cooldown),
+    conditioning: dedup(conditioning),
     duration: Number(w.est_total_minutes ?? w.duration_min ?? 0) || undefined,
-    focus: undefined,
   };
 }
 
-// Pretty, multi-line coach text for chat bubble
+// ── Pretty chat message with cues, incl. Conditioning block ──
+const fmtLine = (it: DisplayItem, idx: number, phase: 'warmup'|'main'|'conditioning'|'cooldown') => {
+  const sets = it.sets?.trim();
+  const reps = it.reps?.trim();
+  const dur  = it.duration?.trim();
+  const cue  = it.instruction?.trim();
+
+  let body = '';
+  if (phase === 'cooldown') {
+    const time = dur || (reps && /^[0-9]+$/.test(reps) ? `${reps} min` : reps);
+    body = time ? `${it.name} - ${time}` : it.name;
+  } else if (dur && !sets && !reps) {
+    body = `${it.name} - ${dur}`;
+  } else {
+    const setsPart = sets ? `${sets} sets` : (reps ? '1 sets' : '');
+    const repsPart = reps ? ` x ${reps}` : '';
+    body = `${it.name}${setsPart || repsPart ? ' - ' : ''}${setsPart}${repsPart}`;
+  }
+
+  return cue ? `${idx}. ${body} — ${cue}` : `${idx}. ${body}`;
+};
+
 const asCoachMessage = (gw: GeneratedWorkout, title?: string, minutes?: number) => {
-  const header = `${title || gw.name}${minutes ? ` (~${minutes} min)` : ""}`;
-  const line = (it: DisplayItem, idx: number) =>
-    it.duration
-      ? `${idx}. ${it.name} - ${it.duration}`
-      : `${idx}. ${it.name} - ${it.sets ? `${it.sets} sets x ` : ""}${it.reps ?? ""}`.trim();
+  const header = `${title || gw.name || 'Planned Session'}${minutes ? ` (~${minutes} min)` : ''}`;
+  const mainBlock: DisplayItem[] = [...gw.main, ...gw.accessories];
 
-  const mainPlusAcc = [...gw.main, ...gw.accessories]; // show both in "Main Workout" section
-
-  const parts = [
+  const lines: string[] = [
     header,
-    "",
-    "🔥 Warm-up:",
-    ...gw.warmup.map((it, i) => line(it, i + 1)),
-    "",
-    "💪 Main Workout:",
-    ...mainPlusAcc.map((it, i) => line(it, i + 1)),
-    "",
-    "🧘 Cool-down:",
-    ...gw.cooldown.map((it, i) => line(it, i + 1)),
-  ].filter(Boolean);
+    '🔥 Warm-up:',
+    ...gw.warmup.map((it, i) => fmtLine(it, i + 1, 'warmup')),
+    ...(mainBlock.length ? ['💪 Main Workout:', ...mainBlock.map((it, i) => fmtLine(it, i + 1, 'main'))] : []),
+    ...(gw.conditioning && gw.conditioning.length
+      ? ['⚡ Conditioning:', ...gw.conditioning.map((it, i) => fmtLine(it, i + 1, 'conditioning'))]
+      : []),
+    ...(gw.cooldown.length ? ['🧘 Cool-down:', ...gw.cooldown.map((it, i) => fmtLine(it, i + 1, 'cooldown'))] : []),
+  ];
 
-  return parts.join("\n");
+  // Drop empty section headers
+  const cleaned: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const isHeader = /^([🔥💪⚡🧘].*?:)$/.test(lines[i]);
+    const nextIsHeaderOrEnd = i === lines.length - 1 || /^([🔥💪⚡🧘].*?:)$/.test(lines[i + 1]);
+    if (isHeader && nextIsHeaderOrEnd) continue;
+    cleaned.push(lines[i]);
+  }
+  return cleaned.join('\n');
 };
 
 // Define workout types with proper text
@@ -322,7 +337,7 @@ export default function TodaysWorkoutPage() {
             
             setChatMessages(prev => [
               ...prev,
-              { role: 'assistant', content: asCoachMessage(gw, data?.plan?.name || gw.name, gw.duration) },
+              { role: 'assistant', content: asCoachMessage(gw, gw.name, gw.duration) },
             ]);
             
           } else {
@@ -378,6 +393,7 @@ export default function TodaysWorkoutPage() {
             name: data?.plan?.name,
             warmup: data?.plan?.phases?.find((p: any) => p.phase === 'warmup')?.items ?? [],
             main: data?.plan?.phases?.find((p: any) => p.phase === 'main')?.items ?? [],
+            conditioning: data?.plan?.phases?.find((p: any) => p.phase === 'conditioning')?.items ?? [],
             cooldown: data?.plan?.phases?.find((p: any) => p.phase === 'cooldown')?.items ?? [],
             est_total_minutes: data?.plan?.est_total_minutes ?? data?.plan?.duration_min,
           };

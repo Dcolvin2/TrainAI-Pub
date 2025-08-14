@@ -456,6 +456,21 @@ Hard rules:
 - BANNED: snatch/clean/jerk. If requested, SUBSTITUTE to Kettlebell High Pull or Push Press.
 - MAIN uses sets×reps (no duration-only in MAIN). Put duration-only in CONDITIONING.
 
+Output rules (must follow):
+- Use ONLY the user's available equipment: ${cues.vocab.join(', ')}.
+- Canonical names: "Exercise Bike" (not Air/Assault), "Battle Rope", "Dumbbell", "Barbell", "Kettlebell", "TRX", "Miniband", "Superband".
+- No olympic lifts: no snatch, clean, jerk (or variants).
+- Always return JSON only. sets/reps/duration must be strings.
+- Each item MUST include an "instruction" field with 1–2 clear cues.
+- If the workout is HIIT/conditioning or includes a conditioning block, every conditioning station MUST specify:
+  • exact interval format (e.g., "40s work / 20s rest"),
+  • target intensity (RPE 7–9 or %HRmax),
+  • 1 technique cue (e.g., "braced torso", "soft landing"),
+  • how to breathe ("in through nose on recovery").
+- Prefer kettlebell/rope/bike/med-ball for conditioning if available. If using a bike, call it "Exercise Bike".
+- Phases must be in { warmup | main | accessory | conditioning | cooldown }.
+- Use only equipment the user owns. If you would have picked something else, substitute with owned equipment.
+
 ${splitText}
 
 Coach message: single time-block narrative; list exact items per block that match the plan; include sets×reps or work:rest; no duplicate "Warm-up/Main/Cool-down" section.
