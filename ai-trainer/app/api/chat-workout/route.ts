@@ -179,7 +179,7 @@ function formatCoach(plan: Plan, workout: ReturnType<typeof toLegacyWorkout>): s
   return lines.join("\n");
 }
 
-/** LLM JSON helper */
+/** LLM JSON helper - handles two-pass workflow for optimal workout generation */
 async function llmJSON(opts: { system: string; user: string; max_tokens?: number; temperature?: number }) {
   const resp = await anthropic.messages.create({
     model: "claude-3-5-sonnet-20241022",
