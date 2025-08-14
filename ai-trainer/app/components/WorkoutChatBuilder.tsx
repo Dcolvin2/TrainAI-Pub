@@ -94,6 +94,7 @@ export default function WorkoutChatBuilder({ userId }: { userId: string }) {
   const [workoutSets, setWorkoutSets] = useState<WorkoutSet[]>([])
   const [workoutTimer, setWorkoutTimer] = useState(0)
   const [isWorkoutActive, setIsWorkoutActive] = useState(false)
+  const [dbg, setDbg] = useState<string>('')
 
   // Convert exercises to sets when editableWorkout changes
   useEffect(() => {
@@ -264,13 +265,24 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
     setIsLoading(true)
 
     try {
+      console.log('DBG: starting workout request');
+      
       const res = await fetch('/api/workoutChat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, messages: updated })
       })
 
-      const data = await res.json()
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch (e) {
+        console.error('DBG: failed to parse JSON', e);
+      }
+      console.log('DEBUG WORKOUT CHAT BUILDER', { ok: res.ok, status: res.status, data });
+      
+      // Set debug data to display in UI
+      setDbg(JSON.stringify(data, null, 2));
       
       if (!res.ok) {
         throw new Error(data.error || 'Failed to send message')
@@ -490,6 +502,16 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
           >
             Start Workout
           </button>
+        </div>
+      )}
+
+      {/* Debug Panel */}
+      {dbg && (
+        <div className="p-4 mt-4">
+          <h3 className="text-white font-semibold mb-2">Debug Response:</h3>
+          <pre style={{whiteSpace:'pre-wrap', fontSize:12, background:'#111', color:'#0f0', padding:8, borderRadius:8}}>
+            {dbg}
+          </pre>
         </div>
       )}
     </div>
