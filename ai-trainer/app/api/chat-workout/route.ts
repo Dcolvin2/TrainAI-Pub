@@ -694,15 +694,25 @@ export async function POST(req: Request) {
   const hasBall         = hasEq(equipmentListLower, /\bexercise\s*ball\b/);
   const hasBands        = hasEq(equipmentListLower, /\b(mini|super)bands?\b/);
 
-  // user prefs (safe defaults)
-  const guardPrefs = (prefs as any) ?? { preferred: [], avoided: [] };
-  const preferred = Array.isArray(guardPrefs?.preferred) ? guardPrefs.preferred.map((s: any) => String(s).toLowerCase()) : [];
-  const avoided   = Array.isArray(guardPrefs?.avoided)   ? guardPrefs.avoided.map((s: any) => String(s).toLowerCase()) : [];
-  const isAvoided = (name: string) => avoided.some(a => name.toLowerCase().includes(a));
-  const preferFirst = <T extends {name: string}>(cands: T[]) => {
+  // prefs: normalize and type
+  type GuardPrefs = { preferred?: string[]; avoided?: string[] };
+
+  const guardPrefs: GuardPrefs = {
+    preferred: Array.isArray(prefs?.preferred) ? (prefs!.preferred as string[]) : [],
+    avoided:   Array.isArray(prefs?.avoided)   ? (prefs!.avoided as string[])   : [],
+  };
+
+  const preferred: string[] = (guardPrefs.preferred || []).map((s) => String(s).toLowerCase());
+  const avoided: string[]   = (guardPrefs.avoided   || []).map((s) => String(s).toLowerCase());
+
+  // helpers using typed arrays
+  const isAvoided = (name: string): boolean =>
+    avoided.some((a: string) => name.toLowerCase().includes(a));
+
+  const preferFirst = <T extends { name: string }>(cands: T[]): T[] => {
     return [...cands].sort((a, b) => {
-      const ap = preferred.some(p => a.name.toLowerCase().includes(p)) ? 1 : 0;
-      const bp = preferred.some(p => b.name.toLowerCase().includes(p)) ? 1 : 0;
+      const ap = preferred.some((p: string) => a.name.toLowerCase().includes(p)) ? 1 : 0;
+      const bp = preferred.some((p: string) => b.name.toLowerCase().includes(p)) ? 1 : 0;
       return bp - ap;
     });
   };
