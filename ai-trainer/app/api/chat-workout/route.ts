@@ -180,6 +180,31 @@ function formatCoach(plan: Plan, workout: ReturnType<typeof toLegacyWorkout>): s
   return lines.join("\n");
 }
 
+/** Robust JSON parsing helper */
+function tryParseWorkout(raw: string) {
+  // 1) try JSON.parse directly
+  try {
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj === 'object') return { plan: obj, coach: null, parseError: null };
+  } catch (_) { /* ignore */ }
+
+  // 2) try to extract the first {...} block (common when model wraps JSON in narration)
+  const first = raw.indexOf('{');
+  const last = raw.lastIndexOf('}');
+  if (first !== -1 && last !== -1 && last > first) {
+    const maybe = raw.slice(first, last + 1);
+    try {
+      const obj = JSON.parse(maybe);
+      return { plan: obj, coach: null, parseError: null };
+    } catch (e) {
+      return { plan: null, coach: raw, parseError: String(e) };
+    }
+  }
+
+  // 3) fallback: treat as chat text only
+  return { plan: null, coach: raw, parseError: 'no-json-found' };
+}
+
 /** LLM JSON helper - handles two-pass workflow for optimal workout generation */
 async function llmJSON(opts: { system: string; user: string; max_tokens?: number; temperature?: number }) {
   const resp = await anthropic.messages.create({
@@ -189,11 +214,7 @@ async function llmJSON(opts: { system: string; user: string; max_tokens?: number
     messages: [{ role: "user", content: `${opts.system}\n\n${opts.user}` }]
   });
   const raw = (resp?.content ?? []).map((b: any) => ("text" in b ? b.text : "")).join("\n");
-  try { return JSON.parse(raw); } catch {
-    const m = raw.match(/\{[\s\S]*\}$/); // best-effort
-    if (m) return JSON.parse(m[0]);
-    throw new Error("LLM did not return JSON");
-  }
+  return raw; // Return raw text instead of trying to parse
 }
 
 
@@ -294,9 +315,11 @@ Context:
 - Preferences: prefer ${(prefs.preferred_exercises || []).join(", ") || "(none)"}; avoid ${(prefs.avoided_exercises || []).join(", ") || "(none)"}.
 - Conditioning bias: ${prefs.conditioning_bias || "mixed"}
 - Detail level: ${prefs.detail_level ?? 2}
+
+If you include prose, also include a pure JSON object as the final message. Do not wrap the JSON in code fences.
 `;
 
-    const pass1 = await llmJSON({
+    const pass1Raw = await llmJSON({
       system: sysCapsule,
       user: "Create the workout plan JSON now.",
       max_tokens: 1600,
@@ -317,42 +340,54 @@ You are revising an Ocho System workout plan to strictly adhere to constraints.
 - Keep structure and time realism; do not add fluff.
 - Return ONLY JSON in the exact schema of the input.
 
+If you include prose, also include a pure JSON object as the final message. Do not wrap the JSON in code fences.
+
 Refine this plan JSON:
 `;
-    const pass2 = await llmJSON({
+    const pass2Raw = await llmJSON({
       system: refineSystem,
-      user: JSON.stringify(pass1),
+      user: JSON.stringify(pass1Raw),
       max_tokens: 1600,
       temperature: 0.2
     });
 
-    // Extract coach message and plan from LLM response
-    const coach = pass2?.coach || "";
-    const plan = pass2?.plan || pass2;
+    // Parse the final response robustly
+    const parsed = tryParseWorkout(pass2Raw);
     
-    // Normalize plan structure
-    const { plan: normalizedPlan, warnings } = normalizePlan(plan);
-    const workout = toLegacyWorkout(normalizedPlan);
-    
-    // Use LLM-generated message or fallback
-    const messageText = pass2?.message || `${normalizedPlan.name}${S(normalizedPlan.est_total_minutes ?? normalizedPlan.duration_min) ? ` (~${S(normalizedPlan.est_total_minutes ?? normalizedPlan.duration_min)} min)` : ""}`;
+    // Normalize response to the UI
+    const name =
+      (parsed.plan && (parsed.plan.name || parsed.plan.message)) ||
+      (parsed.coach ? (parsed.coach.split('\n')[0] || '').trim() : '') ||
+      'Workout';
+
+    let normalizedPlan = null;
+    let workout = null;
+    let warnings: string[] = [];
+
+    if (parsed.plan) {
+      // Normalize plan structure
+      const normalized = normalizePlan(parsed.plan);
+      normalizedPlan = normalized.plan;
+      warnings = normalized.warnings;
+      workout = toLegacyWorkout(normalizedPlan);
+    }
 
     return NextResponse.json({
       ok: true,
-      name: normalizedPlan.name,
-      message: messageText,
-      coach,
-      plan: normalizedPlan,
+      name,
+      message: parsed.plan?.message || `${name}`,
+      coach: parsed.coach ?? null,   // human-readable text if present
+      plan: normalizedPlan ?? null,     // structured if we got JSON
       workout,
       debug: {
-        validation_ok: true,
+        parseError: parsed.parseError,
+        usedTwoPass: Boolean(parsed.plan),
         warnings,
         minutesRequested: minutes,
         split,
         equipmentList,
         recentWindowDays: NO_REPEAT_DAYS,
-        usedTwoPass: true
-      }
+      },
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: S(e?.message) || "Failed to generate workout plan" }, { status: 500 });

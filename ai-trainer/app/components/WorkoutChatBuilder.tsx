@@ -288,10 +288,18 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
         throw new Error(data.error || 'Failed to send message')
       }
 
+      // Smart title and content rendering
+      const title = data?.name || data?.plan?.name || data?.message || 'Workout';
+      
+      const pretty =
+        data?.coach ||
+        data?.message ||
+        ''; // you can add your own formatter for plan next
+
       // Add assistant message to chat
       setMessages(msgs => [...msgs, { 
         role: 'assistant', 
-        content: data.assistantMessage 
+        content: pretty || title 
       }])
 
       // Set editable workout
