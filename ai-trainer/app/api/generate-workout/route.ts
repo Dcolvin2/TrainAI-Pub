@@ -25,8 +25,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: `planner failed: ${res.status}`, details: t }, { status: 500 });
     }
     const j = await res.json();
+    const title = j?.name || j?.plan?.name || `${String(type || "Workout").toUpperCase()} Workout`;
 
-    // Shape back to your old arrays
     const w = j?.workout || { warmup: [], main: [], cooldown: [] };
     const warmup = Array.isArray(w.warmup) ? w.warmup : [];
     const mainAll = Array.isArray(w.main) ? w.main : [];
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      name: `${String(type || "Workout").toUpperCase()} Workout`,
+      name: title,
       warmup,
       main: primaries,
       accessories,
