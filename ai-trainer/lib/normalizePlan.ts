@@ -1,4 +1,6 @@
 // lib/normalizePlan.ts
+import { canonicalSplit, isHiit, isMainLiftForSplit, pickFirstAllowedMain } from "@/lib/trainingRules";
+
 export type NormalizedItem = {
   name: string;
   sets: string;
@@ -15,6 +17,9 @@ export type NormalizedPlan = {
   cooldown: NormalizedItem[];
   title: string;
   totalMinutes?: number;
+  mainLiftName?: string;
+  split?: string;              // <- carry split through
+  showAccessoryLabels?: boolean; // <- for HIIT = false
 };
 
 export function normalizePlan(plan: any): NormalizedPlan | null {
@@ -61,12 +66,39 @@ export function normalizePlan(plan: any): NormalizedPlan | null {
     };
 
     const warmup = [...getPhaseItems('prep'), ...getPhaseItems('activation')];
-    const main = getPhaseItems('strength').map((item: any, index: number) => ({
+    let main = getPhaseItems('strength').map((item: any, index: number) => ({
       ...item,
       isAccessory: false,
       isMain: index === 0, // First strength exercise gets isMain=true
     }));
     const cooldown = getPhaseItems('cooldown');
+
+    // Try to preserve split from input if present (optional extension to Plan)
+    const maybeSplit = (plan as any)?.split as string | undefined;
+    const split = canonicalSplit(maybeSplit);
+    const hiit = isHiit(split);
+
+    // Enforce main-lift-first (except HIIT)
+    if (!hiit) {
+      // Mark any item that's one of the allowed main lifts as non-accessory; others become accessory
+      main = main.map((m, idx) => ({
+        ...m,
+        isAccessory: !isMainLiftForSplit(m.name, split),
+      }));
+      const haveMain = main.some(m => !m.isAccessory);
+      if (!haveMain) {
+        const injected = pickFirstAllowedMain(split);
+        if (injected) {
+          // Inject a default main lift at top if none present
+          main = [{ name: injected, sets: "3", reps: "5", instruction: "", isAccessory: false, isMain: true }, ...main];
+        }
+      }
+    } else {
+      // HIIT: don't show accessory/main labels in the UI
+      main = main.map(m => ({ ...m, isAccessory: false }));
+    }
+
+    const mainLiftName = hiit ? undefined : (main.find(i => !i.isAccessory)?.name ?? main[0]?.name);
 
     return {
       warmup,
@@ -74,6 +106,9 @@ export function normalizePlan(plan: any): NormalizedPlan | null {
       cooldown,
       title: plan.name || 'Workout',
       totalMinutes: plan.duration_min || plan.est_total_minutes,
+      mainLiftName,
+      split,
+      showAccessoryLabels: !hiit,
     };
   }
 

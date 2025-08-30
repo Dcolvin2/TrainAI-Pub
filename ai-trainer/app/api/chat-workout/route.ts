@@ -126,6 +126,42 @@ function buildRuleBackup(split: string | undefined, minutes: number, equipment: 
   return { plan, workout };
 }
 
+async function getRecentCoreLift(userId: string, mainLift?: string) {
+  if (!userId || !mainLift) return null;
+  // Pull the last set logged for that lift
+  const { data, error } = await supabase
+    .from("workout_sets")
+    .select("actual_weight,reps,session_id")
+    .eq("exercise_name", mainLift)
+    .not("actual_weight","is",null)
+    .order("session_id", { ascending: false })
+    .limit(1);
+  if (error || !data || data.length === 0) return null;
+  return data[0];
+}
+
+async function getEquipmentList(userId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("user_equipment")
+    .select("custom_name");
+  if (error || !data) return [];
+  return data.map(r => r.custom_name).filter(Boolean);
+}
+
+function coachTips(n: ReturnType<typeof normalizePlanLib> extends infer T ? T : any, last?: { actual_weight?: number; reps?: number } | null) {
+  const tips: string[] = [];
+  if (n?.totalMinutes && n.totalMinutes < 30) {
+    tips.push("Tight on time: prioritize the main lift; trim accessories first.");
+  }
+  if (n?.split && n.split !== "hiit" && n?.mainLiftName) {
+    tips.push(`Focus: ${n.mainLiftName}. Warm up well and keep rest ~2–3 min between working sets.`);
+  }
+  if (last?.actual_weight && last?.reps) {
+    tips.push(`Last time on ${n?.mainLiftName}: ${last.actual_weight} x ${last.reps}. Aim to match or add 2.5–5 lb if all sets hit.`);
+  }
+  return tips;
+}
+
 function extractJson(raw: string): { plan?: ChatPlan; workout?: ChatWorkout; error?: string } {
   // Try ```json fencing first
   const fence = raw.match(/```json([\s\S]*?)```/i);
@@ -459,7 +495,19 @@ export async function POST(req: Request) {
 
     // Build descriptive chat summary using the new normalizer
     const normalized = normalizePlanLib({ plan: safePlan, workout: finalWorkout });
-    const chatMsg = normalized ? buildChatSummary(normalized) : "No workout details available.";
+    let chatMsg = normalized ? buildChatSummary(normalized) : "No workout details available.";
+    if (normalized) {
+      const [lastCore, eq] = await Promise.all([
+        getRecentCoreLift(userId, normalized.mainLiftName),
+        getEquipmentList(userId)
+      ]);
+      const extras = [
+        "",
+        eq.length ? `Equipment on file: ${eq.join(", ")}` : "",
+        ...coachTips(normalized, lastCore),
+      ].filter(Boolean);
+      chatMsg = `${chatMsg}\n\n${extras.join("\n")}`;
+    }
 
     return NextResponse.json({
       ok: true,

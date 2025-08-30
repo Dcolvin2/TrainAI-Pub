@@ -551,15 +551,7 @@ export default function TodaysWorkoutPage() {
               {/* Nike Test Button - REMOVED - Now integrated into chat */}
             </div>
 
-            {/* Debug Drawer */}
-            {resp && (
-              <div className="rounded-lg border border-slate-700 p-3 text-xs text-slate-300 mb-4">
-                <div><b>{resp.name}</b></div>
-                <div>validity: {resp?.debug?.validity ?? 'n/a'} | parseError: {resp?.debug?.parseError ?? 'none'}</div>
-                <div>counts → warmup:{normalized?.warmup.length ?? 0} main:{normalized?.main.length ?? 0} cooldown:{normalized?.cooldown.length ?? 0}</div>
-                <div>split:{resp?.debug?.split ?? 'n/a'} minutes:{resp?.debug?.minutesRequested ?? 'n/a'}</div>
-              </div>
-            )}
+            {/* Debug Drawer - Removed for cleaner UI */}
 
             {/* Preview block removed to avoid duplicate rendering. The logger below is now the single source of truth. */}
 
@@ -625,9 +617,11 @@ export default function TodaysWorkoutPage() {
                                 <h4 className="text-md font-semibold text-gray-300">
                                   {exerciseName}
                                 </h4>
-                                <span className={`ml-2 px-2 py-1 text-xs text-white rounded ${ (exercise as any).isAccessory ? 'bg-blue-600' : 'bg-green-600' }`}>
-                                  {(exercise as any).isAccessory ? 'Accessory' : 'Main Lift'}
-                                </span>
+                                {normalized?.showAccessoryLabels && (
+                                  (exercise as any).isAccessory
+                                    ? <span className="ml-2 inline-flex items-center rounded-md px-2 py-0.5 text-xs bg-slate-700/60 text-slate-200">Accessory</span>
+                                    : <span className="ml-2 inline-flex items-center rounded-md px-2 py-0.5 text-xs bg-emerald-900/40 text-emerald-200">Main Lift</span>
+                                )}
                               </div>
                               <div className="bg-gray-800 rounded-lg p-4">
                                 {/* Column headers */}
