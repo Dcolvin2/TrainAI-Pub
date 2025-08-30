@@ -484,7 +484,10 @@ export default function TodaysWorkoutPage() {
           // Persist the full raw response (so plan.phases is available for tables)
           setResp({ ...raw, plan });
 
-          // Prefer the full cooldown array from plan.phases
+          // Prefer the full cooldown array from workout, then plan.phases
+          const cooldownFromWorkout = Array.isArray((workout as any)?.cooldown)
+            ? (workout as any).cooldown
+            : [];
           const cooldownFromPlan =
             Array.isArray(plan?.phases)
               ? (plan.phases.find((p: any) => String(p?.phase).toLowerCase() === 'cooldown')?.items ?? [])
@@ -495,9 +498,9 @@ export default function TodaysWorkoutPage() {
             name: plan.name,
             warmup: workout.warmup,
             main: workout.mainExercises,
-            cooldown: cooldownFromPlan.length
-              ? cooldownFromPlan
-              : (workout.finisher ? [workout.finisher] : []),
+            cooldown: cooldownFromWorkout.length
+              ? cooldownFromWorkout
+              : (cooldownFromPlan.length ? cooldownFromPlan : (workout.finisher ? [workout.finisher] : [])),
             est_total_minutes: plan.duration,
           };
 
@@ -573,6 +576,9 @@ export default function TodaysWorkoutPage() {
       return [...base, { role:'assistant', content: coach }];
     });
 
+    const cooldownFromWorkout = Array.isArray((workout as any)?.cooldown)
+      ? (workout as any).cooldown
+      : [];
     const cooldownFromPlan =
       Array.isArray(plan?.phases)
         ? (plan.phases.find((p: any) => String(p?.phase).toLowerCase() === 'cooldown')?.items ?? [])
@@ -581,9 +587,9 @@ export default function TodaysWorkoutPage() {
       name: plan.name,
       warmup: workout.warmup,
       main: workout.mainExercises,
-      cooldown: cooldownFromPlan.length
-        ? cooldownFromPlan
-        : (workout.finisher ? [workout.finisher] : []),
+      cooldown: cooldownFromWorkout.length
+        ? cooldownFromWorkout
+        : (cooldownFromPlan.length ? cooldownFromPlan : (workout.finisher ? [workout.finisher] : [])),
       est_total_minutes: plan.duration,
     };
     const gw = llmToGeneratedWorkout(legacy);

@@ -287,27 +287,28 @@ Schema (strict):
       ],
     };
 
-    // Build a cooldown list from existing shapes (finisher | phases | cooldown[])
-    const initialCooldown: any[] = Array.isArray((workout as any)?.cooldown)
-      ? (workout as any).cooldown
-      : workout?.finisher
-      ? [workout.finisher]
-      : Array.isArray(plan?.phases)
-      ? (plan.phases.find((p: any) =>
-          /cooldown|carry|conditioning/i.test(String(p?.phase))
-        )?.items ?? [])
-      : [];
+    // 1) Gather any cooldown candidates from the model
+    const fromWorkoutArray = Array.isArray((workout as any)?.cooldown) ? (workout as any).cooldown : [];
+    const fromFinisher = workout?.finisher ? [workout.finisher] : [];
+    const fromPhases =
+      Array.isArray(plan?.phases)
+        ? plan.phases
+            .filter((p: any) => /cooldown|carry|conditioning/i.test(String(p?.phase)))
+            .flatMap((p: any) => Array.isArray(p?.items) ? p.items : [])
+        : [];
+    const initialCooldown = [...fromWorkoutArray, ...fromPhases, ...fromFinisher];
 
-    // Sanitize (removes burpees/HIIT, prefers stretches/mobility)
+    // 2) Sanitize to stretches (2–3 items) and reflect everywhere
     const cdHolder = await sanitizeCooldown({ cooldown: initialCooldown }, userId, prefs);
     const sanitizedCooldown: any[] = Array.isArray(cdHolder?.cooldown) ? cdHolder.cooldown : [];
 
-    // Reflect back into workout + plan (without adding a workout.cooldown property)
     if (sanitizedCooldown.length) {
-      // Keep server schema stable: single finisher object
+      // expose full list for clients that use it
+      (workout as any).cooldown = sanitizedCooldown;
+      // keep legacy "finisher" for older clients
       workout.finisher = sanitizedCooldown[0];
 
-      // Ensure plan has an explicit cooldown phase for the UI
+      // ensure a dedicated 'cooldown' phase with the full list
       if (Array.isArray(plan?.phases)) {
         const items = sanitizedCooldown.map((i: any) => ({
           name: i.name,
