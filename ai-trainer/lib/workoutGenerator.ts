@@ -181,7 +181,7 @@ function selectWarmupExercises(workoutType: WorkoutType, available: string[]): a
     list.push({ name: 'Bodyweight Squat', sets: 1, reps: '10', instruction: 'Hip & knee tracking' });
     list.push({ name: 'Hip Airplanes', sets: 1, reps: '5/side' });
   } else {
-    list.push({ name: 'World's Greatest Stretch', duration: '60s', instruction: 'T-spine + hips' });
+    list.push({ name: "World's Greatest Stretch", duration: '60s', instruction: 'T-spine + hips' });
   }
 
   return list;
