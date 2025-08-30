@@ -472,15 +472,13 @@ export default function TodaysWorkoutPage() {
         return;
       }
       
-      // Adapter: synthesize phases if missing
+      // ensure phases exist for the renderer
       if (!Array.isArray(data?.plan?.phases)) {
-        const phases = toPhasesFromWorkout(data);
-        data.plan = { ...(data.plan || {}), phases };
+        data.plan = { ...(data.plan || {}), phases: toPhasesFromWorkout(data) };
       }
-      
+
       console.log('UI/response', data);
       
-      // Console probe for debugging
       console.table(
         [
           ['warmup', typeof data?.workout?.warmup, Array.isArray(data?.workout?.warmup)],
@@ -533,31 +531,18 @@ export default function TodaysWorkoutPage() {
         legacy?.name ||     // last resort
         'Workout';
 
-      // Body: prefer chatMsg (LLM-normalized summary), then coach text, then format the plan
-      const body =
-        data?.chatMsg ||                    // if LLM wrote detailed summary
-        data?.coach ||                      // fallback to coach text
-        data?.message ||                    // fallback to message
-        asCoachMessage(gw, title, selectedTime); // format the plan
-
-      // Pretty multi-line coach message (no giant paragraph)
-      setChatMessages(prev => [
-        ...prev,
-        { role: 'assistant', content: body },
-      ]);
-      
-      // Set chat text for the chat pane
+      // Replace the placeholder chat with real coach text
       const coachText =
         data?.coach ??
         data?.chatMsg ??
         data?.message ??
         data?.name ??
         '';
-      
+
       // Update chat state with smart text (avoid duplicates)
       setChatMessages(prev => {
-        // avoid double placeholder by dropping empty/placeholder entries
-        const base = prev.filter(m => m?.content && !/Session \(~\d+ min\)/i.test(m.content));
+        // drop any placeholder lines to avoid doubles
+        const base = prev.filter((m:any) => m?.content && !/Session \(~\d+ min\)/i.test(m.content));
         return [...base, { role: 'assistant', content: coachText }];
       });
     } catch (error) {
