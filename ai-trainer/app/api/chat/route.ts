@@ -335,12 +335,9 @@ Schema (strict):
       (raw?.workout?.main?.[0]?.name) ||
       'Main Lift';
 
-    // fetch recent history for that lift
-    const recentSets = mainLiftName ? await fetchRecentSetsForExercise(userId, mainLiftName, 12) : [];
-    const hist = summarizeHistory(recentSets);
-
-    // user cooldown prefs (optional, if you added memory)
-    const prefs = await getUserPrefs(userId);
+    // fetch recent history for that lift (avoid name collision)
+    const recentMainSets = mainLiftName ? await fetchRecentSetsForExercise(userId, mainLiftName, 12) : [];
+    const hist = summarizeHistory(recentMainSets);
 
     // compose a smart coach message
     const smartCoach = buildCoachNote({
