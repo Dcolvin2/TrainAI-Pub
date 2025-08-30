@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabaseServer';
 import { claudeJSON } from '@/lib/llm';
 import { ResponseOut, phasesFromWorkout, budget } from '@/lib/schema';
+import { fetchCatalog, fetchUserEquipmentNames, Split } from '@/lib/catalog';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -95,58 +96,7 @@ function normalizeLLM(out: any) {
   return { workout: { warmup: warm, mainExercises: main, finisher: fin } };
 }
 
-async function getUserEquipment(userId?: string) {
-  const sb = supabaseServer();
-  // Try common shapes; keep whichever exists in your DB.
-  if (userId) {
-    const { data: ue } = await sb.from('user_equipment').select('equipment_name').eq('user_id', userId).limit(200);
-    if (ue?.length) return ue.map(x => String(x.equipment_name));
-    const { data: pe } = await sb.from('profiles_equipment').select('equipment').eq('user_id', userId).maybeSingle();
-    if (pe?.equipment && Array.isArray(pe.equipment)) return pe.equipment.map(String);
-  }
-  return [];
-}
 
-type CatalogRow = { name: string; category?: string|null; movement_pattern?: string|null; target_muscles?: string[]|string|null; equipment_required?: string[]|string|null };
-
-async function getCatalog(split: Split, equipment: string[], limit=200): Promise<CatalogRow[]> {
-  const sb = supabaseServer();
-  const rows: CatalogRow[] = [];
-  const { data: ef } = await sb.from('exercises_final').select('name,category,movement_pattern,target_muscles,equipment_required').limit(limit);
-  if (ef) rows.push(...ef as any);
-  if (rows.length < 10) {
-    const { data: ex } = await sb.from('exercises').select('name,category,movement_pattern,target_muscles,equipment_required').limit(limit);
-    if (ex) rows.push(...ex as any);
-  }
-
-  const eq = equipment.map(e => e.toLowerCase());
-  const passEquip = (r: CatalogRow) => {
-    const joined = [
-      r.name, r.category, r.movement_pattern,
-      Array.isArray(r.target_muscles) ? r.target_muscles.join(' ') : r.target_muscles,
-      Array.isArray(r.equipment_required) ? r.equipment_required.join(' ') : r.equipment_required,
-    ].filter(Boolean).join(' ').toLowerCase();
-    return eq.length === 0 || eq.some(k => joined.includes(k)) || /bodyweight|band|mini-?band|trx/.test(joined);
-  };
-
-  const hints = {
-    pull: /(row|pull[-\s]?down|pull[-\s]?up|hinge|deadlift|face pull|rear delt|lat|scap|carry)/i,
-    push: /(press|push[-\s]?up|dip|bench|incline|overhead|triceps)/i,
-    legs: /(squat|hinge|deadlift|lunge|step[-\s]?up|posterior|hamstring|quad|calf)/i,
-    upper: /(press|row|pull[-\s]?down|pull[-\s]?up|rear delt|face pull|overhead|push[-\s]?up)/i,
-    full: /(squat|press|row|hinge|carry|clean|snatch|burpee|thruster)/i,
-    hiit: /(interval|kettlebell swing|slam|burpee|battle rope|sled)/i,
-  }[split];
-
-  const filtered = rows.filter(r => passEquip(r) && (hints ? hints.test(`${r.name} ${r.category} ${r.movement_pattern}`) : true));
-
-  const seen = new Set<string>();
-  return filtered.filter(r => {
-    const k = (r.name || '').toLowerCase();
-    if (!k || seen.has(k)) return false;
-    seen.add(k); return true;
-  }).slice(0, limit);
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -174,12 +124,15 @@ export async function POST(req: NextRequest) {
       equipmentProvidedCount: Array.isArray(body?.equipment) ? body.equipment.length : 0,
     });
 
-    // 1) Equipment: client > DB
-    let equipment = A(body.equipment) ? body.equipment! : await getUserEquipment(body.userId);
-    equipment = [...new Set(equipment.map(s => String(s).trim()))];
+    // 1) ensure we know the user & equipment
+    const userId = body.userId || req.headers.get('x-user-id') || '';
+    const equipment =
+      Array.isArray(body.equipment) && body.equipment.length
+        ? body.equipment
+        : (userId ? await fetchUserEquipmentNames(userId) : []);
     dpush(debug, 'equipment', { final: equipment, count: equipment.length });
 
-    // 2) Classify intent (LLM) — *no* hardcoded rules
+    // 2) classify intent (you already do this); set split/minutes/style
     const classifierSystem =
 `Extract intent for workout planning. Output strict JSON:
 {"split":"pull|push|legs|upper|full|hiit","minutes":number,"style":"default|ocho"}.
@@ -194,8 +147,8 @@ Default: {"split":"pull","minutes":45,"style":"default"} if unclear.`;
     const time = budget(minutes);
     dpush(debug, 'classified', { split, minutes, style });
 
-    // 3) Grounding catalog from your DB
-    let catalog = await getCatalog(split, equipment);
+    // 3) pull the catalog grounded to YOUR SCHEMA + YOUR EQUIPMENT
+    const catalog = await fetchCatalog(split, equipment);
     dpush(debug, 'catalog', { count: catalog.length, sample: catalog.slice(0, 8).map(r => r.name) });
 
     // Optional: fallback if catalog too small
