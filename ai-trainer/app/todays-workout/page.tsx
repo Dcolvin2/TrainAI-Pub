@@ -1,4 +1,3 @@
-// app/todays-workout/page.tsx
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
@@ -54,7 +53,7 @@ export default function TodaysWorkoutPage() {
 
   return (
     <div className="p-4 text-slate-200">
-      <h1 className="text-xl font-semibold mb-4">{planName || 'Today\'s Workout'}</h1>
+      <h1 className="text-xl font-semibold mb-4">{planName || 'Today's Workout'}</h1>
 
       {error && (
         <div className="mb-4 rounded bg-red-900/40 border border-red-700 px-3 py-2 text-sm">
