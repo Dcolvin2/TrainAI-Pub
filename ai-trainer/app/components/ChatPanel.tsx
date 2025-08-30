@@ -18,7 +18,7 @@ export default function ChatPanel({ initialAssistant }: { initialAssistant?: str
     <div className="rounded-xl bg-slate-900 p-4">
       <div className="text-white text-sm space-y-2 min-h-[160px]">
         {messages.length === 0 ? (
-          <div className="opacity-70">Session (~45 min)</div>
+          <div className="opacity-70">Ready when you are.</div>
         ) : (
           messages.map((m, i) => (
             <div key={i} className={m.role === 'assistant' ? 'opacity-100' : 'opacity-80'}>

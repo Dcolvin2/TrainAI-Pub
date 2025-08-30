@@ -60,6 +60,21 @@ const toDisplayItem = (x: any): DisplayItem => {
 // Helper for both exercise and name keys
 const toName = (it: any) => it?.name ?? it?.exercise ?? '';
 
+// Adapter to map workout shape to phases that UI expects
+function toPhasesFromWorkout(data: any) {
+  const warm = Array.isArray(data?.workout?.warmup) ? data.workout.warmup : [];
+  const main = Array.isArray(data?.workout?.mainExercises) ? data.workout.mainExercises : [];
+  const fin = data?.workout?.finisher ? [data.workout.finisher] : [];
+
+  // Your UI uses: prep, strength, activation, carry (you may only need some of these)
+  return [
+    { phase: 'prep',       items: warm.map((i:any) => ({ name: i.name ?? i.exercise, sets: i.sets, reps: i.reps, duration: i.duration, instruction: i.instruction })) },
+    { phase: 'strength',   items: main.map((i:any) => ({ name: i.name ?? i.exercise, sets: i.sets, reps: i.reps, duration: i.duration, instruction: i.instruction, isAccessory: !!i.isAccessory })) },
+    { phase: 'activation', items: [] },
+    { phase: 'carry',      items: fin.map((i:any) => ({ name: i.name ?? i.exercise, sets: i.sets, reps: i.reps, duration: i.duration, instruction: i.instruction })) },
+  ];
+}
+
 function dedup(items: DisplayItem[]): DisplayItem[] {
   const seen = new Set<string>();
   const out: DisplayItem[] = [];
@@ -457,6 +472,12 @@ export default function TodaysWorkoutPage() {
         return;
       }
       
+      // Adapter: synthesize phases if missing
+      if (!Array.isArray(data?.plan?.phases)) {
+        const phases = toPhasesFromWorkout(data);
+        data.plan = { ...(data.plan || {}), phases };
+      }
+      
       console.log('UI/response', data);
       
       // Console probe for debugging
@@ -469,16 +490,18 @@ export default function TodaysWorkoutPage() {
       );
       
       const normalized = normalizePlan(data);
-      console.log('UI/normalized', { 
-        counts: normalized ? { 
-          w: normalized.warmup.length, 
-          m: normalized.main.length, 
-          c: normalized.cooldown.length 
-        } : { w: 0, m: 0, c: 0 }, 
-        sample: normalized?.main.slice(0,2) || []
+      console.log('UI/normalized', {
+        counts: {
+          prep:      data.plan.phases.find((p:any)=>p.phase==='prep')?.items?.length ?? 0,
+          strength:  data.plan.phases.find((p:any)=>p.phase==='strength')?.items?.length ?? 0,
+        },
+        sample: data.plan.phases.slice(0,2),
       });
       
       setResp(data);
+
+      // Safe get function to guard against map errors
+      const get = (k: any) => Array.isArray(data?.plan?.phases) ? (data.plan.phases.find((p:any)=>p.phase===k)?.items ?? []) : [];
 
       // Safeguard arrays to stop ".map is not a function"
       const safeWarmup = Array.isArray(data?.workout?.warmup) ? data.workout.warmup : [];
@@ -531,8 +554,12 @@ export default function TodaysWorkoutPage() {
         data?.name ??
         '';
       
-      // Update chat state with smart text
-      setChatMessages(prev => [...prev, { role: 'assistant', content: coachText }]);
+      // Update chat state with smart text (avoid duplicates)
+      setChatMessages(prev => {
+        // avoid double placeholder by dropping empty/placeholder entries
+        const base = prev.filter(m => m?.content && !/Session \(~\d+ min\)/i.test(m.content));
+        return [...base, { role: 'assistant', content: coachText }];
+      });
     } catch (error) {
       console.error('Error generating workout:', error);
       setChatMessages(prev => [

@@ -711,8 +711,10 @@ export async function POST(req: Request) {
 
     devlog('input', { split, minutes, equipmentCount: equipmentList.length });
 
-    // 1) Check if this is a pull workout and use anchored main lift system
+        // 1) Check if this is a pull workout and use anchored main lift system
     if (split === 'pull') {
+      console.log('LLM:claude.start', { split, minutes, hasKey: !!process.env.ANTHROPIC_API_KEY });
+      
       const payload = await generatePullWorkoutLLM({
         split: 'pull',
         totalMin: minutes,
@@ -740,6 +742,8 @@ export async function POST(req: Request) {
     const userPrompt = JSON.stringify({ split, minutes, equipment: equipmentList });
 
     // 3) Call your existing chat service (unchanged)
+    console.log('LLM:claude.start', { split, minutes, hasKey: !!process.env.ANTHROPIC_API_KEY });
+    
     const rawText = await llmJSON({
       system: systemPrompt,
       user: userPrompt,
