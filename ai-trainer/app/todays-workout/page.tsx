@@ -433,8 +433,8 @@ export default function TodaysWorkoutPage() {
   };
 
   async function requestWorkout(split: 'pull'|'push'|'legs'|'upper'|'full'|'hiit', minutes: number, equipment: string[]) {
-    // optional: show a "thinking" message immediately
-    setChatMessages?.(prev => [...prev, { role: 'assistant', content: 'Planning your session…' }]);
+    // before the fetch
+    setChatMessages?.(prev => [...prev, { role:'assistant', content:'Planning your session…', meta:'planning' }]);
 
     const res = await fetch('/api/chat', {
       method: 'POST',
@@ -455,22 +455,6 @@ export default function TodaysWorkoutPage() {
     if (!data?.ok) {
       setChatMessages?.(prev => [...prev, { role: 'assistant', content: data?.error || 'Sorry, I hit an error.' }]);
       return;
-    }
-
-    // If your renderer expects plan.phases, synthesize from workout:
-    if (!Array.isArray(data?.plan?.phases)) {
-      const warm = Array.isArray(data?.workout?.warmup) ? data.workout.warmup : [];
-      const main = Array.isArray(data?.workout?.mainExercises) ? data.workout.mainExercises : [];
-      const fin  = data?.workout?.finisher ? [data.workout.finisher] : [];
-      data.plan = {
-        ...(data.plan || {}),
-        phases: [
-          { phase:'prep',       items: warm.map((i:any)=>({ name:i.name??i.exercise, sets:i.sets, reps:i.reps, duration:i.duration, instruction:i.instruction })) },
-          { phase:'strength',   items: main.map((i:any)=>({ name:i.name??i.exercise, sets:i.sets, reps:i.reps, duration:i.duration, instruction:i.instruction, isAccessory:!!i.isAccessory })) },
-          { phase:'activation', items: [] },
-          { phase:'carry',      items: fin.map((i:any)=>({ name:i.name??i.exercise, sets:i.sets, reps:i.reps, duration:i.duration, instruction:i.instruction })) },
-        ],
-      };
     }
 
     // Update your existing UI state (keep your current setters)
@@ -499,10 +483,10 @@ export default function TodaysWorkoutPage() {
     const gw = llmToGeneratedWorkout(legacy);
     setGeneratedWorkout(gw);
 
-    // Replace the placeholder chat with the coach/intro text
-    const coachText = data.coach ?? data.chatMsg ?? data.message ?? data.name ?? '';
+    // remove planning + any static placeholders, then append coach
+    const coachText = data?.coach ?? data?.chatMsg ?? data?.message ?? data?.name ?? '';
     setChatMessages?.(prev => {
-      const base = prev.filter(m => m?.content && !/Session \(~\d+ min\)/i.test(m.content));
+      const base = prev.filter(m => m?.meta !== 'planning' && !(m?.content && /Session \(~\d+ min\)/i.test(m.content)));
       return [...base, { role:'assistant', content: coachText }];
     });
   }

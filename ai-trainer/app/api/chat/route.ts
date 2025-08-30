@@ -13,6 +13,18 @@ type Split = 'pull'|'push'|'legs'|'upper'|'full'|'hiit';
 function J(status:number, body:any){ return NextResponse.json(body, { status }); }
 const A = Array.isArray;
 
+function makeCoachText(opts: { split: Split; minutes: number; mainLift: string; style: 'default'|'ocho' }) {
+  const tag = opts.style === 'ocho' ? ' (Ocho style)' : '';
+  return `${opts.split.toUpperCase()} day${tag}. Main lift: ${opts.mainLift}. Warm-up includes scap/shoulder prep and thoracic rotation/anti-rotation. We'll fill accessories smartly within ${opts.minutes} minutes and finish with a short cooldown.`;
+}
+
+function normalizeCoach(raw: any, plan: any, workout: any, split: Split, minutes: number, style: 'default'|'ocho') {
+  const s = (raw ?? '').toString().trim();
+  const tooShort = s.length < 20 || /^trainai$/i.test(s);
+  const mainLift = plan?.main_lift || workout?.mainExercises?.[0]?.name || 'primary lift';
+  return tooShort ? makeCoachText({ split, minutes, mainLift, style }) : s;
+}
+
 async function getUserEquipment(userId?: string) {
   const sb = supabaseServer();
   // Try common shapes; keep whichever exists in your DB.
@@ -139,41 +151,75 @@ Schema (strict):
 
     let out = await claudeJSON(system, user);
 
-    // 5) Light validation & auto-repair loop (max 1 repair)
+    // ---- Pattern sanity: main lift must match split semantics (LLM will repair) ----
+    const splitMustMatch: Record<Split, RegExp> = {
+      pull: /(deadlift|hinge|row|pull[-\s]?up|pull[-\s]?down|lat|rear delt|face pull|carry)/i,
+      push: /(bench|press|push[-\s]?up|dip|overhead|triceps)/i,
+      legs: /(squat|lunge|hinge|deadlift|step[-\s]?up|posterior|hamstring|quad|calf)/i,
+      upper: /(press|row|pull[-\s]?down|pull[-\s]?up|rear delt|face pull|overhead|push[-\s]?up)/i,
+      full: /(squat|press|row|hinge|carry)/i,
+      hiit: /(interval|sled|battle rope|sprint|swing|circuit|emom|amrap)/i,
+    };
+
+    let workout = out.workout || {};
+    let plan = { ...(out.plan || {}), split, duration: minutes, name: out?.name || `${split[0].toUpperCase()+split.slice(1)} (~${minutes} min)` };
+
+    // minimal validation
     const issues: string[] = [];
-    const W = out?.workout;
-    if (!W || !A(W.warmup) || !A(W.mainExercises) || !W.mainExercises.length) {
-      issues.push('Invalid workout structure (need warmup[], mainExercises[] with at least one item).');
+    if (!Array.isArray(workout?.warmup)) issues.push('workout.warmup must be an array');
+    if (!Array.isArray(workout?.mainExercises) || !workout.mainExercises.length) issues.push('workout.mainExercises must be a non-empty array');
+
+    // split/movement mismatch? ask the LLM to repair
+    const firstMain = workout?.mainExercises?.[0]?.name || '';
+    if (firstMain && !splitMustMatch[split].test(firstMain)) {
+      issues.push(`Main lift "${firstMain}" does not match split "${split}". Choose a suitable main lift from catalog for ${split}.`);
     }
-    if (!out?.plan?.main_lift && A(W?.mainExercises) && W.mainExercises[0]?.name) {
-      out.plan = { ...(out.plan || {}), main_lift: W.mainExercises[0].name };
-    }
-    // equipment gating hint
-    const names = new Set((catalog||[]).map((r:any)=>String(r.name).toLowerCase()));
+
+    // any item not in catalog? (keeps choices grounded to your DB)
+    const catalogNames = new Set((catalog||[]).map((r:any)=>String(r.name).toLowerCase()));
     const illegal: string[] = [];
-    (W?.warmup||[]).concat(W?.mainExercises||[]).forEach((x:any) => {
+    [...(workout?.warmup||[]), ...(workout?.mainExercises||[])].forEach((x:any) => {
       const n = String(x?.name||'').toLowerCase();
-      if (n && !names.has(n)) illegal.push(x.name);
+      if (n && !catalogNames.has(n)) illegal.push(x.name);
     });
-    if (illegal.length) issues.push(`Found exercises not in catalog: ${[...new Set(illegal)].join(', ')}`);
+    if (illegal.length) {
+      issues.push(`Found exercises not in catalog: ${[...new Set(illegal)].join(', ')}`);
+    }
 
     if (issues.length) {
-      out = await claudeJSON(system + '\nFix the following issues and re-output strictly valid JSON:', { issues, previous: out, equipment, catalog, split, minutes, style });
+      out = await claudeJSON(system + '\nRepair the plan to satisfy these issues and re-emit strict JSON:', {
+        issues, previous: out, equipment, catalog, split, minutes, style
+      });
+      workout = out.workout || workout;
+      plan = { ...(out.plan || plan), split, duration: minutes, name: out?.name || plan.name };
     }
 
-    // 6) Final payload + phases for your UI
-    const workout = out.workout || {};
-    const plan = { ...(out.plan || {}), split, duration: minutes, name: out?.name || `${split[0].toUpperCase()+split.slice(1)} (~${minutes} min)` };
+    // ensure plan.main_lift exists
+    if (!plan.main_lift && Array.isArray(workout?.mainExercises) && workout.mainExercises[0]?.name) {
+      plan.main_lift = workout.mainExercises[0].name;
+    }
+
+    // always attach phases for the existing UI
+    const phases = [
+      { phase: 'prep',       items: Array.isArray(workout?.warmup) ? workout.warmup : [] },
+      { phase: 'strength',   items: Array.isArray(workout?.mainExercises) ? workout.mainExercises : [] },
+      { phase: 'activation', items: [] },
+      { phase: 'carry',      items: workout?.finisher ? [workout.finisher] : [] },
+    ];
+
+    // synthesize a helpful coach paragraph if model gave "TrainAI" or too short
+    const coach = normalizeCoach(out?.coach, plan, workout, split, minutes, style);
+
     const payload = {
       ok: true,
       name: out?.name || plan.name,
       message: out?.message || plan.name,
-      coach: out?.coach || `${split.toUpperCase()} session locked. Main lift: ${String(plan.main_lift || workout?.mainExercises?.[0]?.name || '')}.`,
-      plan: { ...plan, phases: phasesFromWorkout(workout) },
+      coach,
+      plan: { ...plan, phases },
       workout
     };
 
-    return J(200, payload);
+    return NextResponse.json(payload, { status: 200 });
   } catch (err:any) {
     console.error('api/chat fatal', err?.stack || err);
     return J(200, { ok:false, error: err?.message || 'Internal server error' });
