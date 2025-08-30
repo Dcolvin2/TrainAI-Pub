@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { planWorkout, type LegacyWorkout } from '@/lib/planWorkout';
 import { normalizeWorkout, type WorkoutShape } from '@/utils/workoutNormalize';
 import { getUserEquipment } from '@/lib/getUserEquipment';
+import WorkoutDetail from '@/app/components/workout/WorkoutDetail';
 
 interface WorkoutStarterProps {
   userId: string;
@@ -302,50 +303,8 @@ export default function WorkoutStarter({ userId, onWorkoutSelected }: WorkoutSta
       )}
 
       {/* Workout render */}
-      {view && (
-        <section className="rounded-xl bg-slate-900 p-4 mb-4">
-          <h3 className="text-slate-100 font-semibold mb-2">Workout</h3>
-
-          <h4 className="text-slate-300">Warm-up</h4>
-          <ul className="mb-3 list-disc pl-6">
-            {(view?.warmup ?? []).map((it, i) => (
-              <li key={`wu-${i}`}>
-                {it.name}
-                {it.sets ? ` – ${it.sets} sets` : ''}
-                {it.reps ? ` x ${it.reps}` : ''}
-                {it.duration_seconds ? ` (${Math.round(it.duration_seconds/60)} min)` : ''}
-              </li>
-            ))}
-          </ul>
-
-          <h4 className="text-slate-300">Main</h4>
-          <ul className="mb-3 list-disc pl-6">
-            {(view?.main ?? []).map((it, i) => (
-              <li key={`mn-${i}`}>
-                {it.name}
-                {it.sets ? ` – ${it.sets} sets` : ''}
-                {it.reps ? ` x ${it.reps}` : ''}
-                {it.duration_seconds ? ` (${Math.round(it.duration_seconds/60)} min)` : ''}
-              </li>
-            ))}
-          </ul>
-
-          <h4 className="text-slate-300">Cooldown</h4>
-          <ul className="mb-3 list-disc pl-6">
-            {(view?.cooldown ?? []).map((it, i) => (
-              <li key={`cd-${i}`}>
-                {it.name}
-                {it.duration_seconds ? ` (${Math.round(it.duration_seconds/60)} min)` : ''}
-              </li>
-            ))}
-          </ul>
-
-          {totalItems > 0 ? (
-            <button className="btn btn-primary">Start Workout</button>
-          ) : (
-            <div className="text-red-400 text-sm">No items generated. Check the debug drawer and try again.</div>
-          )}
-        </section>
+      {resp && (
+        <WorkoutDetail apiResponse={resp} title={resp.name} />
       )}
       
       {/* Quick options for other styles */}

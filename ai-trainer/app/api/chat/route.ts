@@ -33,11 +33,11 @@ export async function POST(req: NextRequest) {
     if (llmIntent.intent === 'nike') {
       const resolved = await resolveNikeFromNL(text, llmIntent.nike);
       devlog('router.nike.resolved', resolved.ok ? { rows: resolved.rows?.length } : resolved);
-      if (resolved.ok) {
+      if (resolved.ok && Array.isArray(resolved.rows)) {
         const wk = rowsToWorkout(resolved.rows);
         return respond({ plan: wk.plan, workout: wk.workout }, { route: 'nike-nl', minutes });
       }
-      // Low confidence / not found: ask for confirmation instead of guessing
+      // Low confidence / not found / no rows: ask for confirmation instead of guessing
       return NextResponse.json({
         ok: true,
         needsConfirmation: true,

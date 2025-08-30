@@ -1,7 +1,11 @@
 import { supabase } from '@/lib/supabaseClient';
 import { extractNikeHints } from '@/lib/nlpLite';
 
-export async function resolveNikeFromNL(nl: string, llmGuess?: { index?: number; type?: string; descriptors?: string[]; confidence: number }) {
+type NikeResolved =
+  | { ok: true; rows: any[] }
+  | { ok: false; reason: string; suggestion?: any };
+
+export async function resolveNikeFromNL(nl: string, llmGuess?: { index?: number; type?: string; descriptors?: string[]; confidence: number }): Promise<NikeResolved> {
   // Heuristics from text
   const { index, typeHint, keywords } = extractNikeHints(nl);
 
