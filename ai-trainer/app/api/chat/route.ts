@@ -118,6 +118,9 @@ export async function POST(req: NextRequest) {
       debug?: boolean;
     };
 
+    // identify user once for the whole handler
+    const userId = (body?.userId ?? req.headers.get('x-user-id') ?? '') as string;
+
     const debug: DebugLog = {};
     const dbg = wantDebug(req, body);
     dpush(debug, 'incoming', {
@@ -129,7 +132,6 @@ export async function POST(req: NextRequest) {
     });
 
     // 1) ensure we know the user & equipment
-    const userId = body.userId || req.headers.get('x-user-id') || '';
     const equipment =
       Array.isArray(body.equipment) && body.equipment.length
         ? body.equipment
@@ -319,9 +321,6 @@ Schema (strict):
         else plan.phases.push({ phase: 'cooldown', items });
       }
     }
-
-    // who is the user
-    const userId = body.userId || req.headers.get('x-user-id') || '';
 
     // which split/minutes & main lift did we end up with?
     const splitOut: string =
