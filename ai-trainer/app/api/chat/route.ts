@@ -13,6 +13,20 @@ type Split = 'pull'|'push'|'legs'|'upper'|'full'|'hiit';
 function J(status:number, body:any){ return NextResponse.json(body, { status }); }
 const A = Array.isArray;
 
+// Debug accumulator — returned only when body.debug === true or ?debug=1 is sent
+type DebugLog = Record<string, any>;
+function dpush(d: DebugLog, key: string, val: any) {
+  try { d[key] = val; } catch {}
+}
+function wantDebug(req: Request, body: any) {
+  try {
+    // @ts-ignore
+    const u = new URL(req.url);
+    if (u.searchParams.get('debug') === '1') return true;
+  } catch {}
+  return !!body?.debug;
+}
+
 function synthCoach(raw: any, plan: any, workout: any, split: Split, minutes: number, style: 'default'|'ocho') {
   const s = String(raw || '').trim();
   if (s.length >= 20 && !/^trainai$/i.test(s)) return s;
@@ -87,11 +101,23 @@ export async function POST(req: NextRequest) {
       equipment?: string[];
       userId?: string;
       style?: string | null; // e.g., "ocho"
+      debug?: boolean;
     };
+
+    const debug: DebugLog = {};
+    const dbg = wantDebug(req, body);
+    dpush(debug, 'incoming', {
+      hasMessages: Array.isArray(body?.messages),
+      minutes: body?.minutes,
+      split: body?.split,
+      style: body?.style,
+      equipmentProvidedCount: Array.isArray(body?.equipment) ? body.equipment.length : 0,
+    });
 
     // 1) Equipment: client > DB
     let equipment = A(body.equipment) ? body.equipment! : await getUserEquipment(body.userId);
     equipment = [...new Set(equipment.map(s => String(s).trim()))];
+    dpush(debug, 'equipment', { final: equipment, count: equipment.length });
 
     // 2) Classify intent (LLM) — *no* hardcoded rules
     const classifierSystem =
@@ -106,9 +132,18 @@ Default: {"split":"pull","minutes":45,"style":"default"} if unclear.`;
     const minutes = Number(body.minutes || intents?.minutes || 45);
     const style = (body.style || intents?.style || 'default') as 'default'|'ocho';
     const time = budget(minutes);
+    dpush(debug, 'classified', { split, minutes, style });
 
     // 3) Grounding catalog from your DB
-    const catalog = await getCatalog(split, equipment);
+    let catalog = await getCatalog(split, equipment);
+    dpush(debug, 'catalog', { count: catalog.length, sample: catalog.slice(0, 8).map(r => r.name) });
+
+    // Optional: fallback if catalog too small
+    if (catalog.length < 10) {
+      dpush(debug, 'catalogFallback', 'split filter too narrow; using equipment-only catalog');
+      // For now, we'll keep the current catalog but log the fallback
+      // In the future, you could modify getCatalog to accept a flag for equipment-only filtering
+    }
 
     // 4) Ask the LLM to PLAN everything using only your catalog/equipment
     const system =
@@ -147,50 +182,74 @@ Schema (strict):
 
     let out = await claudeJSON(system, user);
 
-    // ---- validate & repair with LLM (no hardcoding) ----
+    // ---- Pass 1 result ----
     let workout = out?.workout || {};
     let plan = { ...(out?.plan || {}), split, duration: minutes, name: out?.name || `${split[0].toUpperCase()+split.slice(1)} (~${minutes} min)` };
 
-    const catalogNames = new Set((catalog||[]).map((r:any)=>String(r.name).toLowerCase()));
+    dpush(debug, 'firstPass', {
+      warm: Array.isArray(out?.workout?.warmup) ? out.workout.warmup.length : 0,
+      main: Array.isArray(out?.workout?.mainExercises) ? out.workout.mainExercises.length : 0,
+      coachLen: (out?.coach || '').length,
+    });
+
+    const namesSet = new Set((catalog || []).map((r:any) => String(r.name).toLowerCase()));
     const issues: string[] = [];
 
-    // structure
+    // Structural checks
     if (!Array.isArray(workout?.warmup)) issues.push('workout.warmup must be an array');
     if (!Array.isArray(workout?.mainExercises) || workout.mainExercises.length === 0) issues.push('workout.mainExercises must be a non-empty array');
 
-    // keep choices grounded to your DB catalog
-    [...(workout?.warmup||[]), ...(workout?.mainExercises||[])].forEach((x:any) => {
-      const n = String(x?.name||'').toLowerCase();
-      if (n && !catalogNames.has(n)) issues.push(`exercise not in catalog: ${x.name}`);
+    // Catalog grounding
+    const notInCatalog: string[] = [];
+    [...(workout?.warmup || []), ...(workout?.mainExercises || [])].forEach((x:any) => {
+      const n = String(x?.name || '').toLowerCase();
+      if (n && !namesSet.has(n)) notInCatalog.push(x.name);
     });
+    if (notInCatalog.length) issues.push(`Exercises not in catalog: ${[...new Set(notInCatalog)].join(', ')}`);
 
-    // main must be the first item and isAccessory:false
-    if (Array.isArray(workout?.mainExercises) && workout.mainExercises.length) {
-      const m0 = workout.mainExercises[0];
-      if (m0?.isAccessory) issues.push('first mainExercises item must have "isAccessory": false');
-    }
-
-    // If anything off, ask the model to repair its own JSON using the same catalog/equipment
+    // If any issues → Pass 2 (repair)
     if (issues.length) {
-      out = await claudeJSON(system + '\nRepair your previous JSON to satisfy these issues. Keep using only names from "catalog". Re-emit strict JSON.', {
-        issues, previous: out, equipment, catalog, split, minutes, style,
-      });
+      dpush(debug, 'repairIssues', issues);
+      out = await claudeJSON(
+        system + '\nFix the issues and re-emit strict JSON using only names from "catalog". ' +
+        'Ensure "workout.mainExercises" has ONE primary lift first (isAccessory:false) and 2–4 accessories after (isAccessory:true).',
+        { issues, previous: out, equipment, catalog, split, minutes, style }
+      );
       workout = out?.workout || workout;
       plan = { ...(out?.plan || plan), split, duration: minutes, name: out?.name || plan.name };
+      dpush(debug, 'secondPass', {
+        warm: Array.isArray(workout?.warmup) ? workout.warmup.length : 0,
+        main: Array.isArray(workout?.mainExercises) ? workout.mainExercises.length : 0,
+      });
     }
 
-    // ensure plan.main_lift exists and first main is non-accessory
-    if (!plan.main_lift && Array.isArray(workout?.mainExercises) && workout.mainExercises[0]?.name) {
-      plan.main_lift = workout.mainExercises[0].name;
+    // If still no main → Pass 3 (strong repair)
+    if (!Array.isArray(workout?.mainExercises) || workout.mainExercises.length === 0) {
+      const strongIssues = ['mainExercises is empty — choose an appropriate main lift from catalog for the split and equipment, then add 2–4 accessories from catalog.'];
+      out = await claudeJSON(
+        system + '\nYour previous JSON omitted mainExercises. You MUST include it now as described.',
+        { issues: strongIssues, previous: out, equipment, catalog, split, minutes, style }
+      );
+      workout = out?.workout || workout;
+      plan = { ...(out?.plan || plan), split, duration: minutes, name: out?.name || plan.name };
+      dpush(debug, 'thirdPass', {
+        warm: Array.isArray(workout?.warmup) ? workout.warmup.length : 0,
+        main: Array.isArray(workout?.mainExercises) ? workout.mainExercises.length : 0,
+      });
     }
+
+    // Normalize main flags and plan.main_lift
     if (Array.isArray(workout?.mainExercises) && workout.mainExercises.length) {
       workout.mainExercises = [
         { ...(workout.mainExercises[0] || {}), isAccessory: false },
         ...workout.mainExercises.slice(1).map((x:any) => ({ ...x, isAccessory: true })),
       ];
     }
+    if (!plan.main_lift && Array.isArray(workout?.mainExercises) && workout.mainExercises[0]?.name) {
+      plan.main_lift = workout.mainExercises[0].name;
+    }
 
-    // attach phases for your current UI
+    // Always attach plan.phases and synthesize a coach string if needed
     const phases = [
       { phase: 'prep',       items: Array.isArray(workout?.warmup) ? workout.warmup : [] },
       { phase: 'strength',   items: Array.isArray(workout?.mainExercises) ? workout.mainExercises : [] },
@@ -198,7 +257,6 @@ Schema (strict):
       { phase: 'carry',      items: workout?.finisher ? [workout.finisher] : [] },
     ];
 
-    // final payload with a guaranteed coach paragraph
     const payload = {
       ok: true,
       name: out?.name || plan.name,
@@ -207,7 +265,7 @@ Schema (strict):
       plan: { ...plan, phases },
       workout,
     };
-
+    if (dbg) (payload as any).debug = debug;
     return NextResponse.json(payload, { status: 200 });
   } catch (err:any) {
     console.error('api/chat fatal', err?.stack || err);
