@@ -324,15 +324,15 @@ Schema (strict):
 
     // which split/minutes & main lift did we end up with?
     const splitOut: string =
-      raw?.plan?.split || body?.split || 'full';
+      (plan as any)?.split || body?.split || 'full';
     const minutesOut: number =
-      Number(raw?.plan?.duration || body?.minutes || 45);
+      Number((plan as any)?.duration ?? body?.minutes ?? 45);
 
     // prefer explicit field, else first main exercise
     const mainLiftName: string =
-      (raw?.plan?.main_lift) ||
-      (raw?.workout?.mainExercises?.[0]?.name) ||
-      (raw?.workout?.main?.[0]?.name) ||
+      (plan as any)?.main_lift ||
+      workout?.mainExercises?.[0]?.name ||
+      (workout as any)?.main?.[0]?.name ||
       'Main Lift';
 
     // fetch recent history for that lift (avoid name collision)
@@ -349,9 +349,9 @@ Schema (strict):
       prefs,
     });
 
-    // attach or override coach text
+    // attach/override coach text (return this field)
+    if (plan) (plan as any).coach = smartCoach;
     const coach = smartCoach;
-    if (plan) plan.coach = smartCoach;
 
     // Final payload
     const payload = {
