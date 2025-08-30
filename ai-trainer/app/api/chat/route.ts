@@ -287,7 +287,7 @@ Schema (strict):
       ],
     };
 
-    // ---- Build a cooldown candidate list from all shapes the LLM might use
+    // —— Gather candidates from all shapes
     const fromWorkoutArray = Array.isArray((workout as any)?.cooldown)
       ? (workout as any).cooldown
       : [];
@@ -299,19 +299,15 @@ Schema (strict):
       : [];
     const initialCooldown = [...fromWorkoutArray, ...fromPhases, ...fromFinisher];
 
-    // ---- Sanitize to stretches only, min 2, max 3
+    // —— Sanitize to 2–3 stretches (never HIIT/strength)
     const cdHolder = await sanitizeCooldown({ cooldown: initialCooldown }, userId, prefs);
     const sanitizedCooldown: any[] = Array.isArray(cdHolder?.cooldown) ? cdHolder.cooldown : [];
 
-    // ---- Reflect back into response everywhere
+    // —— Reflect into response (array + phase + legacy finisher)
     if (sanitizedCooldown.length) {
-      // for modern clients
-      (workout as any).cooldown = sanitizedCooldown;
+      (workout as any).cooldown = sanitizedCooldown;     // modern clients
+      workout.finisher = sanitizedCooldown[0];           // legacy single
 
-      // for legacy clients that only read a single "finisher"
-      workout.finisher = sanitizedCooldown[0];
-
-      // ensure plan.phases has the full cooldown list
       if (Array.isArray(plan?.phases)) {
         const items = sanitizedCooldown.map((i: any) => ({
           name: i.name,
@@ -325,6 +321,12 @@ Schema (strict):
         else plan.phases.push({ phase: 'cooldown', items });
       }
     }
+
+    // —— Add debug so you can verify from DevTools
+    debug.cooldown = {
+      initial: initialCooldown.map((i: any) => i?.name).filter(Boolean),
+      sanitized: sanitizedCooldown.map((i: any) => i?.name).filter(Boolean),
+    };
 
     // which split/minutes & main lift did we end up with?
     const splitOut: string =
