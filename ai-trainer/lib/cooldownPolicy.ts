@@ -6,13 +6,16 @@ const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const sb = createClient(url, key);
 
-// HIIT / strength we don't want in cooldown
-const HI = /(burpee|sprint|thruster|box\s*jump|mountain\s*climber|high\s*knees|jumping\s*jacks|swing|thruster|clean|snatch)/i;
-// Stretches / mobility we want
+// drop HIIT/strength from cooldown
+const HI = /(burpee|sprint|thruster|box\s*jump|mountain\s*climber|high\s*knees|jumping\s*jacks|swing|clean|snatch|press|raise|curl|row)/i;
+// keep only stretches/mobility/breathing
 const STRETCH = /(stretch|mobility|pose|pigeon|child'?s|hamstring|quad|calf|lat|pec|hip\s*flexor|thoracic|breathing|openers|thread\s*the\s*needle|world'?s\s*greatest)/i;
 
-export async function sanitizeCooldown(holder: { cooldown: any[] }, _userId: string, prefs: UserPrefs) {
-  // Default to stretch-only unless the user explicitly opts out
+export async function sanitizeCooldown(
+  holder: { cooldown: any[] },
+  _userId: string,
+  prefs: UserPrefs
+) {
   const desired = (prefs?.cooldown ?? 'stretch_only') as 'stretch_only'|'stretch_priority'|'any';
   const banned = (prefs?.banned_exercises || []).map(x => x.toLowerCase());
 
@@ -24,18 +27,16 @@ export async function sanitizeCooldown(holder: { cooldown: any[] }, _userId: str
     if (!n) continue;
     if (banned.some(b => n.toLowerCase().includes(b))) continue;
     if (HI.test(n)) continue;
-    // require stretches unless user explicitly says "any"
-    if (desired !== 'any' && !STRETCH.test(n)) continue;
-    keep.push({ ...it });
+    if (desired !== 'any' && !STRETCH.test(n)) continue; // require stretch/mobility by default
+    keep.push({ ...it, duration: it?.duration || '45–60s' });
   }
 
-  // Enough good items? Trim to 2–3
   if (keep.length >= 2) {
     holder.cooldown = keep.slice(0, 3);
     return holder;
   }
 
-  // Backfill from catalog first
+  // Fill from catalog
   const { data } = await sb.from('exercises').select('name').limit(80);
   const pool = (data || [])
     .map(r => String(r.name || ''))
@@ -48,7 +49,7 @@ export async function sanitizeCooldown(holder: { cooldown: any[] }, _userId: str
       fills.push({ name: n, duration: '45–60s' });
   }
 
-  // Add safe generics if still short
+  // Safe generic fallbacks
   const generics = [
     { name: "Child's Pose", duration: '45–60s' },
     { name: 'Doorway Pec Stretch', duration: '45–60s' },
@@ -63,7 +64,6 @@ export async function sanitizeCooldown(holder: { cooldown: any[] }, _userId: str
       fills.push(g);
   }
 
-  // Final list: 2–3 items
   holder.cooldown = [...keep, ...fills].slice(0, 3);
   return holder;
 }
