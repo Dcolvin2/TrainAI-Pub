@@ -287,45 +287,73 @@ Schema (strict):
       ],
     };
 
-    // —— Gather candidates from all shapes
-    const fromWorkoutArray = Array.isArray((workout as any)?.cooldown)
-      ? (workout as any).cooldown
-      : [];
+    // --- helper to collect muscles from main exercise names
+    function inferTargetsFromNames(names: string[]): string[] {
+      const S = names.join(' ').toLowerCase();
+      const out = new Set<string>();
+      const add = (k:string)=>out.add(k);
+
+      if (/(rdl|hamstring|leg\s*curl|good\s*morning)/i.test(S)) add('hamstring');
+      if (/(quad|squat|split\s*squat|front\s*squat|lunge|leg\s*press)/i.test(S)) add('quad');
+      if (/(glute|hip\s*thrust|bridge|hip\s*extension|step-?up)/i.test(S)) add('glute');
+      if (/(calf|gastroc|soleus)/i.test(S)) add('calf');
+      if (/(hip\s*flex|psoas|adductor|abductor|groin)/i.test(S)) add('hip flexor');
+      if (/(lat|pull-?down|row|pull-?up|chin-?up|rack\s*pull|deadlift|trap\s*bar)/i.test(S)) add('lat'), add('upper back');
+      if (/(rear\s*delt|face\s*pull|band\s*pull-?apart|shrug|trap)/i.test(S)) add('upper back');
+      if (/(bench|press|push-?up|fly|dip|pec)/i.test(S)) add('pec'), add('shoulder');
+      if (/(ohp|overhead|military|shoulder\s*press|lateral|front\s*raise)/i.test(S)) add('shoulder');
+      if (/(tricep|pushdown|skull-?crusher|dip)/i.test(S)) add('triceps');
+      if (/(bicep|curl|chin-?up)/i.test(S)) add('biceps');
+      if (/(anti-?rotation|pallof|carry|plank|rollout|dead\s*bug)/i.test(S)) add('core'), add('hip flexor');
+      return Array.from(out);
+    }
+
+    // derive split targets
+    const splitKey = String(((plan as any)?.split || body?.split || 'full')).toLowerCase();
+    const splitTargets: Record<string,string[]> = {
+      legs: ['hamstring','quad','glute','calf','hip flexor','thoracic'],
+      pull: ['lat','upper back','biceps','thoracic'],
+      push: ['pec','shoulder','triceps','thoracic'],
+      upper:['pec','shoulder','triceps','lat','upper back','biceps','thoracic'],
+      full: ['hamstring','quad','glute','hip flexor','lat','upper back','pec','shoulder','triceps','biceps','thoracic'],
+      hiit: ['hip flexor','hamstring','quad','calf','thoracic']
+    };
+
+    const namesMain = (workout?.mainExercises || []).map((i:any)=> String(i?.name || i?.exercise || '')).filter(Boolean);
+    const inferredTargets = inferTargetsFromNames(namesMain);
+    const targets = Array.from(new Set([...(splitTargets[splitKey]||[]), ...inferredTargets]));
+
+    // ---- Build candidates from all shapes (same as you had)
+    const fromWorkoutArray = Array.isArray((workout as any)?.cooldown) ? (workout as any).cooldown : [];
     const fromFinisher = workout?.finisher ? [workout.finisher] : [];
     const fromPhases = Array.isArray(plan?.phases)
-      ? plan.phases
-          .filter((p: any) => /cooldown|carry|conditioning/i.test(String(p?.phase)))
-          .flatMap((p: any) => (Array.isArray(p?.items) ? p.items : []))
+      ? plan.phases.filter((p:any)=>/cooldown|carry|conditioning/i.test(String(p?.phase)))
+          .flatMap((p:any)=>Array.isArray(p?.items)?p.items:[])
       : [];
     const initialCooldown = [...fromWorkoutArray, ...fromPhases, ...fromFinisher];
 
-    // —— Sanitize to 2–3 stretches (never HIIT/strength)
-    const cdHolder = await sanitizeCooldown({ cooldown: initialCooldown }, userId, prefs);
+    // ---- Sanitize to target-aware stretches (2–3)
+    const cdHolder = await sanitizeCooldown({ cooldown: initialCooldown }, userId, prefs, targets);
     const sanitizedCooldown: any[] = Array.isArray(cdHolder?.cooldown) ? cdHolder.cooldown : [];
 
-    // —— Reflect into response (array + phase + legacy finisher)
+    // ---- Reflect back everywhere (array + phase + legacy)
     if (sanitizedCooldown.length) {
-      (workout as any).cooldown = sanitizedCooldown;     // modern clients
-      workout.finisher = sanitizedCooldown[0];           // legacy single
+      (workout as any).cooldown = sanitizedCooldown;
+      workout.finisher = sanitizedCooldown[0];
 
       if (Array.isArray(plan?.phases)) {
-        const items = sanitizedCooldown.map((i: any) => ({
-          name: i.name,
-          duration: i.duration || '45–60s',
-          instruction: i.instruction,
-        }));
-        const idx = plan.phases.findIndex(
-          (p: any) => String(p?.phase || '').toLowerCase() === 'cooldown'
-        );
+        const items = sanitizedCooldown.map((i:any)=>({ name:i.name, duration:i.duration || '45–60s', instruction:i.instruction }));
+        const idx = plan.phases.findIndex((p:any)=>String(p?.phase||'').toLowerCase()==='cooldown');
         if (idx >= 0) plan.phases[idx].items = items;
-        else plan.phases.push({ phase: 'cooldown', items });
+        else plan.phases.push({ phase:'cooldown', items });
       }
     }
 
-    // —— Add debug so you can verify from DevTools
+    // (optional) debug
     debug.cooldown = {
-      initial: initialCooldown.map((i: any) => i?.name).filter(Boolean),
-      sanitized: sanitizedCooldown.map((i: any) => i?.name).filter(Boolean),
+      targets,
+      initial: initialCooldown.map((i:any)=>i?.name).filter(Boolean),
+      sanitized: sanitizedCooldown.map((i:any)=>i?.name).filter(Boolean),
     };
 
     // which split/minutes & main lift did we end up with?
