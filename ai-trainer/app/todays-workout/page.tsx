@@ -342,7 +342,7 @@ export default function TodaysWorkoutPage() {
             // Show just the modification message
             setChatMessages(prev => [...prev, {
               role: 'assistant',
-              content: data.message
+              content: data.chatMsg || data.message
             }]);
             
           } else if (data.workout && !data.isModification) {
@@ -359,11 +359,11 @@ export default function TodaysWorkoutPage() {
                 gw.name ||          // last resort
                 'Workout';
 
-              // Body: prefer coach text, otherwise format the plan
+              // Body: prefer explicit chatMsg (LLM-normalized summary), then coach text, then format the plan
               const body =
-                data?.coach ||                      // if LLM wrote nice text
-                data?.message ||                    // fallback to message
-                asCoachMessage(gw, title, gw.duration); // format the plan
+                data?.chatMsg ||
+                data?.coach ||
+                asCoachMessage(gw, title, gw.duration);
 
               setChatMessages(prev => [
                 ...prev,
@@ -375,7 +375,7 @@ export default function TodaysWorkoutPage() {
             // Regular message without workout
             setChatMessages(prev => [...prev, {
               role: 'assistant',
-              content: data.message || data.response
+              content: data.chatMsg || data.message || data.response
             }]);
           }
           
@@ -561,69 +561,7 @@ export default function TodaysWorkoutPage() {
               </div>
             )}
 
-            {/* Workout render - single source of truth */}
-            {normalized && (
-              <section className="rounded-xl bg-slate-900 p-4 mb-4">
-                <h3 className="text-slate-100 font-semibold mb-2">{normalized.title}</h3>
-
-                {/* Warm-up */}
-                {normalized.warmup.length > 0 && (
-                  <>
-                    <h4 className="text-slate-300">Warm-up</h4>
-                    <ul className="mb-3 list-disc pl-6">
-                      {normalized.warmup.map((item, i) => (
-                        <li key={`wu-${i}`}>
-                          {item.name} – {item.sets} x {item.reps}
-                          {item.duration && ` (${item.duration})`}
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                )}
-
-                {/* Main */}
-                {normalized.main.length > 0 && (
-                  <>
-                    <h4 className="text-slate-300">Main</h4>
-                    <ul className="mb-3 list-disc pl-6">
-                      {normalized.main.map((item, i) => (
-                        <li key={`mn-${i}`}>
-                          {item.name}
-                          {item.isMain && (
-                            <span className="ml-2 px-2 py-0.5 rounded-md bg-emerald-600/20 text-emerald-300 text-xs border border-emerald-700/40">
-                              Main Lift
-                            </span>
-                          )}
-                          – {item.sets} x {item.reps}
-                          {item.duration && ` (${item.duration})`}
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                )}
-
-                {/* Cooldown */}
-                {normalized.cooldown.length > 0 && (
-                  <>
-                    <h4 className="text-slate-300">Cooldown</h4>
-                    <ul className="mb-3 list-disc pl-6">
-                      {normalized.cooldown.map((item, i) => (
-                        <li key={`cd-${i}`}>
-                          {item.name} – {item.sets} x {item.reps}
-                          {item.duration && ` (${item.duration})`}
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                )}
-
-                {totalItems > 0 ? (
-                  <button className="btn btn-primary">Start Workout</button>
-                ) : (
-                  <div className="text-red-400 text-sm">No items generated. Check the debug drawer and try again.</div>
-                )}
-              </section>
-            )}
+            {/* Preview block removed to avoid duplicate rendering. The logger below is now the single source of truth. */}
 
             {/* Generated Workout Display */}
             {generatedWorkout && (
