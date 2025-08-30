@@ -21,12 +21,15 @@ type PhaseKey =
 
 type Item = {
   name: string;
-  sets?: number;
-  reps?: string | number;
-  duration_seconds?: number;
+  // allow either number or string since the model sometimes sends "30s" etc.
+  sets?: number | string;
+  reps?: number | string;
+  duration?: number | string;       // <-- add (you use i.duration)
+  duration_seconds?: number;        // optional, some schemas use this
   instruction?: string | null;
   rest_seconds?: number | null;
   is_main?: boolean;
+  isAccessory?: boolean;            // <-- add (you read i.isAccessory)
 };
 
 // Renamed types to avoid duplicate identifier errors
@@ -288,10 +291,33 @@ function normalizePlan(input: any): { plan: Plan; warnings: string[] } {
 function toLegacyWorkout(plan: ChatPlan) {
   const get = (k: PlanPhase["phase"]) => plan.phases.find(p => p.phase === k)?.items ?? [];
   const warmup = get("prep").map(i => ({ name: i.name, sets: i.sets ?? "1", reps: i.reps ?? "10-15", instruction: i.instruction ?? "" }));
-  const mainPrim = get("strength").map(i => ({ name: i.name, sets: i.sets ?? "3", reps: i.reps ?? (i.duration ?? "8-12"), instruction: i.instruction ?? "", isAccessory: !!i.isAccessory }));
+  
+  // Make mapping resilient to either duration or duration_seconds
+  const mainPrim = get("strength").map(i => {
+    const dur = (i.duration ?? (typeof i.duration_seconds === 'number' ? `${i.duration_seconds}s` : undefined));
+    return { 
+      name: i.name, 
+      sets: i.sets ?? '3', 
+      reps: i.reps ?? (dur ?? '8-12'), 
+      instruction: i.instruction ?? '', 
+      isAccessory: !!i.isAccessory 
+    };
+  });
+  
   const acc = get("activation").map(i => ({ name: i.name, sets: i.sets ?? "3", reps: i.reps ?? "10-15", instruction: i.instruction ?? "", isAccessory: true }));
   const carry = get("carry_block").map(i => ({ name: i.name, sets: i.sets ?? "3", reps: i.reps ?? "10-15", instruction: i.instruction ?? "", isAccessory: true }));
-  const cond = get("conditioning").map(i => ({ name: i.name, sets: i.sets ?? "4", reps: i.reps ?? (i.duration ?? "30s"), instruction: i.instruction ?? "", isAccessory: true }));
+  
+  const cond = get("conditioning").map(i => {
+    const dur = (i.duration ?? (typeof i.duration_seconds === 'number' ? `${i.duration_seconds}s` : undefined));
+    return { 
+      name: i.name, 
+      sets: i.sets ?? '4', 
+      reps: i.reps ?? (dur ?? '30s'), 
+      instruction: i.instruction ?? '', 
+      isAccessory: true 
+    };
+  });
+  
   const cooldown = get("cooldown").map(i => ({ name: i.name, duration: i.duration ?? (i.reps || "60s"), instruction: i.instruction ?? "" }));
   return { warmup, main: [...mainPrim, ...acc, ...carry, ...cond], cooldown };
 }
@@ -299,7 +325,7 @@ function toLegacyWorkout(plan: ChatPlan) {
 /** Pretty "coach" narrative */
 function formatCoach(plan: ChatPlan, workout: ReturnType<typeof toLegacyWorkout>): string {
   const title = plan?.name || "Planned Session";
-  const minutes = S(plan?.est_total_minutes ?? plan?.duration_min);
+  const minutes = S(plan?.duration_min);
   const lines: string[] = [];
   lines.push(`${title}${minutes ? ` — ${minutes} min` : ""}`);
 
