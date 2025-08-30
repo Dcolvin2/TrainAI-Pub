@@ -1,7 +1,7 @@
 'use client'
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import { supabase } from '@/lib/supabaseClient'
 import { WorkoutTimer } from './WorkoutTimer'
 import { WorkoutExerciseCard, LogSet } from './WorkoutExerciseCard'
 import { normalizeWorkout, WorkoutItem } from '@/lib/normalizeWorkout'
@@ -80,10 +80,7 @@ interface UserContext {
   recentWorkouts: string[]
 }
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+
 
 export default function WorkoutChatBuilder({ userId }: { userId: string }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])

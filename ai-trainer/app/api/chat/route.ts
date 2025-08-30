@@ -1,112 +1,156 @@
+// app/api/chat/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { classifyWithLLM } from '@/lib/intentLLM';
-import { resolveNikeFromNL, rowsToWorkout } from '@/lib/nikeResolver';
-import { extractNikeHints } from '@/lib/nlpLite';
-import { buildRuleBasedBackup } from '@/lib/backupWorkouts';
-import { devlog } from '@/lib/devlog';
-import { planWorkout } from '@/lib/planWorkout';
+
+export const runtime = 'nodejs';          // do NOT run on Edge (process.env)
+export const dynamic = 'force-dynamic';   // no caching; always compute
+
+type Msg = { role: 'user' | 'assistant' | 'system'; content: string };
+
+function json(status: number, body: any) {
+  return NextResponse.json(body, { status });
+}
+
+async function callClaude(system: string, user: unknown) {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) throw new Error('Server not configured (ANTHROPIC_API_KEY missing)');
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-3-5-sonnet-20240620',
+      max_tokens: 1200,
+      system,
+      messages: [{ role: 'user', content: JSON.stringify(user) }],
+    }),
+  });
+
+  const ct = resp.headers.get('content-type') || '';
+  const raw = await resp.text();
+  if (!ct.includes('application/json')) {
+    console.error('Claude non-JSON', resp.status, raw.slice(0, 200));
+    throw new Error(`Claude error ${resp.status}`);
+  }
+  const data = JSON.parse(raw);
+  const text: string = data?.content?.[0]?.text || '';
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { text }; // tolerate non-JSON; upstream normalizer will handle
+  }
+}
 
 export async function POST(req: NextRequest) {
+  const reqId = Math.random().toString(36).slice(2, 8);
   try {
-    const body = await req.json();
-    const split = (body?.split ?? '').toLowerCase();          // buttons
-    const minutes = Number(body?.minutes ?? 45);
-    const equipment: string[] = Array.isArray(body?.equipment) ? body.equipment : [];
-    const text: string = (body?.text ?? '').trim();           // chat box
-    const userId = body?.userId || body?.user;
-
-    if (!userId) {
-      return NextResponse.json({ ok: false, error: 'Missing userId' }, { status: 400 });
+    const ct = req.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+      return json(200, { ok: false, error: 'content-type must be application/json' });
     }
 
-    // 1) Button path is authoritative
-    if (split) {
-      devlog('router.button', { split, minutes, equipmentCount: equipment.length });
-      const result = await generateFromLLM({ userId, split, minutes, equipment });
-      return respond(result, { route: result.usedBackup ? 'backup' : 'llm', split, minutes });
+    const body = (await req.json()) as { messages?: Msg[]; minutes?: number; split?: string; equipment?: string[] };
+    const messages = Array.isArray(body?.messages) ? body!.messages : [];
+    if (messages.length === 0) {
+      return json(200, { ok: false, error: 'messages[] required' });
     }
+    const lastUser = [...messages].reverse().find(m => m.role === 'user')?.content?.trim() || '';
 
-    // 2) Natural language classifier
-    const llmIntent = await classifyWithLLM(text);
-    devlog('router.classify', llmIntent);
+    // Special-case shortcut (e.g., "joe holder ocho style")
+    const isJoeHolder = /^joe\s+holder/i.test(lastUser);
 
-    if (llmIntent.intent === 'nike') {
-      const resolved = await resolveNikeFromNL(text, llmIntent.nike);
-      devlog('router.nike.resolved', resolved.ok ? { rows: resolved.rows?.length } : resolved);
-      if (resolved.ok && Array.isArray(resolved.rows)) {
-        const wk = rowsToWorkout(resolved.rows);
-        return respond({ plan: wk.plan, workout: wk.workout }, { route: 'nike-nl', minutes });
+    const minutes = Number(body?.minutes || 45);
+    const split = (body?.split || (/\bpull\b/i.test(lastUser) ? 'pull' : 'push')) as 'pull' | 'push' | 'legs' | 'upper' | 'full' | 'hiit';
+    const equipment = Array.isArray(body?.equipment) ? body!.equipment : [];
+
+    // MAIN lift anchor logic (only main repeats)
+    const MAIN_LIFTS: Record<string, string[]> = {
+      pull: ['Trap Bar Deadlift', 'Conventional Deadlift', 'Dumbbell Romanian Deadlift'],
+      push: ['Barbell Bench Press', 'Dumbbell Bench Press', 'Incline Bench Press'],
+      legs: ['Back Squat', 'Front Squat', 'Belt Squat'],
+      upper: ['Standing Overhead Press', 'Seated DB Shoulder Press'],
+      full: ['Trap Bar Deadlift', 'Back Squat', 'Bench Press'],
+      hiit: [],
+    };
+
+    const have = (needle: string) => equipment.some(e => e.toLowerCase().includes(needle));
+    const pickMainLift = (s: string): string => {
+      const anchors = MAIN_LIFTS[s] || [];
+      for (const lift of anchors) {
+        const n = lift.toLowerCase();
+        if (n.includes('trap bar') && have('trap bar')) return lift;
+        if (n.includes('deadlift') && (have('barbell') || have('trap bar'))) return lift;
+        if (n.includes('romanian') && have('dumbbell')) return lift;
+        if (n.includes('bench') && have('bench')) return lift;
+        if (n.includes('squat') && (have('rack') || have('belt squat') || have('barbell'))) return lift;
+        if (n.includes('press') && (have('barbell') || have('dumbbell'))) return lift;
       }
-      // Low confidence / not found / no rows: ask for confirmation instead of guessing
-      return NextResponse.json({
-        ok: true,
-        needsConfirmation: true,
-        message: makeConfirmMessage(text, llmIntent, extractNikeHints(text)),
-        debug: { route: 'nike-nl-pending' }
-      });
-    }
+      return anchors[0] ?? 'Dumbbell Romanian Deadlift';
+    };
 
-    // 3) Split intent (e.g., "upper body push for 45 minutes")
-    if (llmIntent.intent === 'split' && llmIntent.split) {
-      devlog('router.split', { split: llmIntent.split, minutes });
-      const result = await generateFromLLM({ userId, split: llmIntent.split, minutes, equipment });
-      return respond(result, { route: result.usedBackup ? 'backup' : 'llm', split: llmIntent.split, minutes });
-    }
+    const mainLift = pickMainLift(split);
 
-    // 4) Plain chat → LLM workout suggestion or answer (no Nike)
-    devlog('router.chat', { text: text.substring(0, 50) + '...', minutes });
-    const result = await generateFromLLM({ userId, split: '', minutes, equipment, text });
-    return respond(result, { route: result.usedBackup ? 'backup' : 'llm-chat', minutes });
+    // Time budget (warm-up must include rotation/anti-rotation)
+    const budget = {
+      warmup: Math.min(10, Math.max(5, Math.round(minutes * 0.18))),
+      main: Math.round(minutes * 0.42),
+      accessories: Math.max(8, minutes - Math.round(minutes * 0.18) - Math.round(minutes * 0.42) - 4),
+      cooldown: 4,
+    };
 
-  } catch (error) {
-    console.error('Chat API error:', error);
-    return NextResponse.json({ 
-      ok: false, 
-      error: 'Internal server error',
-      debug: { route: 'error' }
-    }, { status: 500 });
+    const system = [
+      'You are TrainAI, a strength coach. Output JSON only.',
+      'Keys: plan, workout.warmup[], workout.mainExercises[], workout.finisher',
+      'Warm-up MUST be 5–10 minutes and include scap prep AND thoracic rotation or anti-rotation.',
+      'Anchor the MAIN lift as first item of mainExercises exactly once; mark all other main items isAccessory:true.',
+      'Prefer high-quality pulls (rows, pulldown/pull-up), posterior chain, and grip carries on PULL days.',
+      'Fit work into minutes: use provided budget as guidance; keep text concise.',
+    ].join('\n');
+
+    const user = {
+      intent: isJoeHolder ? 'ocho_style' : 'free',
+      split,
+      minutes,
+      budget,
+      equipment,
+      anchors: { mainLift },
+    };
+
+    const llm = await callClaude(system, user);
+
+    const warm = Array.isArray(llm?.workout?.warmup) ? llm.workout.warmup : [
+      { name: 'Bike or Row Erg (easy)', duration: '3 min', instruction: 'RPE 4–5' },
+      { name: 'Quadruped T-Spine Rotations', sets: 1, reps: '8/side' },
+      { name: 'Banded Face Pulls', sets: 2, reps: '15' },
+      { name: 'Half-Kneeling Pallof Press', sets: 2, reps: '10/side' },
+    ];
+
+    const rest = Array.isArray(llm?.workout?.mainExercises) ? llm.workout.mainExercises : [
+      { name: 'One-Arm Cable Row (slight rotation)', sets: 3, reps: '10/side', isAccessory: true },
+      { name: 'Lat Pulldown / Assisted Pull-Up', sets: 3, reps: '8–10', isAccessory: true },
+      { name: 'Face Pull', sets: 2, reps: '12–15', isAccessory: true },
+      { name: 'High-to-Low Cable Chop', sets: 2, reps: '10/side', isAccessory: true },
+    ];
+
+    const mainExercises = [
+      { name: mainLift, sets: 4, reps: '5', instruction: 'Build to working sets @ RPE 7–8', isAccessory: false },
+      ...rest.map((x: any) => ({ ...x, isAccessory: true })),
+    ];
+
+    const payload = {
+      ok: true,
+      name: `${split[0].toUpperCase() + split.slice(1)} (~${minutes} min)`,
+      message: `${split[0].toUpperCase() + split.slice(1)} (~${minutes} min)`,
+      coach: `${split.toUpperCase()} day locked. Main lift: ${mainLift}. We'll include rotation/anti-rotation in warm-up, then rows/pulldown and grip work. Tell me if time is tight and I'll trim accessories.`,
+      plan: { split, duration: minutes, main_lift: mainLift, name: `${split[0].toUpperCase() + split.slice(1)} (~${minutes} min)` },
+      workout: { warmup: warm, mainExercises, finisher: llm?.workout?.finisher },
+    };
+
+    return json(200, payload);
+  } catch (err: any) {
+    console.error('api/chat', reqId, err?.stack || err);
+    return json(200, { ok: false, error: err?.message || 'Internal server error' });
   }
-}
-
-async function generateFromLLM(opts: { 
-  userId: string; 
-  split: string; 
-  minutes: number; 
-  equipment: string[]; 
-  text?: string;
-}): Promise<{ plan?: any; workout?: any; usedBackup: boolean }> {
-  try {
-    const { workout, plan, coach, debug } = await planWorkout({
-      userId: opts.userId,
-      split: opts.split as any,
-      minutes: opts.minutes,
-      style: opts.split === 'hiit' ? 'hiit' : 'strength',
-      message: opts.text || `${opts.split} workout ${opts.minutes} min use my equipment`,
-      debug: 'none',
-    });
-
-    return { plan, workout, usedBackup: false };
-  } catch (error) {
-    console.error('LLM generation failed, using backup:', error);
-    const backup = buildRuleBasedBackup(opts.split, opts.minutes, opts.equipment);
-    return { plan: backup.plan, workout: backup.workout, usedBackup: true };
-  }
-}
-
-function respond(result: { plan?: any; workout?: any }, meta: any) {
-  const title = 'Session (~' + (meta?.minutes ?? 45) + ' min)';
-  return NextResponse.json({
-    ok: true,
-    name: title,
-    message: title,
-    plan: result.plan,
-    workout: result.workout,
-    debug: { ...meta }
-  });
-}
-
-function makeConfirmMessage(text: string, guess: any, hints: any) {
-  const idx = guess?.nike?.index ?? hints.index ?? 1;
-  const type = guess?.nike?.type ?? hints.typeHint ?? 'upper body';
-  return `Did you mean Nike workout ${idx} for ${type}? Reply "/nike ${idx}" to run it, or say what you want.`;
 }
