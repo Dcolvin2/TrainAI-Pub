@@ -226,6 +226,11 @@ export default function TodaysWorkoutPage() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
 
+  // Debug: log assistant payload
+  useEffect(() => { 
+    if (resp) console.log('assistant payload', resp); 
+  }, [resp]);
+
   // Fetch previous workout data
   useEffect(() => {
     const fetchPreviousWorkout = async () => {

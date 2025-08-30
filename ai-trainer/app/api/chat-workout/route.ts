@@ -162,6 +162,106 @@ function coachTips(n: ReturnType<typeof normalizePlanLib> extends infer T ? T : 
   return tips;
 }
 
+// --- BEGIN: workout-based summary helpers (SAFE) ---
+function listify<T = any>(x: any): T[] {
+  if (!x) return [];
+  if (Array.isArray(x)) return x as T[];
+  if (typeof x === "object") return [x as T];
+  return [];
+}
+function getName(it: any) {
+  if (!it) return "";
+  if (typeof it === "string") return it;
+  return it.name ?? it.exercise ?? "";
+}
+function getReps(it: any) {
+  if (!it) return "";
+  if (typeof it === "string") return "";
+  return it.reps ?? it.rep_range ?? "";
+}
+function getSets(it: any) {
+  if (!it) return "";
+  if (typeof it === "string") return "";
+  return it.sets ?? it.set_count ?? "";
+}
+function getDurStr(it: any) {
+  if (!it || typeof it === "string") return "";
+  if (typeof it.duration_seconds === "number") return `${Math.round(it.duration_seconds / 60)} min`;
+  if (typeof it.duration === "string") return it.duration;
+  return "";
+}
+
+function summarizeFromWorkout(workout: any, split?: string, minutes?: number) {
+  if (!workout || typeof workout !== "object") return null;
+
+  // Your payload sometimes uses "mainExercises". Normalize all lists.
+  const warm = listify(workout.warmup);
+  const main = listify(workout.mainExercises ?? workout.main);
+  const cool = listify(workout.cooldown);
+  const fin = workout.finisher; // can be object or string
+
+  const title =
+    `${(split ?? "Session").slice(0,1).toUpperCase()}${(split ?? "Session").slice(1)}` +
+    (minutes ? ` (~${minutes} min)` : "");
+
+  const lines: string[] = [];
+
+  if (warm.length) {
+    lines.push("Warm-up:");
+    warm.forEach((it: any, i: number) => {
+      const bits = [getName(it)];
+      const s = getSets(it);
+      const r = getReps(it);
+      const d = getDurStr(it);
+      if (s && r) bits.push(`${s} × ${r}`);
+      else if (d) bits.push(d);
+      lines.push(`${i + 1}. ${bits.filter(Boolean).join(" — ")}`);
+    });
+  }
+
+  if (main.length) {
+    lines.push("", "Main:");
+    main.forEach((it: any, i: number) => {
+      const bits = [getName(it)];
+      const s = getSets(it);
+      const r = getReps(it);
+      const d = getDurStr(it);
+      if (s && r) bits.push(`${s} × ${r}`);
+      else if (d) bits.push(d);
+      lines.push(`${i + 1}. ${bits.filter(Boolean).join(" — ")}`);
+    });
+  }
+
+  if (fin) {
+    const bits = [getName(fin)];
+    const s = getSets(fin);
+    const r = getReps(fin);
+    const d = getDurStr(fin);
+    if (s && r) bits.push(`${s} × ${r}`);
+    else if (d) bits.push(d);
+    const finLine = bits.filter(Boolean).join(" — ");
+    if (finLine) lines.push("", `Finisher: ${finLine}`);
+  }
+
+  if (cool.length) {
+    lines.push("", "Cooldown:");
+    cool.forEach((it: any, i: number) => {
+      const bits = [getName(it)];
+      const s = getSets(it);
+      const r = getReps(it);
+      const d = getDurStr(it);
+      if (s && r) bits.push(`${s} × ${r}`);
+      else if (d) bits.push(d);
+      lines.push(`${i + 1}. ${bits.filter(Boolean).join(" — ")}`);
+    });
+  }
+
+  const paragraph = lines.join("\n");
+  const mainLift = getName(main[0]) || undefined;
+  return { title, paragraph, mainLift };
+}
+// --- END: workout-based summary helpers (SAFE) ---
+
 function extractJson(raw: string): { plan?: ChatPlan; workout?: ChatWorkout; error?: string } {
   // Try ```json fencing first
   const fence = raw.match(/```json([\s\S]*?)```/i);
@@ -494,37 +594,56 @@ export async function POST(req: Request) {
       : null;
 
     // Build descriptive chat summary using the new normalizer
-    const normalized = normalizePlanLib({ plan: safePlan, workout: finalWorkout });
-    let chatMsg = normalized ? buildChatSummary(normalized) : "No workout details available.";
-    if (normalized) {
-      const [lastCore, eq] = await Promise.all([
-        getRecentCoreLift(userId, normalized.mainLiftName),
-        getEquipmentList(userId)
-      ]);
-      const extras = [
-        "",
-        eq.length ? `Equipment on file: ${eq.join(", ")}` : "",
-        ...coachTips(normalized, lastCore),
-      ].filter(Boolean);
-      chatMsg = `${chatMsg}\n\n${extras.join("\n")}`;
+    let chatMsg = "Let's get started.";
+    let mainLiftName: string | undefined;
+    let chatBuildError: string | null = null;
+    let normalized: any = null;
+
+    try {
+      normalized = finalPlan ? normalizePlanLib(finalPlan) : null;
+
+      if (normalized && (normalized.main.length || normalized.warmup.length || normalized.cooldown.length)) {
+        let msg = buildChatSummary(normalized);
+        const [lastCore, eq] = await Promise.all([
+          getRecentCoreLift(userId, normalized.mainLiftName),
+          getEquipmentList(userId)
+        ]);
+        const extra: string[] = [];
+        if (eq.length) extra.push(`Equipment on file: ${eq.join(", ")}`);
+        extra.push(...coachTips(normalized, lastCore));
+        chatMsg = `${msg}\n\n${extra.join("\n")}`;
+        mainLiftName = normalized.mainLiftName;
+      } else {
+        const wkSum = summarizeFromWorkout(finalWorkout, split, minutes);
+        if (wkSum) {
+          const [lastCore, eq] = await Promise.all([
+            getRecentCoreLift(userId, wkSum.mainLift),
+            getEquipmentList(userId)
+          ]);
+          const tips: string[] = [];
+          if (wkSum.mainLift) tips.push(`Focus on ${wkSum.mainLift}. Control the eccentric, brace, and rest 2–3 min.`);
+          if (lastCore?.actual_weight && lastCore?.reps) tips.push(`Last time: ${wkSum.mainLift} at ${lastCore.actual_weight} × ${lastCore.reps}. Match or add 2.5–5 lb if clean.`);
+          if (!tips.length) tips.push("First session? Keep 1–2 reps in reserve and prioritize form.");
+          const extra: string[] = [];
+          if (eq.length) extra.push(`Equipment on file: ${eq.join(", ")}`);
+          chatMsg = `${wkSum.title}\n\n${wkSum.paragraph}\n\n${[...extra, ...tips].join("\n")}`;
+          mainLiftName = wkSum.mainLift;
+        }
+      }
+    } catch (e: any) {
+      chatBuildError = e?.message ?? String(e);
+      // keep chatMsg as the simple default; DO NOT throw
     }
 
     return NextResponse.json({
       ok: true,
-      name: title,
-      message: respTitle,
-      coach: coachText(split, minutesNum, hasHistory),
-      chatMsg: chatMsg,
+      name: normalized?.name ?? finalPlan?.name ?? `${(split ?? 'Session').slice(0,1).toUpperCase()}${(split ?? 'Session').slice(1)} (~${minutes} min)`,
+      message: normalized?.name ?? finalPlan?.name ?? `${(split ?? 'Session').slice(0,1).toUpperCase()}${(split ?? 'Session').slice(1)} (~${minutes} min)`,
+      chatMsg,
+      coach: chatMsg,         // keep for UI fallback
       plan: safePlan,
-      workout: finalWorkout, // optional if you still return it
-      debug: {
-        usedTwoPass: false,   // set true only if you actually do it
-        minutesRequested: minutesNum,
-        split,
-        equipmentList: equipmentList,
-        parseError: extracted.error ?? null,
-        validity: validity.ok ? 'ok' : validity.why
-      }
+      workout: finalWorkout,
+      debug: { split, minutesRequested: minutes, mainLiftName, chatBuildError }
     }, { headers: { 'Content-Type': 'application/json' } });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: S(e?.message) || "Failed to generate workout plan" }, { status: 500 });
