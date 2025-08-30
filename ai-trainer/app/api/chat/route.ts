@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabaseServer';
 import { claudeJSON } from '@/lib/llm';
 import { ResponseOut, phasesFromWorkout, budget } from '@/lib/schema';
-import { fetchCatalog, fetchUserEquipmentNames, Split } from '@/lib/catalog';
+import { fetchCatalog, fetchUserEquipmentNames } from '@/lib/catalog';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
