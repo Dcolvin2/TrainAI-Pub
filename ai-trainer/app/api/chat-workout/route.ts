@@ -154,6 +154,42 @@ function buildSystemPrompt(split: string, mainLift: string, budget: ReturnType<t
   ].join('\n');
 }
 
+// Hook your generator route to Claude (minimal, safe)
+async function callClaudeJson(system: string, user: unknown) {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) throw new Error('Missing ANTHROPIC_API_KEY');
+
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-3-5-sonnet-20240620',
+      max_tokens: 1200,
+      system,
+      messages: [{ role: 'user', content: JSON.stringify(user) }],
+    }),
+  });
+
+  const ct = resp.headers.get('content-type') || '';
+  if (!ct.includes('application/json')) {
+    const text = await resp.text();
+    throw new Error(`Claude returned non-JSON (${resp.status}): ${text.slice(0, 200)}`);
+  }
+
+  const data = await resp.json();
+  const text: string = data?.content?.[0]?.text || '';
+  try {
+    return JSON.parse(text);
+  } catch {
+    // If the model returned plain text instead of JSON, wrap it
+    return { text };
+  }
+}
+
 // Generate pull workout with anchored main lift and rotating accessories
 async function generatePullWorkoutLLM({
   split,
@@ -177,11 +213,19 @@ async function generatePullWorkoutLLM({
   const post = await getCandidates(equipment, ['rdl', 'hinge', 'good morning']);
   const grip = await getCandidates(equipment, ['farmer carry', 'suitcase carry', 'dead hang']);
 
-  const system = buildSystemPrompt(split, mainLift, budget);
+  const system = [
+    'You are TrainAI. Output JSON only.',
+    'Keys: plan, workout.warmup[], workout.mainExercises[], workout.finisher',
+    'Include a real rotational or anti-rotation movement.',
+    'Warm-up must be 5–10 min. Anchor the MAIN lift as the first item in mainExercises.',
+  ].join('\n');
 
-  const user = JSON.stringify({
+  const user = {
+    split: 'pull',
+    minutes: totalMin,
     equipment,
     anchors: { mainLift },
+    budget,
     candidates: {
       rotation: rot,
       horizontalPull: horiz,
@@ -190,30 +234,29 @@ async function generatePullWorkoutLLM({
       posterior: post,
       gripCarry: grip,
     },
-    budget,
-  });
-
-  const raw = await chatWithFunctions({ system, user });
-
-  // Expect JSON back; if model returns string, parse
-  const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
-
-  // Ensure main lift is first and flagged
-  const main = [{ name: mainLift, sets: '4', reps: '5', instruction: 'Build to working weight', isAccessory: false }];
-  const rest = Array.isArray(data?.workout?.mainExercises) ? data.workout.mainExercises : [];
-  const mainExercises = [ ...main, ...rest.map((x:any) => ({ ...x, isAccessory: true })) ];
-
-  return {
-    ok: true,
-    name: `Pull (~${totalMin} min)`,
-    message: `Pull (~${totalMin} min)`,
-    plan: { split, duration: totalMin, main_lift: mainLift, name: `Pull (~${totalMin} min)` },
-    workout: {
-      warmup: Array.isArray(data?.workout?.warmup) ? data.workout.warmup : [],
-      mainExercises,
-      finisher: data?.workout?.finisher,
-    },
   };
+
+  const llm = await callClaudeJson(system, user);
+
+  // Then compose your final payload in the exact shape your UI expects:
+  const selectedMainLift = user.anchors.mainLift;
+  const warmup = Array.isArray(llm?.workout?.warmup) ? llm.workout.warmup : [];
+  const rest = Array.isArray(llm?.workout?.mainExercises) ? llm.workout.mainExercises : [];
+  const mainExercises = [
+    { name: selectedMainLift, sets: 4, reps: '5', instruction: 'Build to working sets @ RPE 7–8', isAccessory: false },
+    ...rest.map((x: any) => ({ ...x, isAccessory: true })),
+  ];
+
+  const payload = {
+    ok: true,
+    name: `Pull (~${user.minutes} min)`,
+    message: `Pull (~${user.minutes} min)`,
+    coach: `Pull day locked. Main lift: ${selectedMainLift}. We'll rotate accessories and include rotation/anti-rotation.`,
+    plan: { split: 'pull', duration: user.minutes, main_lift: selectedMainLift, name: `Pull (~${user.minutes} min)` },
+    workout: { warmup, mainExercises, finisher: llm?.workout?.finisher },
+  };
+
+  return payload;
 }
 
 function coachText(split: string | undefined, minutes: number, hasHistory: boolean) {

@@ -472,9 +472,20 @@ export default function TodaysWorkoutPage() {
         return;
       }
       
-      // ensure phases exist for the renderer
+      // Synthesize phases for your existing renderer
       if (!Array.isArray(data?.plan?.phases)) {
-        data.plan = { ...(data.plan || {}), phases: toPhasesFromWorkout(data) };
+        const warm = Array.isArray(data?.workout?.warmup) ? data.workout.warmup : [];
+        const main = Array.isArray(data?.workout?.mainExercises) ? data.workout.mainExercises : [];
+        const fin  = data?.workout?.finisher ? [data.workout.finisher] : [];
+        data.plan = {
+          ...(data.plan || {}),
+          phases: [
+            { phase: 'prep', items: warm.map((i:any)=>({ name:i.name??i.exercise, sets:i.sets, reps:i.reps, duration:i.duration, instruction:i.instruction })) },
+            { phase: 'strength', items: main.map((i:any)=>({ name:i.name??i.exercise, sets:i.sets, reps:i.reps, duration:i.duration, instruction:i.instruction, isAccessory:!!i.isAccessory })) },
+            { phase: 'activation', items: [] },
+            { phase: 'carry', items: fin.map((i:any)=>({ name:i.name??i.exercise, sets:i.sets, reps:i.reps, duration:i.duration, instruction:i.instruction })) },
+          ],
+        };
       }
 
       console.log('UI/response', data);
@@ -531,17 +542,9 @@ export default function TodaysWorkoutPage() {
         legacy?.name ||     // last resort
         'Workout';
 
-      // Replace the placeholder chat with real coach text
-      const coachText =
-        data?.coach ??
-        data?.chatMsg ??
-        data?.message ??
-        data?.name ??
-        '';
-
-      // Update chat state with smart text (avoid duplicates)
-      setChatMessages(prev => {
-        // drop any placeholder lines to avoid doubles
+      // Overwrite the chat text with the coach message (kill the placeholder)
+      const coachText = data?.coach ?? data?.chatMsg ?? data?.message ?? data?.name ?? '';
+      setChatMessages((prev:any[]) => {
         const base = prev.filter((m:any) => m?.content && !/Session \(~\d+ min\)/i.test(m.content));
         return [...base, { role: 'assistant', content: coachText }];
       });
