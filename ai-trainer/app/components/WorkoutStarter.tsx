@@ -1,10 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { planWorkout, type LegacyWorkout } from '@/lib/planWorkout';
-import { normalizeWorkout, type WorkoutShape } from '@/utils/workoutNormalize';
+import { normalizeWorkout } from '@/utils/normalizeWorkout';
 import { getUserEquipment } from '@/lib/getUserEquipment';
-import WorkoutDetail from '@/app/components/workout/WorkoutDetail';
 
 interface WorkoutStarterProps {
   userId: string;
@@ -82,7 +81,6 @@ export default function WorkoutStarter({ userId, onWorkoutSelected }: WorkoutSta
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resp, setResp] = useState<ApiResp | null>(null);
-  const [view, setView] = useState<WorkoutShape | null>(null);
 
   // Map old workout types to new split system
   const mapWorkoutTypeToSplit = (type: string): Split => {
@@ -102,7 +100,6 @@ export default function WorkoutStarter({ userId, onWorkoutSelected }: WorkoutSta
       setLoading(true);
       setError(null);
       setResp(null);
-      setView(null);
       
       const split = mapWorkoutTypeToSplit(type);
       const minutes = 45; // Default duration, could be made configurable
@@ -155,7 +152,6 @@ export default function WorkoutStarter({ userId, onWorkoutSelected }: WorkoutSta
       });
       
       setResp(apiResp);
-      setView(normalized);
       
       // Transform the workout data to match your existing format
       const transformedWorkout = {
@@ -198,6 +194,8 @@ export default function WorkoutStarter({ userId, onWorkoutSelected }: WorkoutSta
     console.log('Starting custom workout');
   };
 
+  // Use normalized data for rendering
+  const view = useMemo(() => resp ? normalizeWorkout(resp) : null, [resp]);
   const totalItems = (view?.warmup.length ?? 0) + (view?.main.length ?? 0) + (view?.cooldown.length ?? 0);
 
   if (loading) {
@@ -303,8 +301,70 @@ export default function WorkoutStarter({ userId, onWorkoutSelected }: WorkoutSta
       )}
 
       {/* Workout render */}
-      {resp && (
-        <WorkoutDetail apiResponse={resp} title={resp.name} />
+      {view && (
+        <section className="rounded-xl bg-slate-900 p-4 mb-4">
+          <h3 className="text-slate-100 font-semibold mb-2">Workout</h3>
+
+          {/* Warm-up */}
+          {view.warmup.length > 0 && (
+            <>
+              <h4 className="text-slate-300">Warm-up</h4>
+              <ul className="mb-3 list-disc pl-6">
+                {view.warmup.map((it, i) => (
+                  <li key={`wu-${i}`}>
+                    {it.name}
+                    {it.sets ? ` – ${it.sets} sets` : ''}
+                    {it.reps ? ` x ${it.reps}` : ''}
+                    {it.duration_seconds ? ` (${Math.round(it.duration_seconds/60)} min)` : ''}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          {/* Main */}
+          {view.main.length > 0 && (
+            <>
+              <h4 className="text-slate-300">Main</h4>
+              <ul className="mb-3 list-disc pl-6">
+                {view.main.map((it, i) => (
+                  <li key={`mn-${i}`}>
+                    {it.name}
+                    {it.is_main && (
+                      <span className="ml-2 px-2 py-0.5 rounded-md bg-emerald-600/20 text-emerald-300 text-xs border border-emerald-700/40">
+                        Main Lift
+                      </span>
+                    )}
+                    {it.sets ? ` – ${it.sets} sets` : ''}
+                    {it.reps ? ` x ${it.reps}` : ''}
+                    {it.duration_seconds ? ` (${Math.round(it.duration_seconds/60)} min)` : ''}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          {/* Cooldown */}
+          {view.cooldown.length > 0 && (
+            <>
+              <h4 className="text-slate-300">Cooldown</h4>
+              <ul className="mb-3 list-disc pl-6">
+                {view.cooldown.map((it, i) => (
+                  <li key={`cd-${i}`}>
+                    {it.name}
+                    {it.duration_seconds ? ` (${Math.round(it.duration_seconds/60)} min)` : ''}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          {totalItems > 0 ? (
+            <button className="btn btn-primary">Start Workout</button>
+          ) : (
+            <div className="text-red-400 text-sm">No items generated. Check the debug drawer and try again.</div>
+          )}
+        </section>
       )}
       
       {/* Quick options for other styles */}
