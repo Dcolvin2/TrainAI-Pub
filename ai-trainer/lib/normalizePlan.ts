@@ -66,7 +66,7 @@ export function normalizePlan(plan: any): NormalizedPlan | null {
     };
 
     const warmup = [...getPhaseItems('prep'), ...getPhaseItems('activation')];
-    let main = getPhaseItems('strength').map((item: any, index: number) => ({
+    let main: NormalizedItem[] = getPhaseItems('strength').map((item: any, index: number) => ({
       ...item,
       isAccessory: false,
       isMain: index === 0, // First strength exercise gets isMain=true
@@ -81,7 +81,7 @@ export function normalizePlan(plan: any): NormalizedPlan | null {
     // Enforce main-lift-first (except HIIT)
     if (!hiit) {
       // Mark any item that's one of the allowed main lifts as non-accessory; others become accessory
-      main = main.map((m, idx) => ({
+      main = main.map((m: NormalizedItem, idx: number) => ({
         ...m,
         isAccessory: !isMainLiftForSplit(m.name, split),
       }));
@@ -95,7 +95,7 @@ export function normalizePlan(plan: any): NormalizedPlan | null {
       }
     } else {
       // HIIT: don't show accessory/main labels in the UI
-      main = main.map(m => ({ ...m, isAccessory: false }));
+      main = main.map((m: NormalizedItem) => ({ ...m, isAccessory: false }));
     }
 
     const mainLiftName = hiit ? undefined : (main.find(i => !i.isAccessory)?.name ?? main[0]?.name);
