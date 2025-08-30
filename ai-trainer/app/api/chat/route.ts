@@ -1,189 +1,70 @@
 // app/api/chat/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseServer } from '@/lib/supabaseServer';
+import { claudeJSON } from '@/lib/llm';
+import { ResponseOut, phasesFromWorkout, budget } from '@/lib/schema';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/** ---------- utilities ---------- */
-
-function J(status: number, body: any) { return NextResponse.json(body, { status }); }
-const isArray = Array.isArray;
-
-type Split = 'pull'|'push'|'legs'|'upper'|'full'|'hiit';
 type Msg = { role: 'user'|'assistant'|'system'; content: string };
+type Split = 'pull'|'push'|'legs'|'upper'|'full'|'hiit';
 
-function minutesToBudget(total: number) {
-  const warmup = Math.min(10, Math.max(5, Math.round(total * 0.18)));
-  const main = Math.round(total * 0.42);
-  const cooldown = Math.max(3, Math.round(total * 0.1));
-  const accessories = Math.max(6, total - warmup - main - cooldown);
-  return { warmup, main, accessories, cooldown };
-}
+function J(status:number, body:any){ return NextResponse.json(body, { status }); }
+const A = Array.isArray;
 
-function phasesFromWorkout(w: any) {
-  const warm = isArray(w?.warmup) ? w.warmup : [];
-  const main = isArray(w?.mainExercises) ? w.mainExercises : [];
-  const fin  = w?.finisher ? [w.finisher] : [];
-  return [
-    { phase: 'prep',       items: warm },
-    { phase: 'strength',   items: main },
-    { phase: 'activation', items: [] },
-    { phase: 'carry',      items: fin },
-  ];
-}
-
-function ensureArray<T>(v: any): T[] { return isArray(v) ? v : v ? [v] : []; }
-
-/** ---------- Supabase helpers (server) ---------- */
-
-function makeServerSupabase() {
-  // Use service role if available (bypasses RLS during server actions), else anon (requires read RLS)
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-  return createClient(url, key);
-}
-
-async function getUserEquipmentFromDB(userId?: string) {
-  const supabase = makeServerSupabase();
-
-  // Try a couple of common shapes; pick whatever exists in your DB.
-  // 1) user_equipment (user_id, equipment_name)
+async function getUserEquipment(userId?: string) {
+  const sb = supabaseServer();
+  // Try common shapes; keep whichever exists in your DB.
   if (userId) {
-    const { data: ue, error: e1 } = await supabase
-      .from('user_equipment')
-      .select('equipment_name')
-      .eq('user_id', userId)
-      .limit(200);
-    if (!e1 && ue && ue.length) return ue.map(x => String(x.equipment_name));
+    const { data: ue } = await sb.from('user_equipment').select('equipment_name').eq('user_id', userId).limit(200);
+    if (ue?.length) return ue.map(x => String(x.equipment_name));
+    const { data: pe } = await sb.from('profiles_equipment').select('equipment').eq('user_id', userId).maybeSingle();
+    if (pe?.equipment && Array.isArray(pe.equipment)) return pe.equipment.map(String);
   }
-
-  // 2) profiles_equipment (id -> array text column "equipment")
-  if (userId) {
-    const { data: pe, error: e2 } = await supabase
-      .from('profiles_equipment')
-      .select('equipment')
-      .eq('user_id', userId)
-      .maybeSingle();
-    if (!e2 && pe?.equipment && Array.isArray(pe.equipment)) return pe.equipment.map(String);
-  }
-
-  // 3) fallback empty
-  return [] as string[];
+  return [];
 }
 
 type CatalogRow = { name: string; category?: string|null; movement_pattern?: string|null; target_muscles?: string[]|string|null; equipment_required?: string[]|string|null };
 
-async function getExerciseCatalogFiltered(split: Split, equipment: string[], limit = 120): Promise<CatalogRow[]> {
-  const supabase = makeServerSupabase();
-
+async function getCatalog(split: Split, equipment: string[], limit=200): Promise<CatalogRow[]> {
+  const sb = supabaseServer();
   const rows: CatalogRow[] = [];
-
-  // prefer exercises_final
-  const { data: ef } = await supabase
-    .from('exercises_final')
-    .select('name,category,movement_pattern,target_muscles,equipment_required')
-    .limit(limit);
+  const { data: ef } = await sb.from('exercises_final').select('name,category,movement_pattern,target_muscles,equipment_required').limit(limit);
   if (ef) rows.push(...ef as any);
-
-  // fallback to exercises if needed
   if (rows.length < 10) {
-    const { data: ex } = await supabase
-      .from('exercises')
-      .select('name,category,movement_pattern,target_muscles,equipment_required')
-      .limit(limit);
+    const { data: ex } = await sb.from('exercises').select('name,category,movement_pattern,target_muscles,equipment_required').limit(limit);
     if (ex) rows.push(...ex as any);
   }
 
-  // Filter to user equipment only
   const eq = equipment.map(e => e.toLowerCase());
-  const useRow = (r: CatalogRow) => {
+  const passEquip = (r: CatalogRow) => {
     const joined = [
       r.name, r.category, r.movement_pattern,
       Array.isArray(r.target_muscles) ? r.target_muscles.join(' ') : r.target_muscles,
       Array.isArray(r.equipment_required) ? r.equipment_required.join(' ') : r.equipment_required,
     ].filter(Boolean).join(' ').toLowerCase();
-
-    // allow bodyweight/bands/TRX always
-    const okEquip = eq.length === 0 || eq.some(k => joined.includes(k)) || /bodyweight|band|mini-?band|trx/.test(joined);
-    return okEquip;
+    return eq.length === 0 || eq.some(k => joined.includes(k)) || /bodyweight|band|mini-?band|trx/.test(joined);
   };
 
-  // Light split relevance (keywords; still leaves choice to LLM)
-  const splitHints = {
-    pull: /(row|pull[-\s]?down|pull[-\s]?up|hinge|deadlift|face pull|rear delt|trap|lat|scap|carry)/i,
+  const hints = {
+    pull: /(row|pull[-\s]?down|pull[-\s]?up|hinge|deadlift|face pull|rear delt|lat|scap|carry)/i,
     push: /(press|push[-\s]?up|dip|bench|incline|overhead|triceps)/i,
     legs: /(squat|hinge|deadlift|lunge|step[-\s]?up|posterior|hamstring|quad|calf)/i,
     upper: /(press|row|pull[-\s]?down|pull[-\s]?up|rear delt|face pull|overhead|push[-\s]?up)/i,
     full: /(squat|press|row|hinge|carry|clean|snatch|burpee|thruster)/i,
-    hiit: /(interval|bike|row|ski|kettlebell swing|slam|burpee|battle rope|sled)/i,
+    hiit: /(interval|kettlebell swing|slam|burpee|battle rope|sled)/i,
   }[split];
 
-  const filtered = rows.filter(r => useRow(r) && (splitHints ? splitHints.test(`${r.name} ${r.category} ${r.movement_pattern}`) : true));
+  const filtered = rows.filter(r => passEquip(r) && (hints ? hints.test(`${r.name} ${r.category} ${r.movement_pattern}`) : true));
 
-  // Dedup by name
   const seen = new Set<string>();
   return filtered.filter(r => {
-    const key = (r.name || '').toLowerCase();
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
+    const k = (r.name || '').toLowerCase();
+    if (!k || seen.has(k)) return false;
+    seen.add(k); return true;
   }).slice(0, limit);
 }
-
-/** ---------- Anthropic ---------- */
-
-async function callClaude(system: string, user: unknown) {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) throw new Error('Missing ANTHROPIC_API_KEY');
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({ model: 'claude-3-5-sonnet-20240620', max_tokens: 1400, system, messages: [{ role: 'user', content: JSON.stringify(user) }]}),
-  });
-  const ct = resp.headers.get('content-type') || '';
-  const raw = await resp.text();
-  if (!ct.includes('application/json')) throw new Error(`Claude non-JSON ${resp.status}: ${raw.slice(0,160)}`);
-  const data = JSON.parse(raw);
-  const text = data?.content?.[0]?.text ?? '';
-  try { return JSON.parse(text); } catch { return { text }; }
-}
-
-/** ---------- JSON validation & repair ---------- */
-
-function validateShape(obj: any) {
-  const errors: string[] = [];
-  if (!obj || typeof obj !== 'object') errors.push('root not object');
-
-  const w = obj?.workout;
-  if (!w || typeof w !== 'object') errors.push('workout missing');
-
-  const warm = ensureArray<any>(w?.warmup);
-  const main = ensureArray<any>(w?.mainExercises);
-  if (main.length === 0) errors.push('mainExercises empty');
-
-  const checkItem = (x: any, path: string) => {
-    if (!x || typeof x !== 'object') errors.push(`${path} not object`);
-    const name = x?.name ?? x?.exercise;
-    if (!name || typeof name !== 'string') errors.push(`${path}.name missing`);
-  };
-  warm.forEach((x, i) => checkItem(x, `workout.warmup[${i}]`));
-  main.forEach((x, i) => checkItem(x, `workout.mainExercises[${i}]`));
-
-  return { ok: errors.length === 0, errors };
-}
-
-async function repairWithClaude(broken: any, errors: string[], systemBase: string) {
-  const sys = systemBase + '\nYou returned invalid JSON. Fix it to satisfy the schema and errors listed.';
-  const user = { broken, errors };
-  return callClaude(sys, user);
-}
-
-/** ---------- main route ---------- */
 
 export async function POST(req: NextRequest) {
   try {
@@ -197,43 +78,43 @@ export async function POST(req: NextRequest) {
       split?: Split;
       equipment?: string[];
       userId?: string;
-      style?: string | null;
+      style?: string | null; // e.g., "ocho"
     };
 
-    // 1) equipment: prefer explicit in body, else DB lookup
-    let equipment: string[] = isArray(body?.equipment) ? (body!.equipment as string[]) : [];
-    if (equipment.length === 0) {
-      equipment = await getUserEquipmentFromDB(body?.userId);
-    }
-    const equipmentClean = [...new Set(equipment.map(x => String(x).trim()))];
+    // 1) Equipment: client > DB
+    let equipment = A(body.equipment) ? body.equipment! : await getUserEquipment(body.userId);
+    equipment = [...new Set(equipment.map(s => String(s).trim()))];
 
-    // 2) classify intent (LLM) — split, minutes, style from free text (if not provided)
+    // 2) Classify intent (LLM) — *no* hardcoded rules
     const classifierSystem =
-`You extract intent for workout planning. Output strict JSON: {"split":"pull|push|legs|upper|full|hiit","minutes":number,"style":"default|ocho"}.
-Rules: default to {"split":"pull","minutes":45,"style":"default"} if uncertain.`;
-    const lastUserText = [...(body.messages||[])].reverse().find(m => m.role==='user')?.content || '';
-    const classResult = await callClaude(classifierSystem, { text: lastUserText, provided: { split: body.split, minutes: body.minutes, style: body.style }});
-    const split: Split = (body.split || classResult?.split || 'pull') as Split;
-    const minutes = Number(body.minutes || classResult?.minutes || 45);
-    const style = (body.style || classResult?.style || 'default') as 'default'|'ocho';
+`Extract intent for workout planning. Output strict JSON:
+{"split":"pull|push|legs|upper|full|hiit","minutes":number,"style":"default|ocho"}.
+Default: {"split":"pull","minutes":45,"style":"default"} if unclear.`;
 
-    // 3) catalog — ground the LLM in your exercises, filtered by your equipment
-    const catalog = await getExerciseCatalogFiltered(split, equipmentClean);
+    const lastUser = [...(body.messages||[])].reverse().find(m => m.role==='user')?.content || '';
+    const intents = await claudeJSON(classifierSystem, { text: lastUser, provided: { split: body.split, minutes: body.minutes, style: body.style }});
 
-    // 4) generation system prompt — constraints, no hardcoding of exercises
-    const budget = minutesToBudget(minutes);
+    const split: Split = (body.split || intents?.split || 'pull') as Split;
+    const minutes = Number(body.minutes || intents?.minutes || 45);
+    const style = (body.style || intents?.style || 'default') as 'default'|'ocho';
+    const time = budget(minutes);
+
+    // 3) Grounding catalog from your DB
+    const catalog = await getCatalog(split, equipment);
+
+    // 4) Ask the LLM to PLAN everything using only your catalog/equipment
     const system =
-`You are TrainAI, a world-class strength coach. Compose a complete ${split.toUpperCase()} workout as strict JSON.
+`You are TrainAI, a strength coach. Compose a complete ${split.toUpperCase()} workout as strict JSON only.
 
-Constraints:
-- Use ONLY exercises that can be done with the provided equipment list and the catalog items given (by name).
-- Warm-up must be ${budget.warmup} minutes (5–10 min window) and MUST include scap/shoulder prep AND thoracic rotation or anti-rotation.
-- Choose ONE main lift that suits the split and available equipment; this is the only thing that repeats across weeks. Place it first in "workout.mainExercises" with {"isAccessory":false}. All others are accessories with {"isAccessory":true}.
-- Fit the total time: warmup ${budget.warmup} min, main ${budget.main} min, accessories ${budget.accessories} min, cooldown ${budget.cooldown} min.
-- Keep instructions concise. Prefer patterns, not machines, unless catalog shows only machines for that pattern.
+Constraints
+- Use ONLY exercises present in the provided "catalog" (by name) and that are possible with the provided "equipment". If an exercise needs unavailable equipment, pick another from the catalog.
+- Warm-up must be ${time.warmup} minutes (5–10 min window) and MUST include scap/shoulder prep AND thoracic rotation or anti-rotation.
+- Choose ONE main lift that suits the split and equipment; make it the first item of "workout.mainExercises" with {"isAccessory":false}. All other main items are accessories with {"isAccessory":true}.
+- Fit within minutes: warmup ${time.warmup}, main ${time.main}, accessories ${time.accessories}, cooldown ${time.cooldown}.
 - Style: ${style === 'ocho'
-      ? 'Joe Holder Ocho style — include crawling/ground-based core, tempo or isometric cues on at least one accessory, pair accessories with breath/mobility resets where sensible, and include a carry or sled if equipment allows.'
-      : 'General evidence-based strength style.'}
+    ? 'Joe Holder Ocho style — include crawling/ground-based core, tempo OR isometric cues on at least one accessory, pair accessories with breath/mobility resets when helpful, and prefer carries or sled work if equipment allows.'
+    : 'Evidence-based general strength style.'}
+- Keep instructions concise.
 
 Schema (strict):
 {
@@ -249,39 +130,51 @@ Schema (strict):
   }
 }`;
 
-    // 5) user payload to the LLM
     const user = {
-      minutes, split, style, budget,
-      equipment: equipmentClean,
-      catalog,           // <— your database rows; the model must choose from these
-      history: body.messages || []
+      minutes, split, style, budget: time,
+      equipment,
+      catalog,            // ← your DB exercises
+      history: body.messages || [],
     };
 
-    // 6) first pass
-    let out = await callClaude(system, user);
+    let out = await claudeJSON(system, user);
 
-    // 7) validate & repair if needed
-    let { ok, errors } = validateShape(out);
-    if (!ok) {
-      const repaired = await repairWithClaude(out, errors, system);
-      const v2 = validateShape(repaired);
-      if (v2.ok) out = repaired; else return J(200, { ok:false, error: 'LLM returned invalid JSON', details: v2.errors });
+    // 5) Light validation & auto-repair loop (max 1 repair)
+    const issues: string[] = [];
+    const W = out?.workout;
+    if (!W || !A(W.warmup) || !A(W.mainExercises) || !W.mainExercises.length) {
+      issues.push('Invalid workout structure (need warmup[], mainExercises[] with at least one item).');
+    }
+    if (!out?.plan?.main_lift && A(W?.mainExercises) && W.mainExercises[0]?.name) {
+      out.plan = { ...(out.plan || {}), main_lift: W.mainExercises[0].name };
+    }
+    // equipment gating hint
+    const names = new Set((catalog||[]).map((r:any)=>String(r.name).toLowerCase()));
+    const illegal: string[] = [];
+    (W?.warmup||[]).concat(W?.mainExercises||[]).forEach((x:any) => {
+      const n = String(x?.name||'').toLowerCase();
+      if (n && !names.has(n)) illegal.push(x.name);
+    });
+    if (illegal.length) issues.push(`Found exercises not in catalog: ${[...new Set(illegal)].join(', ')}`);
+
+    if (issues.length) {
+      out = await claudeJSON(system + '\nFix the following issues and re-output strictly valid JSON:', { issues, previous: out, equipment, catalog, split, minutes, style });
     }
 
-    // 8) attach phases for your UI and return
+    // 6) Final payload + phases for your UI
     const workout = out.workout || {};
     const plan = { ...(out.plan || {}), split, duration: minutes, name: out?.name || `${split[0].toUpperCase()+split.slice(1)} (~${minutes} min)` };
     const payload = {
       ok: true,
       name: out?.name || plan.name,
       message: out?.message || plan.name,
-      coach: out?.coach || `${split.toUpperCase()} day. Main lift: ${String(plan.main_lift || workout?.mainExercises?.[0]?.name || '')}.`,
+      coach: out?.coach || `${split.toUpperCase()} session locked. Main lift: ${String(plan.main_lift || workout?.mainExercises?.[0]?.name || '')}.`,
       plan: { ...plan, phases: phasesFromWorkout(workout) },
       workout
     };
 
     return J(200, payload);
-  } catch (err: any) {
+  } catch (err:any) {
     console.error('api/chat fatal', err?.stack || err);
     return J(200, { ok:false, error: err?.message || 'Internal server error' });
   }
