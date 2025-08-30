@@ -122,7 +122,7 @@ function buildRuleBackup(split: string | undefined, minutes: number, equipment: 
   return { plan, workout };
 }
 
-function extractJson(raw: string): { plan?: Plan; workout?: Workout; error?: string } {
+function extractJson(raw: string): { plan?: ChatPlan; workout?: ChatWorkout; error?: string } {
   // Try ```json fencing first
   const fence = raw.match(/```json([\s\S]*?)```/i);
   const candidate = fence ? fence[1] : raw;
@@ -137,7 +137,7 @@ function extractJson(raw: string): { plan?: Plan; workout?: Workout; error?: str
   }
 }
 
-function validatePlan(plan?: Plan, workout?: Workout): { ok: boolean; why?: string } {
+function validatePlan(plan?: ChatPlan, workout?: ChatWorkout): { ok: boolean; why?: string } {
   if (workout && (workout.main?.length || workout.warmup?.length || workout.cooldown?.length)) return { ok: true };
   if (!plan) return { ok: false, why: 'Missing plan & workout.' };
   if (!Array.isArray(plan.phases)) return { ok: false, why: 'plan.phases not array.' };
@@ -285,7 +285,7 @@ function normalizePlan(input: any): { plan: Plan; warnings: string[] } {
 }
 
 /** Legacy bridge for your UI */
-function toLegacyWorkout(plan: Plan) {
+function toLegacyWorkout(plan: ChatPlan) {
   const get = (k: PlanPhase["phase"]) => plan.phases.find(p => p.phase === k)?.items ?? [];
   const warmup = get("prep").map(i => ({ name: i.name, sets: i.sets ?? "1", reps: i.reps ?? "10-15", instruction: i.instruction ?? "" }));
   const mainPrim = get("strength").map(i => ({ name: i.name, sets: i.sets ?? "3", reps: i.reps ?? (i.duration ?? "8-12"), instruction: i.instruction ?? "", isAccessory: !!i.isAccessory }));
@@ -297,7 +297,7 @@ function toLegacyWorkout(plan: Plan) {
 }
 
 /** Pretty "coach" narrative */
-function formatCoach(plan: Plan, workout: ReturnType<typeof toLegacyWorkout>): string {
+function formatCoach(plan: ChatPlan, workout: ReturnType<typeof toLegacyWorkout>): string {
   const title = plan?.name || "Planned Session";
   const minutes = S(plan?.est_total_minutes ?? plan?.duration_min);
   const lines: string[] = [];
