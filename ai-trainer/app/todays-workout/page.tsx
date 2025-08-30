@@ -339,14 +339,16 @@ export default function TodaysWorkoutPage() {
         }
       } else {
         // Use regular chat endpoint for other requests
+        const equipment = await getUserEquipment(user?.id || '');
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
-            userId: user?.id,
-            text: userMessage,
             minutes: selectedTime,
-            equipment: [] // Will be fetched by the API
+            equipment,
+            messages: [
+              { role: 'user', content: userMessage }
+            ]
           })
         });
 
@@ -430,6 +432,81 @@ export default function TodaysWorkoutPage() {
     }
   };
 
+  async function requestWorkout(split: 'pull'|'push'|'legs'|'upper'|'full'|'hiit', minutes: number, equipment: string[]) {
+    // optional: show a "thinking" message immediately
+    setChatMessages?.(prev => [...prev, { role: 'assistant', content: 'Planning your session…' }]);
+
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        split,
+        minutes,
+        equipment,
+        messages: [
+          { role: 'user', content: `I'd like a ${minutes} minute ${split} workout.` }
+        ],
+      }),
+    });
+
+    const ct = res.headers.get('content-type') || '';
+    const data = ct.includes('application/json') ? await res.json() : { ok:false, error: await res.text() };
+
+    if (!data?.ok) {
+      setChatMessages?.(prev => [...prev, { role: 'assistant', content: data?.error || 'Sorry, I hit an error.' }]);
+      return;
+    }
+
+    // If your renderer expects plan.phases, synthesize from workout:
+    if (!Array.isArray(data?.plan?.phases)) {
+      const warm = Array.isArray(data?.workout?.warmup) ? data.workout.warmup : [];
+      const main = Array.isArray(data?.workout?.mainExercises) ? data.workout.mainExercises : [];
+      const fin  = data?.workout?.finisher ? [data.workout.finisher] : [];
+      data.plan = {
+        ...(data.plan || {}),
+        phases: [
+          { phase:'prep',       items: warm.map((i:any)=>({ name:i.name??i.exercise, sets:i.sets, reps:i.reps, duration:i.duration, instruction:i.instruction })) },
+          { phase:'strength',   items: main.map((i:any)=>({ name:i.name??i.exercise, sets:i.sets, reps:i.reps, duration:i.duration, instruction:i.instruction, isAccessory:!!i.isAccessory })) },
+          { phase:'activation', items: [] },
+          { phase:'carry',      items: fin.map((i:any)=>({ name:i.name??i.exercise, sets:i.sets, reps:i.reps, duration:i.duration, instruction:i.instruction })) },
+        ],
+      };
+    }
+
+    // Update your existing UI state (keep your current setters)
+    setResp(data);
+    
+    // Safeguard arrays to stop ".map is not a function"
+    const safeWarmup = Array.isArray(data?.workout?.warmup) ? data.workout.warmup : [];
+    const safeMain = Array.isArray(data?.workout?.mainExercises) ? data.workout.mainExercises : [];
+    
+    // Prefer legacy workout; otherwise shape from plan.phases
+    const legacy = data?.workout
+      ? {
+          ...data.workout,
+          warmup: safeWarmup,
+          mainExercises: safeMain,
+        }
+      : {
+          name: data?.plan?.name,
+          warmup: data?.plan?.phases?.find((p: any) => p.phase === 'warmup')?.items ?? [],
+          main: data?.plan?.phases?.find((p: any) => p.phase === 'main')?.items ?? [],
+          conditioning: data?.plan?.phases?.find((p: any) => p.phase === 'conditioning')?.items ?? [],
+          cooldown: data?.plan?.phases?.find((p: any) => p.phase === 'cooldown')?.items ?? [],
+          est_total_minutes: data?.plan?.est_total_minutes ?? data?.plan?.duration_min,
+        };
+
+    const gw = llmToGeneratedWorkout(legacy);
+    setGeneratedWorkout(gw);
+
+    // Replace the placeholder chat with the coach/intro text
+    const coachText = data.coach ?? data.chatMsg ?? data.message ?? data.name ?? '';
+    setChatMessages?.(prev => {
+      const base = prev.filter(m => m?.content && !/Session \(~\d+ min\)/i.test(m.content));
+      return [...base, { role:'assistant', content: coachText }];
+    });
+  }
+
   const handleWorkoutSelect = async (workoutType: string) => {
     setIsLoading(true);
     setResp(null);
@@ -438,116 +515,8 @@ export default function TodaysWorkoutPage() {
       // Get user equipment
       const equipment = await getUserEquipment(user?.id || '');
       
-      const payload = { split: workoutType, minutes: selectedTime, equipment };
-      console.log('UI/request', payload);
-      
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          userId: user?.id,
-          split: workoutType,
-          minutes: selectedTime,
-          equipment 
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API Error: ${response.status} - ${errorText}`);
-      }
-
-      const ct = response.headers.get('content-type') || '';
-      if (!ct.includes('application/json')) {
-        const text = await response.text();
-        throw new Error(`Expected JSON but got ${ct || 'unknown'} (status ${response.status}). First 120: ${text.slice(0,120)}`);
-      }
-      const data = await response.json();
-      
-      if (data && data.ok === false) {
-        setChatMessages(prev => [...prev, { 
-          role: 'assistant', 
-          content: data.error || 'Unknown error' 
-        }]);
-        return;
-      }
-      
-      // Synthesize phases for your existing renderer
-      if (!Array.isArray(data?.plan?.phases)) {
-        const warm = Array.isArray(data?.workout?.warmup) ? data.workout.warmup : [];
-        const main = Array.isArray(data?.workout?.mainExercises) ? data.workout.mainExercises : [];
-        const fin  = data?.workout?.finisher ? [data.workout.finisher] : [];
-        data.plan = {
-          ...(data.plan || {}),
-          phases: [
-            { phase: 'prep', items: warm.map((i:any)=>({ name:i.name??i.exercise, sets:i.sets, reps:i.reps, duration:i.duration, instruction:i.instruction })) },
-            { phase: 'strength', items: main.map((i:any)=>({ name:i.name??i.exercise, sets:i.sets, reps:i.reps, duration:i.duration, instruction:i.instruction, isAccessory:!!i.isAccessory })) },
-            { phase: 'activation', items: [] },
-            { phase: 'carry', items: fin.map((i:any)=>({ name:i.name??i.exercise, sets:i.sets, reps:i.reps, duration:i.duration, instruction:i.instruction })) },
-          ],
-        };
-      }
-
-      console.log('UI/response', data);
-      
-      console.table(
-        [
-          ['warmup', typeof data?.workout?.warmup, Array.isArray(data?.workout?.warmup)],
-          ['main',   typeof data?.workout?.mainExercises, Array.isArray(data?.workout?.mainExercises)],
-          ['coach',  typeof data?.coach, !!data?.coach],
-        ].map(([k,t,a]) => ({ key:k as string, type:t as string, isArray:Boolean(a) }))
-      );
-      
-      const normalized = normalizePlan(data);
-      console.log('UI/normalized', {
-        counts: {
-          prep:      data.plan.phases.find((p:any)=>p.phase==='prep')?.items?.length ?? 0,
-          strength:  data.plan.phases.find((p:any)=>p.phase==='strength')?.items?.length ?? 0,
-        },
-        sample: data.plan.phases.slice(0,2),
-      });
-      
-      setResp(data);
-
-      // Safe get function to guard against map errors
-      const get = (k: any) => Array.isArray(data?.plan?.phases) ? (data.plan.phases.find((p:any)=>p.phase===k)?.items ?? []) : [];
-
-      // Safeguard arrays to stop ".map is not a function"
-      const safeWarmup = Array.isArray(data?.workout?.warmup) ? data.workout.warmup : [];
-      const safeMain = Array.isArray(data?.workout?.mainExercises) ? data.workout.mainExercises : [];
-      
-      // Prefer legacy workout; otherwise shape from plan.phases
-      const legacy = data?.workout
-        ? {
-            ...data.workout,
-            warmup: safeWarmup,
-            mainExercises: safeMain,
-          }
-        : {
-            name: data?.plan?.name,
-            warmup: data?.plan?.phases?.find((p: any) => p.phase === 'warmup')?.items ?? [],
-            main: data?.plan?.phases?.find((p: any) => p.phase === 'main')?.items ?? [],
-            conditioning: data?.plan?.phases?.find((p: any) => p.phase === 'conditioning')?.items ?? [],
-            cooldown: data?.plan?.phases?.find((p: any) => p.phase === 'cooldown')?.items ?? [],
-            est_total_minutes: data?.plan?.est_total_minutes ?? data?.plan?.duration_min,
-          };
-
-      const gw = llmToGeneratedWorkout(legacy);
-      setGeneratedWorkout(gw);
-
-      // Title: use top-level name/message first
-      const title =
-        data?.name ||       // "Ocho System Power Endurance (~45 min)"
-        data?.message ||    // fallback
-        legacy?.name ||     // last resort
-        'Workout';
-
-      // Overwrite the chat text with the coach message (kill the placeholder)
-      const coachText = data?.coach ?? data?.chatMsg ?? data?.message ?? data?.name ?? '';
-      setChatMessages((prev:any[]) => {
-        const base = prev.filter((m:any) => m?.content && !/Session \(~\d+ min\)/i.test(m.content));
-        return [...base, { role: 'assistant', content: coachText }];
-      });
+      // Use the new requestWorkout function
+      await requestWorkout(workoutType as any, selectedTime, equipment);
     } catch (error) {
       console.error('Error generating workout:', error);
       setChatMessages(prev => [
@@ -562,6 +531,12 @@ export default function TodaysWorkoutPage() {
   // Use normalized data for rendering - single source of truth
   const normalized: NormalizedPlan | null = useMemo(() => normalizePlan(resp), [resp]);
   const totalItems = normalized ? (normalized.warmup.length + normalized.main.length + normalized.cooldown.length) : 0;
+
+  // Safe mapping functions for workout data
+  const get = (k:any) =>
+    Array.isArray(resp?.plan?.phases) ? (resp.plan.phases.find((p:any)=>p.phase===k)?.items ?? []) : [];
+  const warmup   = get('prep');
+  const strength = get('strength');
 
   // Redirect if not authenticated
   if (!user) {

@@ -52,18 +52,21 @@ export async function POST(req: NextRequest) {
     }
 
     const body = (await req.json()) as { messages?: Msg[]; minutes?: number; split?: string; equipment?: string[] };
-    const messages = Array.isArray(body?.messages) ? body!.messages : [];
+    let messages = Array.isArray(body?.messages) ? body!.messages : [];
+    const minutes = Number(body?.minutes || 45);
+    const split = (body?.split || 'pull') as 'pull' | 'push' | 'legs' | 'upper' | 'full' | 'hiit';
+    const equipment = Array.isArray(body?.equipment) ? body!.equipment : [];
+
+    // If no chat history, synthesize a single user prompt from split/minutes
     if (messages.length === 0) {
-      return json(200, { ok: false, error: 'messages[] required' });
+      const prompt = `Generate a ${minutes}-minute ${split.toUpperCase()} workout. Use my equipment: ${equipment.join(', ') || 'bodyweight only'}. Anchor the main lift only; rotate everything else; include rotation/anti-rotation in warm-up. Reply JSON.`;
+      messages = [{ role: 'user', content: prompt }];
     }
+
     const lastUser = [...messages].reverse().find(m => m.role === 'user')?.content?.trim() || '';
 
     // Special-case shortcut (e.g., "joe holder ocho style")
     const isJoeHolder = /^joe\s+holder/i.test(lastUser);
-
-    const minutes = Number(body?.minutes || 45);
-    const split = (body?.split || (/\bpull\b/i.test(lastUser) ? 'pull' : 'push')) as 'pull' | 'push' | 'legs' | 'upper' | 'full' | 'hiit';
-    const equipment = Array.isArray(body?.equipment) ? body!.equipment : [];
 
     // MAIN lift anchor logic (only main repeats)
     const MAIN_LIFTS: Record<string, string[]> = {
