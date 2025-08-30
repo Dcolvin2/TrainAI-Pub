@@ -8,78 +8,67 @@ import { supabase } from '@/lib/supabaseClient';
 import { normalizePlan, buildChatSummary, NormalizedPlan } from '@/lib/normalizePlan';
 import { getUserEquipment } from '@/lib/getUserEquipment';
 
-// ── Client-side adapter for consistent data normalization ─────────────────
+// --- response adapter (drop-in) ---
 function toStr(v: any) {
   if (v == null) return undefined;
   return typeof v === 'number' ? String(v) : String(v);
 }
-
-function normalizeDuration(x: any) {
-  if (x?.duration) return x.duration;
-  if (x?.duration_seconds != null) {
-    const s = Number(x.duration_seconds);
+function dur(v: any) {
+  if (v?.duration) return v.duration;
+  if (v?.duration_seconds != null) {
+    const s = Number(v.duration_seconds);
     if (Number.isFinite(s)) return s % 60 === 0 ? `${s / 60} min` : `${s}s`;
   }
   return undefined;
 }
-
-function normalizeItems(items: any[]) {
-  return (Array.isArray(items) ? items : [])
+function normItems(list: any[]): any[] {
+  return (Array.isArray(list) ? list : [])
     .map((it: any) => ({
       name: it?.name ?? it?.exercise ?? '',
       sets: it?.sets,
       reps: toStr(it?.reps),
-      duration: normalizeDuration(it),
+      duration: dur(it),
       instruction: it?.instruction,
-      // accept either flag; we'll re-set below
       isAccessory: typeof it?.isAccessory === 'boolean' ? it.isAccessory : undefined,
       is_main: it?.is_main,
     }))
     .filter(x => x.name);
 }
 
-/** Accepts any of these:
- *  - out.workout.mainExercises
- *  - out.workout.main
- *  - out.plan.phases[{ phase:'main'|'strength'|'prep'|'warmup'|'carry_block'|'cooldown' }]
- * Returns { plan, workout } with plan.phases prep/strength/carry set.
- */
-function normalizeForUI(out: any, split: string, minutes: number) {
-  // Phase-shaped?
-  const phases = Array.isArray(out?.plan?.phases) ? out.plan.phases : [];
-  const byPhase = (key: string) => {
-    const k = key.toLowerCase();
-    return phases.find((p: any) => String(p?.phase || '').toLowerCase() === k)?.items || [];
-  };
+/** Accepts any LLM shape; returns { plan, workout, coach } the UI expects */
+function normalizeForUI(raw: any, split: string, minutes: number) {
+  const phases = Array.isArray(raw?.plan?.phases) ? raw.plan.phases : [];
+  const byPhase = (name: string) =>
+    phases.find((p: any) => String(p?.phase || '').toLowerCase() === name)?.items || [];
 
-  // Workout-shaped?
-  const w = out?.workout || {};
-  const warmA =
+  const w = raw?.workout || {};
+  const warmSrc =
     w?.warmup ?? w?.warm_up ?? (byPhase('warmup').length ? byPhase('warmup') : byPhase('prep'));
-  const mainA =
+  const mainSrc =
     w?.mainExercises ?? w?.main ?? byPhase('main').concat(byPhase('strength'));
-  const finA =
+  const finSrc =
     w?.finisher ??
+    byPhase('carry')[0] ??
     byPhase('carry_block')[0] ??
     byPhase('conditioning')[0] ??
     byPhase('cooldown')[0] ??
     null;
 
-  const warmup = normalizeItems(warmA);
-  const main = normalizeItems(mainA);
+  const warmup = normItems(warmSrc);
+  const main = normItems(mainSrc);
   if (main.length) {
     main[0] = { ...main[0], isAccessory: false, is_main: undefined };
     for (let i = 1; i < main.length; i++) {
       main[i] = { ...main[i], isAccessory: true, is_main: undefined };
     }
   }
-  const finisher = finA ? normalizeItems([finA])[0] : undefined;
+  const finisher = finSrc ? normItems([finSrc])[0] : undefined;
 
-  const mainLift = out?.plan?.main_lift || main?.[0]?.name || '';
+  const mainLift = raw?.plan?.main_lift || main?.[0]?.name || '';
   const plan = {
     split,
     duration: minutes,
-    name: out?.name || `${split[0]?.toUpperCase()}${split.slice(1)} (~${minutes} min)`,
+    name: raw?.name || `${split[0]?.toUpperCase()}${split.slice(1)} (~${minutes} min)`,
     main_lift: mainLift,
     phases: [
       { phase: 'prep', items: warmup },
@@ -90,9 +79,9 @@ function normalizeForUI(out: any, split: string, minutes: number) {
   };
   const workout = { warmup, mainExercises: main, finisher };
   const coach =
-    (out?.coach && String(out.coach).trim().length > 20 && !/^trainai$/i.test(out.coach))
-      ? out.coach
-      : `${String(split).toUpperCase()} day. Main lift: ${mainLift || '—'}. Warm-up includes scap + thoracic rotation/anti-rotation.`;
+    (raw?.coach && String(raw.coach).trim().length > 20 && !/^trainai$/i.test(raw.coach))
+      ? raw.coach
+      : `${String(split).toUpperCase()} day. Main lift: ${mainLift || '—'}. Warm-up includes scap/shoulder prep and thoracic rotation/anti-rotation.`;
 
   return { plan, workout, coach };
 }
@@ -456,13 +445,17 @@ export default function TodaysWorkoutPage() {
             content: `Error: ${raw.error}` 
           }]);
         } else {
+          // Use the adapter for consistent data handling
+          const { plan, workout, coach } = normalizeForUI(raw, 'pull', selectedTime);
+          
+          // Update state with normalized data
+          setResp(raw);
+          
           // Handle modification responses
-          if (raw.isModification && raw.workout) {
+          if (raw.isModification && workout) {
             // Update the workout with the modified version
-            if (raw.workout) {
-              const gw = llmToGeneratedWorkout(raw.workout);
-              setGeneratedWorkout(gw);
-            }
+            const gw = llmToGeneratedWorkout(workout);
+            setGeneratedWorkout(gw);
             
             // Show just the modification message
             setChatMessages(prev => [...prev, {
@@ -470,31 +463,16 @@ export default function TodaysWorkoutPage() {
               content: raw.chatMsg || raw.message
             }]);
             
-          } else if (raw.workout && !raw.isModification) {
+          } else if (workout && !raw.isModification) {
             // New workout generated
-            let gw: GeneratedWorkout;
-            if (raw.workout) {
-              gw = llmToGeneratedWorkout(raw.workout);
-              setGeneratedWorkout(gw);
-              
-              // Title: use top-level name/message first
-              const title =
-                raw?.name ||       // "Ocho System Power Endurance (~45 min)"
-                raw?.message ||    // fallback
-                gw.name ||          // last resort
-                'Workout';
-
-              // Body: prefer explicit chatMsg (LLM-normalized summary), then coach text, then format the plan
-              const body =
-                raw?.chatMsg ||
-                raw?.coach ||
-                asCoachMessage(gw, title, gw.duration);
-
-              setChatMessages(prev => [
-                ...prev,
-                { role: 'assistant', content: body },
-              ]);
-            }
+            const gw = llmToGeneratedWorkout(workout);
+            setGeneratedWorkout(gw);
+            
+            // Use the normalized coach text
+            setChatMessages(prev => [
+              ...prev,
+              { role: 'assistant', content: coach },
+            ]);
             
           } else {
             // Regular message without workout
@@ -502,12 +480,6 @@ export default function TodaysWorkoutPage() {
               role: 'assistant',
               content: raw.chatMsg || raw.message || raw.response
             }]);
-          }
-          
-          // If workout data is returned, update the display
-          if (raw.workout) {
-            const gw = llmToGeneratedWorkout(raw.workout);
-            setGeneratedWorkout(gw);
           }
         }
       }
@@ -593,13 +565,13 @@ export default function TodaysWorkoutPage() {
 
   // Use normalized data for rendering - single source of truth
   const normalized: NormalizedPlan | null = useMemo(() => normalizePlan(resp), [resp]);
-  const totalItems = normalized ? (normalized.warmup.length + normalized.main.length + normalized.cooldown.length) : 0;
-
-  // Safe mapping functions for workout data
-  const get = (k:any) =>
-    Array.isArray(resp?.plan?.phases) ? (resp.plan.phases.find((p:any)=>p.phase===k)?.items ?? []) : [];
-  const warmup   = get('prep');
-  const strength = get('strength');
+  
+  // Read from plan.phases for table rendering
+  const warmup = resp?.plan?.phases?.find((p: any) => p.phase === 'prep')?.items ?? [];
+  const main = resp?.plan?.phases?.find((p: any) => p.phase === 'strength')?.items ?? [];
+  
+  // Show "No items generated" only if BOTH warmup and main are empty
+  const totalItems = warmup.length + main.length;
 
   // Redirect if not authenticated
   if (!user) {
