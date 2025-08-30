@@ -199,6 +199,10 @@ function llmToGeneratedWorkout(raw: any): GeneratedWorkout {
     accessories = mainAll.slice(splitN).map((it: DisplayItem) => ({ ...it, isAccessory: true }));
   }
 
+  // after the fallback that splits primaries/accessories…
+  primaries = primaries.map((it: DisplayItem) => ({ ...it, isAccessory: false }));
+  accessories = accessories.map((it: DisplayItem) => ({ ...it, isAccessory: true }));
+
   const mainDedup = dedup(primaries);
   const mainKeys = new Set(mainDedup.map((i: DisplayItem) => toKey(i.name)));
   const accDedup = dedup(accessories.filter((a: DisplayItem) => !mainKeys.has(toKey(a.name))));
@@ -734,11 +738,15 @@ export default function TodaysWorkoutPage() {
                                 <h4 className="text-md font-semibold text-gray-300">
                                   {exerciseName}
                                 </h4>
-                                {normalized?.showAccessoryLabels && (
-                                  (exercise as any).isAccessory
-                                    ? <span className="ml-2 inline-flex items-center rounded-md px-2 py-0.5 text-xs bg-slate-700/60 text-slate-200">Accessory</span>
-                                    : <span className="ml-2 inline-flex items-center rounded-md px-2 py-0.5 text-xs bg-emerald-900/40 text-emerald-200">Main Lift</span>
-                                )}
+                                <span
+                                  className={`ml-2 inline-flex items-center rounded-md px-2 py-0.5 text-xs ${
+                                    (exercise as any)?.isAccessory === false || exerciseIndex === 0
+                                      ? 'bg-emerald-900/40 text-emerald-200'
+                                      : 'bg-slate-700/60 text-slate-200'
+                                  }`}
+                                >
+                                  {(exercise as any)?.isAccessory === false || exerciseIndex === 0 ? 'Main Lift' : 'Accessory'}
+                                </span>
                               </div>
                               <div className="bg-gray-800 rounded-lg p-4">
                                 {/* Column headers */}
