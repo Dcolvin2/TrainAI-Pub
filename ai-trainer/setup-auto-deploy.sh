@@ -125,3 +125,4 @@ echo ""
 echo "Redeploy manually:"
 echo "  vercel --prod"
 echo ""
+

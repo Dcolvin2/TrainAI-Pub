@@ -12,3 +12,4 @@ export function devlog(label: string, data: unknown) {
     console.log(`DBG/${label}`, '[unserializable]');
   }
 }
+

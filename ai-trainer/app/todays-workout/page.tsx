@@ -5,6 +5,8 @@ import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
+import { normalizeWorkout, type WorkoutShape } from '@/utils/workoutNormalize';
+import { getUserEquipment } from '@/lib/getUserEquipment';
 
 // ── LLM → UI helpers (keeps your table layout) ─────────────────
 type DisplayItem = {
@@ -198,6 +200,15 @@ const workoutTypes = [
   }
 ];
 
+type ApiResp = {
+  ok: boolean;
+  name: string;
+  message: string;
+  workout?: any;
+  plan?: any;
+  debug?: any;
+};
+
 export default function TodaysWorkoutPage() {
   const { user } = useAuth();
   const router = useRouter();
@@ -207,6 +218,8 @@ export default function TodaysWorkoutPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [generatedWorkout, setGeneratedWorkout] = useState<GeneratedWorkout | null>(null);
   const [previousWorkoutData, setPreviousWorkoutData] = useState<any>({});
+  const [resp, setResp] = useState<ApiResp | null>(null);
+  const [view, setView] = useState<WorkoutShape | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new messages are added
@@ -387,7 +400,16 @@ export default function TodaysWorkoutPage() {
 
   const handleWorkoutSelect = async (workoutType: string) => {
     setIsLoading(true);
+    setResp(null);
+    setView(null);
+    
     try {
+      // Get user equipment
+      const equipment = await getUserEquipment(user?.id || '');
+      
+      const payload = { split: workoutType, minutes: selectedTime, equipment };
+      console.log('UI/request', payload);
+      
       const url = `/api/chat-workout?user=${user?.id}&split=${encodeURIComponent(
         workoutType
       )}&minutes=${selectedTime}&style=${workoutType === 'hiit' ? 'hiit' : 'strength'}`;
@@ -404,6 +426,20 @@ export default function TodaysWorkoutPage() {
       }
 
       const data = await response.json();
+      console.log('UI/response', data);
+      
+      const normalized = normalizeWorkout(data);
+      console.log('UI/normalized', { 
+        counts: { 
+          w: normalized.warmup.length, 
+          m: normalized.main.length, 
+          c: normalized.cooldown.length 
+        }, 
+        sample: normalized.main.slice(0,2) 
+      });
+      
+      setResp(data);
+      setView(normalized);
 
       // Prefer legacy workout; otherwise shape from plan.phases
       const legacy = data?.workout
@@ -448,6 +484,8 @@ export default function TodaysWorkoutPage() {
       setIsLoading(false);
     }
   };
+
+  const totalItems = (view?.warmup.length ?? 0) + (view?.main.length ?? 0) + (view?.cooldown.length ?? 0);
 
   // Redirect if not authenticated
   if (!user) {
@@ -512,6 +550,63 @@ export default function TodaysWorkoutPage() {
               
               {/* Nike Test Button - REMOVED - Now integrated into chat */}
             </div>
+
+            {/* Debug Drawer */}
+            {resp && (
+              <div className="rounded-lg border border-slate-700 p-3 text-xs text-slate-300 mb-4">
+                <div><b>{resp.name}</b></div>
+                <div>validity: {resp?.debug?.validity ?? 'n/a'} | parseError: {resp?.debug?.parseError ?? 'none'}</div>
+                <div>counts → warmup:{view?.warmup.length ?? 0} main:{view?.main.length ?? 0} cooldown:{view?.cooldown.length ?? 0}</div>
+                <div>split:{resp?.debug?.split ?? 'n/a'} minutes:{resp?.debug?.minutesRequested ?? 'n/a'}</div>
+              </div>
+            )}
+
+            {/* Workout render */}
+            {view && (
+              <section className="rounded-xl bg-slate-900 p-4 mb-4">
+                <h3 className="text-slate-100 font-semibold mb-2">Workout</h3>
+
+                <h4 className="text-slate-300">Warm-up</h4>
+                <ul className="mb-3 list-disc pl-6">
+                  {(view?.warmup ?? []).map((it, i) => (
+                    <li key={`wu-${i}`}>
+                      {it.name}
+                      {it.sets ? ` – ${it.sets} sets` : ''}
+                      {it.reps ? ` x ${it.reps}` : ''}
+                      {it.duration_seconds ? ` (${Math.round(it.duration_seconds/60)} min)` : ''}
+                    </li>
+                  ))}
+                </ul>
+
+                <h4 className="text-slate-300">Main</h4>
+                <ul className="mb-3 list-disc pl-6">
+                  {(view?.main ?? []).map((it, i) => (
+                    <li key={`mn-${i}`}>
+                      {it.name}
+                      {it.sets ? ` – ${it.sets} sets` : ''}
+                      {it.reps ? ` x ${it.reps}` : ''}
+                      {it.duration_seconds ? ` (${Math.round(it.duration_seconds/60)} min)` : ''}
+                    </li>
+                  ))}
+                </ul>
+
+                <h4 className="text-slate-300">Cooldown</h4>
+                <ul className="mb-3 list-disc pl-6">
+                  {(view?.cooldown ?? []).map((it, i) => (
+                    <li key={`cd-${i}`}>
+                      {it.name}
+                      {it.duration_seconds ? ` (${Math.round(it.duration_seconds/60)} min)` : ''}
+                    </li>
+                  ))}
+                </ul>
+
+                {totalItems > 0 ? (
+                  <button className="btn btn-primary">Start Workout</button>
+                ) : (
+                  <div className="text-red-400 text-sm">No items generated. Check the debug drawer and try again.</div>
+                )}
+              </section>
+            )}
 
             {/* Generated Workout Display */}
             {generatedWorkout && (
@@ -682,12 +777,16 @@ export default function TodaysWorkoutPage() {
                   </div>
                 )}
                 
-                <button 
-                  onClick={() => console.log('Starting workout:', generatedWorkout)}
-                  className="mt-4 w-full bg-green-600 hover:bg-green-700 py-3 rounded-lg font-semibold"
-                >
-                  Start Workout
-                </button>
+                {totalItems > 0 ? (
+                  <button 
+                    onClick={() => console.log('Starting workout:', generatedWorkout)}
+                    className="mt-4 w-full bg-green-600 hover:bg-green-700 py-3 rounded-lg font-semibold"
+                  >
+                    Start Workout
+                  </button>
+                ) : (
+                  <div className="text-red-400 text-sm mt-4">No items generated. Check the debug drawer and try again.</div>
+                )}
               </div>
             )}
           </div>

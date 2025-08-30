@@ -143,3 +143,4 @@ ANTHROPIC_API_KEY=your_key_here
 2. Monitor logs for workout generation issues
 3. Adjust backup workouts based on user feedback
 4. Fine-tune validation rules as needed
+

@@ -176,3 +176,4 @@ vercel --prod
 ---
 
 🎉 **You're all set!** Every time you push to main, your app will automatically deploy to Vercel.
+

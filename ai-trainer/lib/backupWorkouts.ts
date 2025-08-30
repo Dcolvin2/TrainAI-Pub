@@ -96,3 +96,4 @@ export function makeTitle(split: string, minutes: number) {
   const pretty = split ? split[0].toUpperCase() + split.slice(1) : 'Session';
   return `${pretty} Session (~${minutes} min)`;
 }
+
