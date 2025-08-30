@@ -312,14 +312,14 @@ export default function TodaysWorkoutPage() {
         }
       } else {
         // Use regular chat endpoint for other requests
-        const response = await fetch(`/api/chat-workout?user=${user?.id}`, {
+        const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
-            message: userMessage,
-            currentWorkout: generatedWorkout || null,
-            sessionId: null, // We can add session tracking later if needed
-            userId: user?.id
+            userId: user?.id,
+            text: userMessage,
+            minutes: selectedTime,
+            equipment: [] // Will be fetched by the API
           })
         });
 
@@ -410,14 +410,15 @@ export default function TodaysWorkoutPage() {
       const payload = { split: workoutType, minutes: selectedTime, equipment };
       console.log('UI/request', payload);
       
-      const url = `/api/chat-workout?user=${user?.id}&split=${encodeURIComponent(
-        workoutType
-      )}&minutes=${selectedTime}&style=${workoutType === 'hiit' ? 'hiit' : 'strength'}`;
-
-      const response = await fetch(url, {
+      const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: `${workoutType} ${selectedTime} min — use only my equipment.` }),
+        body: JSON.stringify({ 
+          userId: user?.id,
+          split: workoutType,
+          minutes: selectedTime,
+          equipment 
+        }),
       });
 
       if (!response.ok) {

@@ -112,20 +112,30 @@ export default function WorkoutStarter({ userId, onWorkoutSelected }: WorkoutSta
       const payload = { split, minutes, equipment };
       console.log('UI/request', payload);
       
-      const { workout, plan, coach, debug } = await planWorkout({
-        userId,
-        split,
-        minutes,
-        style: split === 'hiit' ? 'hiit' : 'strength', // HIIT forces hiit style, others use strength
-        message: `${type} workout, ${minutes} min, use my equipment`,
-        debug: 'none',
+      // Call the new unified chat API
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          userId, 
+          split, 
+          minutes, 
+          equipment 
+        })
       });
+
+      if (!response.ok) {
+        throw new Error(`API Error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const { workout, plan, debug } = data;
       
       // Create response object for debugging
       const apiResp: ApiResp = {
         ok: true,
         name: plan?.name || `${type} Workout`,
-        message: coach || `${type} workout generated`,
+        message: data.message || `${type} workout generated`,
         workout,
         plan,
         debug
@@ -150,16 +160,16 @@ export default function WorkoutStarter({ userId, onWorkoutSelected }: WorkoutSta
       const transformedWorkout = {
         type: type,
         dayType: type,
-        coreLift: workout.main.find(item => !item.isAccessory)?.name || 'Compound Lift',
-        warmup: workout.warmup.map(item => item.name),
-        workout: workout.main.map(item => item.name),
-        cooldown: workout.cooldown.map(item => item.name),
+        coreLift: workout.main.find((item: any) => !item.isAccessory)?.name || 'Compound Lift',
+        warmup: workout.warmup.map((item: any) => item.name),
+        workout: workout.main.map((item: any) => item.name),
+        cooldown: workout.cooldown.map((item: any) => item.name),
         // Include the new data for future use
         plan,
-        coach,
+        message: data.message,
         debug,
         // Legacy format for compatibility
-        details: workout.main.map(item => ({
+        details: workout.main.map((item: any) => ({
           name: item.name,
           sets: Array.from({ length: parseInt(item.sets || '3') }, (_, i) => ({
             setNumber: i + 1,
