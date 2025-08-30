@@ -10,31 +10,93 @@ export const runtime = "nodejs";
 // ---- Clients ----
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
-// utils inside your /api route file
+// --- helpers (put at top of route.ts) ---
 type PhaseKey = 'prep'|'activation'|'strength'|'carry_block'|'conditioning'|'cooldown';
+type Item = { name: string; sets?: number; reps?: string|number; duration_seconds?: number; instruction?: string|null; rest_seconds?: number|null; is_main?: boolean };
+type Plan = { name: string; phases: Array<{ phase: PhaseKey; items: Item[] }> };
+type Workout = { warmup: Item[]; main: Item[]; cooldown: Item[] };
 
-type WorkoutItem = {
-  name: string;
-  sets?: number;
-  reps?: string | number;
-  duration_seconds?: number;
-  load?: string | number | null;
-  instruction?: string | null;
-  rest_seconds?: number | null;
-};
+function titleFor(split: string | undefined, minutes: number) {
+  const pretty = split ? split[0].toUpperCase() + split.slice(1) : 'Session';
+  return `${pretty} (~${minutes} min)`;
+}
 
-type PlanShape = {
-  name: string;
-  phases: Array<{ phase: PhaseKey; items: WorkoutItem[] }>;
-};
+function coachText(split: string | undefined, minutes: number, hasHistory: boolean) {
+  if (!hasHistory) {
+    return `This is your first workout—great time to set a baseline. We'll do a ${minutes}-minute ${split || 'full'} session. Focus on smooth reps, controlled tempo, and stop 1–2 reps shy of failure.`;
+  }
+  switch (split) {
+    case 'push': return `Push day (chest/shoulders/triceps). Stay tight on bench, control the eccentric, and keep rests ~90–120s.`;
+    case 'pull': return `Pull day (back/biceps). Lead pulls with your elbows, squeeze lats at the top, keep bracing on rows.`;
+    case 'legs': return `Leg day. Drive through mid-foot/heel, own the bottom position, and control your eccentric on squats/RDLs.`;
+    case 'hiit': return `Intervals today. Hit hard on the work sets, nasal-breathe on recovery, and keep posture tall.`;
+    default: return `Full body today. Move crisply, leave 1–2 reps in the tank, and keep transitions tight.`;
+  }
+}
 
-type WorkoutShape = {
-  warmup: WorkoutItem[];
-  main: WorkoutItem[];
-  cooldown: WorkoutItem[];
-};
+// explicit, non-vague backups (used when LLM parsing fails)
+function buildRuleBackup(split: string | undefined, minutes: number, equipment: string[]): { plan: Plan; workout: Workout } {
+  const has = (s: string) => equipment.some(e => e.toLowerCase().includes(s));
+  const warm: Item[] = [
+    { name: 'Bike Easy', duration_seconds: 180 },
+    { name: 'Band Pull-Apart', sets: 2, reps: 15 },
+  ];
+  let main: Item[] = [];
+  const cool: Item[] = [
+    { name: 'Child\'s Pose', duration_seconds: 60 },
+    { name: 'Doorway Pec Stretch', duration_seconds: 60 },
+  ];
 
-function extractJson(raw: string): { plan?: PlanShape; workout?: WorkoutShape; error?: string } {
+  switch (split) {
+    case 'push':
+      main = [
+        { name: has('barbell') ? 'Barbell Bench Press' : 'Dumbbell Bench Press', sets: 4, reps: '6-8', is_main: true },
+        { name: 'Overhead Press (DB or Barbell)', sets: 3, reps: '8-10' },
+        { name: 'Incline DB Press', sets: 3, reps: '10-12' },
+        { name: 'Cable Triceps Pressdown', sets: 3, reps: '10-12' },
+      ];
+      break;
+    case 'pull':
+      main = [
+        { name: has('cable') ? 'Lat Pulldown' : 'Pull-Up or Assisted Pull-Up', sets: 4, reps: '6-8', is_main: true },
+        { name: 'One-Arm DB Row', sets: 3, reps: '8-10' },
+        { name: 'Chest-Supported Row', sets: 3, reps: '10-12' },
+        { name: 'DB Hammer Curl', sets: 3, reps: '10-12' },
+      ];
+      break;
+    case 'legs':
+      main = [
+        { name: has('barbell') ? 'Back Squat' : 'Goblet Squat', sets: 4, reps: '6-8', is_main: true },
+        { name: 'Romanian Deadlift (DB or Barbell)', sets: 3, reps: '8-10' },
+        { name: 'DB Walking Lunge', sets: 3, reps: '10 each' },
+        { name: 'Seated Calf Raise (Machine or DB on knees)', sets: 3, reps: '12-15' },
+      ];
+      break;
+    default: // FULL BODY — explicit, never "Circuit"
+      main = [
+        { name: has('barbell') ? 'Back Squat' : 'Goblet Squat', sets: 3, reps: '8-10', is_main: true },
+        { name: 'DB Bench Press', sets: 3, reps: '8-10' },
+        { name: 'One-Arm DB Row', sets: 3, reps: '10-12' },
+        { name: 'Kettlebell Swing', sets: 3, reps: '12-15' },
+      ];
+  }
+
+  const workout: Workout = { warmup: warm, main, cooldown: cool };
+  const plan: Plan = {
+    name: 'Planned Session',
+    phases: [
+      { phase: 'prep', items: warm },
+      { phase: 'activation', items: [] },
+      { phase: 'strength', items: main },
+      { phase: 'carry_block', items: [] },
+      { phase: 'conditioning', items: split === 'hiit' ? main : [] },
+      { phase: 'cooldown', items: cool },
+    ],
+  };
+  return { plan, workout };
+}
+
+function extractJson(raw: string): { plan?: Plan; workout?: Workout; error?: string } {
   // Try ```json fencing first
   const fence = raw.match(/```json([\s\S]*?)```/i);
   const candidate = fence ? fence[1] : raw;
@@ -49,7 +111,7 @@ function extractJson(raw: string): { plan?: PlanShape; workout?: WorkoutShape; e
   }
 }
 
-function validatePlan(plan?: PlanShape, workout?: WorkoutShape): { ok: boolean; why?: string } {
+function validatePlan(plan?: Plan, workout?: Workout): { ok: boolean; why?: string } {
   if (workout && (workout.main?.length || workout.warmup?.length || workout.cooldown?.length)) return { ok: true };
   if (!plan) return { ok: false, why: 'Missing plan & workout.' };
   if (!Array.isArray(plan.phases)) return { ok: false, why: 'plan.phases not array.' };
@@ -321,22 +383,28 @@ export async function POST(req: Request) {
 
     if (!validity.ok) {
       devlog('fallback.reason', validity.why ?? 'unknown');
-      const backup = buildRuleBasedBackup(split, minutes, equipmentList);
+      const backup = buildRuleBackup(split, minutes, equipmentList);
       finalPlan = backup.plan;
       finalWorkout = backup.workout;
     }
 
     // 5) Return with explicit debug
+    const minutesNum = Number(minutes ?? 45);
+    const respTitle = titleFor(split, minutesNum);
+
+    // TODO: optionally check Supabase to detect history; for now:
+    const hasHistory = false;
+
     return NextResponse.json({
       ok: true,
-      name: makeTitle(split, minutes), // see helper below
-      message: makeTitle(split, minutes),
-      coach: null,
+      name: respTitle,
+      message: respTitle,
+      coach: coachText(split, minutesNum, hasHistory),
       plan: finalPlan,
       workout: finalWorkout,
       debug: {
         usedTwoPass: false,   // set true only if you actually do it
-        minutesRequested: minutes,
+        minutesRequested: minutesNum,
         split,
         equipmentList: equipmentList,
         parseError: extracted.error ?? null,

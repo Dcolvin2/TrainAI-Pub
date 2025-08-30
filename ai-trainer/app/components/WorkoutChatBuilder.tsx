@@ -1,9 +1,10 @@
 'use client'
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { WorkoutTimer } from './WorkoutTimer'
 import { WorkoutExerciseCard, LogSet } from './WorkoutExerciseCard'
+import { normalizeWorkout, WorkoutItem } from '@/lib/normalizeWorkout'
 
 // Type declarations for Web Speech API
 declare global {
@@ -96,6 +97,9 @@ export default function WorkoutChatBuilder({ userId }: { userId: string }) {
   const [isWorkoutActive, setIsWorkoutActive] = useState(false)
   const [dbg, setDbg] = useState<string>('')
   const [workoutData, setWorkoutData] = useState<any>(null)
+
+  // Use normalized data for rendering
+  const view = useMemo(() => workoutData ? normalizeWorkout(workoutData) : null, [workoutData]);
 
   // UI guardrails (stop showing lone "Start Workout")
   const hasContent = (w?: { warmup?: unknown[]; main?: unknown[]; cooldown?: unknown[] }) =>
@@ -534,7 +538,7 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
       {/* Start Workout Button */}
       {workoutSets.length > 0 && !isWorkoutActive && (
         <div className="p-4">
-          {hasContent(workoutData?.workout) ? (
+          {view && (view.warmup.length + view.main.length + view.cooldown.length) > 0 ? (
             <button
               onClick={startWorkout}
               className="w-full bg-[#22C55E] py-4 rounded-lg text-white font-medium hover:bg-[#16a34a] transition-colors text-lg"
