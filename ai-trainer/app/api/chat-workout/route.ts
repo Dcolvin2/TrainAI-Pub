@@ -4,6 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { supabase } from "@/lib/supabaseClient";
 import { devlog } from "@/lib/devlog";
 import { buildRuleBasedBackup, makeTitle } from "@/lib/backupWorkouts";
+import { normalizePlan, buildChatSummary } from "@/lib/normalizePlan";
 
 export const runtime = "nodejs";
 
@@ -456,11 +457,16 @@ export async function POST(req: Request) {
       ? { ...finalPlan, name: finalPlan.name || title }
       : null;
 
+    // Build descriptive chat summary using the new normalizer
+    const normalized = normalizePlan({ plan: safePlan, workout: finalWorkout });
+    const chatMsg = normalized ? buildChatSummary(normalized) : "No workout details available.";
+
     return NextResponse.json({
       ok: true,
       name: title,
       message: respTitle,
       coach: coachText(split, minutesNum, hasHistory),
+      chatMsg: chatMsg,
       plan: safePlan,
       workout: finalWorkout, // optional if you still return it
       debug: {

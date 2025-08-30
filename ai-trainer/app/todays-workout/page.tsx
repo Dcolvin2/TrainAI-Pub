@@ -5,7 +5,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
-import { normalizeWorkout } from '@/utils/normalizeWorkout';
+import { normalizePlan, buildChatSummary, NormalizedPlan } from '@/lib/normalizePlan';
 import { getUserEquipment } from '@/lib/getUserEquipment';
 
 // ── LLM → UI helpers (keeps your table layout) ─────────────────
@@ -427,14 +427,14 @@ export default function TodaysWorkoutPage() {
       const data = await response.json();
       console.log('UI/response', data);
       
-      const normalized = normalizeWorkout(data);
+      const normalized = normalizePlan(data);
       console.log('UI/normalized', { 
-        counts: { 
+        counts: normalized ? { 
           w: normalized.warmup.length, 
           m: normalized.main.length, 
           c: normalized.cooldown.length 
-        }, 
-        sample: normalized.main.slice(0,2) 
+        } : { w: 0, m: 0, c: 0 }, 
+        sample: normalized?.main.slice(0,2) || []
       });
       
       setResp(data);
@@ -483,9 +483,9 @@ export default function TodaysWorkoutPage() {
     }
   };
 
-  // Use normalized data for rendering
-  const view = useMemo(() => resp ? normalizeWorkout(resp) : null, [resp]);
-  const totalItems = (view?.warmup.length ?? 0) + (view?.main.length ?? 0) + (view?.cooldown.length ?? 0);
+  // Use normalized data for rendering - single source of truth
+  const normalized: NormalizedPlan | null = useMemo(() => normalizePlan(resp), [resp]);
+  const totalItems = normalized ? (normalized.warmup.length + normalized.main.length + normalized.cooldown.length) : 0;
 
   // Redirect if not authenticated
   if (!user) {
@@ -556,27 +556,25 @@ export default function TodaysWorkoutPage() {
               <div className="rounded-lg border border-slate-700 p-3 text-xs text-slate-300 mb-4">
                 <div><b>{resp.name}</b></div>
                 <div>validity: {resp?.debug?.validity ?? 'n/a'} | parseError: {resp?.debug?.parseError ?? 'none'}</div>
-                <div>counts → warmup:{view?.warmup.length ?? 0} main:{view?.main.length ?? 0} cooldown:{view?.cooldown.length ?? 0}</div>
+                <div>counts → warmup:{normalized?.warmup.length ?? 0} main:{normalized?.main.length ?? 0} cooldown:{normalized?.cooldown.length ?? 0}</div>
                 <div>split:{resp?.debug?.split ?? 'n/a'} minutes:{resp?.debug?.minutesRequested ?? 'n/a'}</div>
               </div>
             )}
 
-            {/* Workout render */}
-            {view && (
+            {/* Workout render - single source of truth */}
+            {normalized && (
               <section className="rounded-xl bg-slate-900 p-4 mb-4">
-                <h3 className="text-slate-100 font-semibold mb-2">Workout</h3>
+                <h3 className="text-slate-100 font-semibold mb-2">{normalized.title}</h3>
 
                 {/* Warm-up */}
-                {view.warmup.length > 0 && (
+                {normalized.warmup.length > 0 && (
                   <>
                     <h4 className="text-slate-300">Warm-up</h4>
                     <ul className="mb-3 list-disc pl-6">
-                      {view.warmup.map((it, i) => (
+                      {normalized.warmup.map((item, i) => (
                         <li key={`wu-${i}`}>
-                          {it.name}
-                          {it.sets ? ` – ${it.sets} sets` : ''}
-                          {it.reps ? ` x ${it.reps}` : ''}
-                          {it.duration_seconds ? ` (${Math.round(it.duration_seconds/60)} min)` : ''}
+                          {item.name} – {item.sets} x {item.reps}
+                          {item.duration && ` (${item.duration})`}
                         </li>
                       ))}
                     </ul>
@@ -584,21 +582,20 @@ export default function TodaysWorkoutPage() {
                 )}
 
                 {/* Main */}
-                {view.main.length > 0 && (
+                {normalized.main.length > 0 && (
                   <>
                     <h4 className="text-slate-300">Main</h4>
                     <ul className="mb-3 list-disc pl-6">
-                      {view.main.map((it, i) => (
+                      {normalized.main.map((item, i) => (
                         <li key={`mn-${i}`}>
-                          {it.name}
-                          {it.is_main && (
+                          {item.name}
+                          {item.isMain && (
                             <span className="ml-2 px-2 py-0.5 rounded-md bg-emerald-600/20 text-emerald-300 text-xs border border-emerald-700/40">
                               Main Lift
                             </span>
                           )}
-                          {it.sets ? ` – ${it.sets} sets` : ''}
-                          {it.reps ? ` x ${it.reps}` : ''}
-                          {it.duration_seconds ? ` (${Math.round(it.duration_seconds/60)} min)` : ''}
+                          – {item.sets} x {item.reps}
+                          {item.duration && ` (${item.duration})`}
                         </li>
                       ))}
                     </ul>
@@ -606,14 +603,14 @@ export default function TodaysWorkoutPage() {
                 )}
 
                 {/* Cooldown */}
-                {view.cooldown.length > 0 && (
+                {normalized.cooldown.length > 0 && (
                   <>
                     <h4 className="text-slate-300">Cooldown</h4>
                     <ul className="mb-3 list-disc pl-6">
-                      {view.cooldown.map((it, i) => (
+                      {normalized.cooldown.map((item, i) => (
                         <li key={`cd-${i}`}>
-                          {it.name}
-                          {it.duration_seconds ? ` (${Math.round(it.duration_seconds/60)} min)` : ''}
+                          {item.name} – {item.sets} x {item.reps}
+                          {item.duration && ` (${item.duration})`}
                         </li>
                       ))}
                     </ul>
