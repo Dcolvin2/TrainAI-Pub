@@ -3,10 +3,63 @@ import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { supabase } from "@/lib/supabaseClient";
 import { devlog } from "@/lib/devlog";
-import { buildRuleBasedBackup, makeTitle } from "@/lib/backupWorkouts";
+
 import { normalizePlan as normalizePlanLib, buildChatSummary } from "@/lib/normalizePlan";
 
 export const runtime = "nodejs";
+
+// Inline helpers to replace backupWorkouts import
+type Split = "pull" | "push" | "legs" | "upper" | "full" | "hiit";
+
+// Minimal title helper
+const makeTitle = (split: string, minutes?: number) =>
+  `${split.charAt(0).toUpperCase() + split.slice(1)} (~${Number.isFinite(minutes as number) ? minutes : 45} min)`;
+
+// Catalog-based backup used ONLY if the LLM output is unusable.
+// Picks from the names already returned by your DB; no hardcoding of exercises.
+const buildRuleBasedBackup = (input: any) => {
+  const split = (input?.split || "pull") as Split;
+  const minutes = Number(input?.minutes || 45);
+  const catalogNames: string[] = Array.isArray(input?.catalog)
+    ? input.catalog.map((r: any) => (typeof r === "string" ? r : r?.name)).filter(Boolean)
+    : [];
+
+  const names = Array.from(new Set(catalogNames));
+  const mainLift = names[0] || "Primary Lift";
+  const accessories = names.filter((n) => n !== mainLift).slice(0, 3);
+  const warm = names.slice(0, 3);
+
+  const workout = {
+    warmup: warm.map((n) => ({ name: n, sets: 1, reps: "8–12" })),
+    mainExercises: [
+      { name: mainLift, sets: 4, reps: "5", isAccessory: false },
+      ...accessories.map((n) => ({ name: n, sets: 3, reps: "8–12", isAccessory: true })),
+    ],
+    finisher: undefined as any,
+  };
+
+  const plan = {
+    split,
+    duration: minutes,
+    name: makeTitle(split, minutes),
+    main_lift: mainLift,
+    phases: [
+      { phase: "prep", items: workout.warmup },
+      { phase: "strength", items: workout.mainExercises },
+      { phase: "activation", items: [] },
+      { phase: "carry", items: [] },
+    ],
+  };
+
+  return {
+    ok: true,
+    name: plan.name,
+    message: plan.name,
+    coach: `${split.toUpperCase()} backup plan. Main lift: ${mainLift}.`,
+    plan,
+    workout,
+  };
+};
 
 // ---- Clients ----
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
