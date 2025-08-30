@@ -522,6 +522,17 @@ export default function TodaysWorkoutPage() {
         ...prev,
         { role: 'assistant', content: body },
       ]);
+      
+      // Set chat text for the chat pane
+      const coachText =
+        data?.coach ??
+        data?.chatMsg ??
+        data?.message ??
+        data?.name ??
+        '';
+      
+      // Update chat state with smart text
+      setChatMessages(prev => [...prev, { role: 'assistant', content: coachText }]);
     } catch (error) {
       console.error('Error generating workout:', error);
       setChatMessages(prev => [
