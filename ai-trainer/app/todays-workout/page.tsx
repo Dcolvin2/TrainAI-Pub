@@ -483,12 +483,28 @@ export default function TodaysWorkoutPage() {
     const gw = llmToGeneratedWorkout(legacy);
     setGeneratedWorkout(gw);
 
-    // remove planning + any static placeholders, then append coach
+    // remove planning + placeholder, then append coach
     const coachText = data?.coach ?? data?.chatMsg ?? data?.message ?? data?.name ?? '';
     setChatMessages?.(prev => {
       const base = prev.filter(m => m?.meta !== 'planning' && !(m?.content && /Session \(~\d+ min\)/i.test(m.content)));
       return [...base, { role:'assistant', content: coachText }];
     });
+
+    // guarantee phases client-side as a safety net (should already be present)
+    if (!Array.isArray(data?.plan?.phases) || !(data.plan.phases.find((p:any)=>p.phase==='strength')?.items?.length)) {
+      const warm = Array.isArray(data?.workout?.warmup) ? data.workout.warmup : [];
+      const main = Array.isArray(data?.workout?.mainExercises) ? data.workout.mainExercises : [];
+      const fin  = data?.workout?.finisher ? [data.workout.finisher] : [];
+      data.plan = {
+        ...(data.plan || {}),
+        phases: [
+          { phase:'prep', items:warm },
+          { phase:'strength', items:main },
+          { phase:'activation', items:[] },
+          { phase:'carry', items:fin },
+        ],
+      };
+    }
   }
 
   const handleWorkoutSelect = async (workoutType: string) => {
