@@ -245,9 +245,6 @@ Schema (strict):
       });
     }
 
-    // Sanitize cooldown based on user preferences
-    await sanitizeCooldown(workout, userId, prefs);
-
     // Derive plan & phases for your UI
     const mainLift = workout?.mainExercises?.[0]?.name || '';
     const plan = {
@@ -263,11 +260,39 @@ Schema (strict):
       ],
     };
 
-    // Also mirror into plan.phases if you use them:
-    if (Array.isArray(plan?.phases)) {
-      const coolIdx = plan.phases.findIndex((p: any) => /cool|carry|conditioning/i.test(String(p?.phase)));
-      if (coolIdx >= 0) plan.phases[coolIdx].items = workout.cooldown.map((i: any) => ({ name: i.name, duration: i.duration || '45–60s' }));
-      else plan.phases.push({ phase: 'cooldown', items: workout.cooldown });
+    // Build a cooldown list from existing shapes (finisher | phases | cooldown[])
+    const initialCooldown: any[] = Array.isArray((workout as any)?.cooldown)
+      ? (workout as any).cooldown
+      : workout?.finisher
+      ? [workout.finisher]
+      : Array.isArray(plan?.phases)
+      ? (plan.phases.find((p: any) =>
+          /cooldown|carry|conditioning/i.test(String(p?.phase))
+        )?.items ?? [])
+      : [];
+
+    // Sanitize (removes burpees/HIIT, prefers stretches/mobility)
+    const cdHolder = await sanitizeCooldown({ cooldown: initialCooldown }, userId, prefs);
+    const sanitizedCooldown: any[] = Array.isArray(cdHolder?.cooldown) ? cdHolder.cooldown : [];
+
+    // Reflect back into workout + plan (without adding a workout.cooldown property)
+    if (sanitizedCooldown.length) {
+      // Keep server schema stable: single finisher object
+      workout.finisher = sanitizedCooldown[0];
+
+      // Ensure plan has an explicit cooldown phase for the UI
+      if (Array.isArray(plan?.phases)) {
+        const items = sanitizedCooldown.map((i: any) => ({
+          name: i.name,
+          duration: i.duration || '45–60s',
+          instruction: i.instruction,
+        }));
+        const idx = plan.phases.findIndex(
+          (p: any) => String(p?.phase || '').toLowerCase() === 'cooldown'
+        );
+        if (idx >= 0) plan.phases[idx].items = items;
+        else plan.phases.push({ phase: 'cooldown', items });
+      }
     }
 
     // Coach line (never "TrainAI")
