@@ -461,9 +461,10 @@ export default function TodaysWorkoutPage() {
         legacy?.name ||     // last resort
         'Workout';
 
-      // Body: prefer coach text, otherwise format the plan
+      // Body: prefer chatMsg (LLM-normalized summary), then coach text, then format the plan
       const body =
-        data?.coach ||                      // if LLM wrote nice text
+        data?.chatMsg ||                    // if LLM wrote detailed summary
+        data?.coach ||                      // fallback to coach text
         data?.message ||                    // fallback to message
         asCoachMessage(gw, title, selectedTime); // format the plan
 
@@ -767,7 +768,7 @@ export default function TodaysWorkoutPage() {
                           : 'bg-gray-800 text-gray-100'
                       }`}
                     >
-                      <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                      <p className="whitespace-pre-line break-words">{msg.content}</p>
                     </div>
                 </div>
                 ))}
