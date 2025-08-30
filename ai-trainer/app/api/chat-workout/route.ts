@@ -11,10 +11,33 @@ export const runtime = "nodejs";
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
 // --- helpers (put at top of route.ts) ---
-type PhaseKey = 'prep'|'activation'|'strength'|'carry_block'|'conditioning'|'cooldown';
-type Item = { name: string; sets?: number; reps?: string|number; duration_seconds?: number; instruction?: string|null; rest_seconds?: number|null; is_main?: boolean };
-type Plan = { name: string; phases: Array<{ phase: PhaseKey; items: Item[] }> };
-type Workout = { warmup: Item[]; main: Item[]; cooldown: Item[] };
+type PhaseKey =
+  | 'prep'
+  | 'activation'
+  | 'strength'
+  | 'carry_block'
+  | 'conditioning'
+  | 'cooldown';
+
+type Item = {
+  name: string;
+  sets?: number;
+  reps?: string | number;
+  duration_seconds?: number;
+  instruction?: string | null;
+  rest_seconds?: number | null;
+  is_main?: boolean;
+};
+
+// renamed from Plan -> ChatPlan to avoid collision
+type ChatPlan = {
+  name?: string;
+  duration_min?: number;
+  phases: Array<{ phase: PhaseKey; items: Item[] }>;
+};
+
+// If you DON'T use this anywhere, delete it to avoid unused-type warnings.
+// type ChatWorkout = { warmup: Item[]; main: Item[]; cooldown: Item[] };
 
 function titleFor(split: string | undefined, minutes: number) {
   const pretty = split ? split[0].toUpperCase() + split.slice(1) : 'Session';
@@ -35,7 +58,7 @@ function coachText(split: string | undefined, minutes: number, hasHistory: boole
 }
 
 // explicit, non-vague backups (used when LLM parsing fails)
-function buildRuleBackup(split: string | undefined, minutes: number, equipment: string[]): { plan: Plan; workout: Workout } {
+function buildRuleBackup(split: string | undefined, minutes: number, equipment: string[]): { plan: ChatPlan; workout: any } {
   const has = (s: string) => equipment.some(e => e.toLowerCase().includes(s));
   const warm: Item[] = [
     { name: 'Bike Easy', duration_seconds: 180 },
@@ -395,12 +418,16 @@ export async function POST(req: Request) {
     // TODO: optionally check Supabase to detect history; for now:
     const hasHistory = false;
 
+    // Normalize the outgoing response so your UI title isn't stuck on plan.name when the model leaves it empty
+    const title = respTitle || finalPlan?.name || 'Workout';
+    const safePlan = finalPlan ? { ...finalPlan, name: finalPlan.name || title } : null;
+
     return NextResponse.json({
       ok: true,
-      name: respTitle,
+      name: title,
       message: respTitle,
       coach: coachText(split, minutesNum, hasHistory),
-      plan: finalPlan,
+      plan: safePlan,
       workout: finalWorkout,
       debug: {
         usedTwoPass: false,   // set true only if you actually do it
