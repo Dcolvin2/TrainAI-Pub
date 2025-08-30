@@ -272,67 +272,7 @@ function coachText(split: string | undefined, minutes: number, hasHistory: boole
   }
 }
 
-// explicit, non-vague backups (used when LLM parsing fails)
-function buildRuleBackup(split: string | undefined, minutes: number, equipment: string[]): { plan: ChatPlan; workout: ChatWorkout } {
-  const has = (s: string) => equipment.some(e => e.toLowerCase().includes(s));
-  const warm: Item[] = [
-    { name: 'Bike Easy', duration_seconds: 180 },
-    { name: 'Band Pull-Apart', sets: 2, reps: 15 },
-  ];
-  let main: Item[] = [];
-  const cool: Item[] = [
-    { name: 'Child\'s Pose', duration_seconds: 60 },
-    { name: 'Doorway Pec Stretch', duration_seconds: 60 },
-  ];
 
-  switch (split) {
-    case 'push':
-      main = [
-        { name: has('barbell') ? 'Barbell Bench Press' : 'Dumbbell Bench Press', sets: 4, reps: '6-8', is_main: true },
-        { name: 'Overhead Press (DB or Barbell)', sets: 3, reps: '8-10' },
-        { name: 'Incline DB Press', sets: 3, reps: '10-12' },
-        { name: 'Cable Triceps Pressdown', sets: 3, reps: '10-12' },
-      ];
-      break;
-    case 'pull':
-      main = [
-        { name: has('cable') ? 'Lat Pulldown' : 'Pull-Up or Assisted Pull-Up', sets: 4, reps: '6-8', is_main: true },
-        { name: 'One-Arm DB Row', sets: 3, reps: '8-10' },
-        { name: 'Chest-Supported Row', sets: 3, reps: '10-12' },
-        { name: 'DB Hammer Curl', sets: 3, reps: '10-12' },
-      ];
-      break;
-    case 'legs':
-      main = [
-        { name: has('barbell') ? 'Back Squat' : 'Goblet Squat', sets: 4, reps: '6-8', is_main: true },
-        { name: 'Romanian Deadlift (DB or Barbell)', sets: 3, reps: '8-10' },
-        { name: 'DB Walking Lunge', sets: 3, reps: '10 each' },
-        { name: 'Seated Calf Raise (Machine or DB on knees)', sets: 3, reps: '12-15' },
-      ];
-      break;
-    default: // FULL BODY — explicit, never "Circuit"
-      main = [
-        { name: has('barbell') ? 'Back Squat' : 'Goblet Squat', sets: 3, reps: '8-10', is_main: true },
-        { name: 'DB Bench Press', sets: 3, reps: '8-10' },
-        { name: 'One-Arm DB Row', sets: 3, reps: '10-12' },
-        { name: 'Kettlebell Swing', sets: 3, reps: '12-15' },
-      ];
-  }
-
-  const workout: ChatWorkout = { warmup: warm, main, cooldown: cool };
-  const plan: ChatPlan = {
-    name: 'Planned Session',
-    phases: [
-      { phase: 'prep', items: warm },
-      { phase: 'activation', items: [] },
-      { phase: 'strength', items: main },
-      { phase: 'carry_block', items: [] },
-      { phase: 'conditioning', items: split === 'hiit' ? main : [] },
-      { phase: 'cooldown', items: cool },
-    ],
-  };
-  return { plan, workout };
-}
 
 async function getRecentCoreLift(userId: string, mainLift?: string) {
   if (!userId || !mainLift) return null;
@@ -802,15 +742,16 @@ export async function POST(req: Request) {
     const validity = validatePlan(extracted.plan, extracted.workout);
     devlog('validate', validity);
 
-    // 5) If invalid, DO NOT silently switch to Ocho. Build rule-based backup for the split.
+    // 5) If invalid, return error instead of fallback
     let finalPlan = extracted.plan;
     let finalWorkout = extracted.workout;
 
     if (!validity.ok) {
-      devlog('fallback.reason', validity.why ?? 'unknown');
-      const backup = buildRuleBackup(split, minutes, equipmentList);
-      finalPlan = backup.plan;
-      finalWorkout = backup.workout;
+      devlog('validation.failed', validity.why ?? 'unknown');
+      return NextResponse.json({ 
+        ok: false, 
+        error: `Workout validation failed: ${validity.why || 'unknown error'}` 
+      }, { status: 400 });
     }
 
     // 6) Return with explicit debug

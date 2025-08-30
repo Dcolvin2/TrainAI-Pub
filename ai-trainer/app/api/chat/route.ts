@@ -35,6 +35,66 @@ function synthCoach(raw: any, plan: any, workout: any, split: Split, minutes: nu
   return `${split.toUpperCase()} day${tag}. Main lift: ${main}. Warm-up includes scap/shoulder prep and thoracic rotation/anti-rotation. We'll fill accessories within ${minutes} minutes and finish with a short cooldown.`;
 }
 
+function toStringRep(v: any) {
+  if (v == null) return undefined;
+  if (typeof v === 'number') return String(v);
+  return String(v);
+}
+
+function normalizeDuration(x: any) {
+  if (x?.duration) return x.duration;
+  if (x?.duration_seconds) {
+    const s = Number(x.duration_seconds);
+    if (!isFinite(s)) return undefined;
+    if (s % 60 === 0) return `${s/60} min`;
+    return `${s}s`;
+  }
+  return undefined;
+}
+
+function normalizeItems(items: any[]): any[] {
+  return (Array.isArray(items) ? items : []).map((it: any) => ({
+    name: it?.name ?? it?.exercise ?? '',
+    sets: it?.sets,
+    reps: toStringRep(it?.reps),
+    duration: normalizeDuration(it),
+    instruction: it?.instruction,
+    isAccessory: typeof it?.isAccessory === 'boolean' ? it.isAccessory : undefined,
+    is_main: it?.is_main, // we'll convert below
+  })).filter(x => x.name);
+}
+
+// Accepts any of: {workout:{main:[]}}, {workout:{mainExercises:[]}}, or {plan:{phases:[...]}}
+function normalizeLLM(out: any) {
+  // A) Phase-shaped JSON
+  const phases = Array.isArray(out?.plan?.phases) ? out.plan.phases : [];
+  const byPhase = (key: string) =>
+    phases.find((p: any) => (p?.phase||'').toLowerCase() === key)?.items || [];
+
+  // B) Workout-shaped JSON (various keys we've seen)
+  const w = out?.workout || {};
+  const mainA = w?.mainExercises ?? w?.main ?? w?.strength ?? [];
+  const warmA = w?.warmup ?? w?.warm_up ?? [];
+  const finA  = w?.finisher ?? w?.cooldown?.[0] ?? null;
+
+  // Prefer explicit workout if it has main items; else derive from phases
+  const warm = normalizeItems(
+    Array.isArray(mainA) && mainA.length ? warmA : byPhase('warmup').length ? byPhase('warmup') : byPhase('prep')
+  );
+  const main = normalizeItems(
+    Array.isArray(mainA) && mainA.length ? mainA : byPhase('main').concat(byPhase('strength'))
+  );
+  const fin  = finA ? normalizeItems([finA])[0] : (byPhase('carry_block')[0] || byPhase('conditioning')[0] || byPhase('cooldown')[0]);
+
+  // First main is the anchor; others are accessories
+  if (main.length) {
+    main[0] = { ...main[0], isAccessory: false, is_main: undefined };
+    for (let i=1;i<main.length;i++) main[i] = { ...main[i], isAccessory: true, is_main: undefined };
+  }
+
+  return { workout: { warmup: warm, mainExercises: main, finisher: fin } };
+}
+
 async function getUserEquipment(userId?: string) {
   const sb = supabaseServer();
   // Try common shapes; keep whichever exists in your DB.
@@ -182,87 +242,58 @@ Schema (strict):
 
     let out = await claudeJSON(system, user);
 
-    // ---- Pass 1 result ----
-    let workout = out?.workout || {};
-    let plan = { ...(out?.plan || {}), split, duration: minutes, name: out?.name || `${split[0].toUpperCase()+split.slice(1)} (~${minutes} min)` };
+    // Normalize whatever the LLM returns into the ONE shape your UI expects
+    let { workout } = normalizeLLM(out);
 
     dpush(debug, 'firstPass', {
-      warm: Array.isArray(out?.workout?.warmup) ? out.workout.warmup.length : 0,
-      main: Array.isArray(out?.workout?.mainExercises) ? out.workout.mainExercises.length : 0,
+      warm: Array.isArray(workout?.warmup) ? workout.warmup.length : 0,
+      main: Array.isArray(workout?.mainExercises) ? workout.mainExercises.length : 0,
       coachLen: (out?.coach || '').length,
     });
 
-    const namesSet = new Set((catalog || []).map((r:any) => String(r.name).toLowerCase()));
-    const issues: string[] = [];
-
-    // Structural checks
-    if (!Array.isArray(workout?.warmup)) issues.push('workout.warmup must be an array');
-    if (!Array.isArray(workout?.mainExercises) || workout.mainExercises.length === 0) issues.push('workout.mainExercises must be a non-empty array');
-
-    // Catalog grounding
-    const notInCatalog: string[] = [];
-    [...(workout?.warmup || []), ...(workout?.mainExercises || [])].forEach((x:any) => {
-      const n = String(x?.name || '').toLowerCase();
-      if (n && !namesSet.has(n)) notInCatalog.push(x.name);
-    });
-    if (notInCatalog.length) issues.push(`Exercises not in catalog: ${[...new Set(notInCatalog)].join(', ')}`);
-
-    // If any issues → Pass 2 (repair)
-    if (issues.length) {
-      dpush(debug, 'repairIssues', issues);
+    // If main is still empty -> ask the model to repair its own JSON (no hardcoded moves)
+    if (!Array.isArray(workout.mainExercises) || workout.mainExercises.length === 0) {
+      dpush(debug, 'repairIssues', ['mainExercises is empty']);
       out = await claudeJSON(
-        system + '\nFix the issues and re-emit strict JSON using only names from "catalog". ' +
-        'Ensure "workout.mainExercises" has ONE primary lift first (isAccessory:false) and 2–4 accessories after (isAccessory:true).',
-        { issues, previous: out, equipment, catalog, split, minutes, style }
+        system + '\nYour previous JSON omitted "workout.mainExercises". Repair it using only names from "catalog".',
+        { previous: out, equipment, catalog, split, minutes, style }
       );
-      workout = out?.workout || workout;
-      plan = { ...(out?.plan || plan), split, duration: minutes, name: out?.name || plan.name };
+      ({ workout } = normalizeLLM(out));
       dpush(debug, 'secondPass', {
         warm: Array.isArray(workout?.warmup) ? workout.warmup.length : 0,
         main: Array.isArray(workout?.mainExercises) ? workout.mainExercises.length : 0,
       });
     }
 
-    // If still no main → Pass 3 (strong repair)
-    if (!Array.isArray(workout?.mainExercises) || workout.mainExercises.length === 0) {
-      const strongIssues = ['mainExercises is empty — choose an appropriate main lift from catalog for the split and equipment, then add 2–4 accessories from catalog.'];
-      out = await claudeJSON(
-        system + '\nYour previous JSON omitted mainExercises. You MUST include it now as described.',
-        { issues: strongIssues, previous: out, equipment, catalog, split, minutes, style }
-      );
-      workout = out?.workout || workout;
-      plan = { ...(out?.plan || plan), split, duration: minutes, name: out?.name || plan.name };
-      dpush(debug, 'thirdPass', {
-        warm: Array.isArray(workout?.warmup) ? workout.warmup.length : 0,
-        main: Array.isArray(workout?.mainExercises) ? workout.mainExercises.length : 0,
-      });
-    }
+    // Derive plan & phases for your UI
+    const mainLift = workout?.mainExercises?.[0]?.name || '';
+    const plan = {
+      split,
+      duration: minutes,
+      name: out?.name || `${split[0].toUpperCase()+split.slice(1)} (~${minutes} min)`,
+      main_lift: out?.plan?.main_lift || mainLift,
+      phases: [
+        { phase:'prep', items: workout.warmup },
+        { phase:'strength', items: workout.mainExercises },
+        { phase:'activation', items: [] },
+        { phase:'carry', items: workout.finisher ? [workout.finisher] : [] },
+      ],
+    };
 
-    // Normalize main flags and plan.main_lift
-    if (Array.isArray(workout?.mainExercises) && workout.mainExercises.length) {
-      workout.mainExercises = [
-        { ...(workout.mainExercises[0] || {}), isAccessory: false },
-        ...workout.mainExercises.slice(1).map((x:any) => ({ ...x, isAccessory: true })),
-      ];
-    }
-    if (!plan.main_lift && Array.isArray(workout?.mainExercises) && workout.mainExercises[0]?.name) {
-      plan.main_lift = workout.mainExercises[0].name;
-    }
+    // Coach line (never "TrainAI")
+    const coach = ((): string => {
+      const raw = String(out?.coach || '').trim();
+      if (raw && raw.length > 20 && !/^trainai$/i.test(raw)) return raw;
+      return `${split.toUpperCase()} day. Main lift: ${mainLift || '—'}. Warm-up includes scap/shoulder prep and thoracic rotation/anti-rotation.`;
+    })();
 
-    // Always attach plan.phases and synthesize a coach string if needed
-    const phases = [
-      { phase: 'prep',       items: Array.isArray(workout?.warmup) ? workout.warmup : [] },
-      { phase: 'strength',   items: Array.isArray(workout?.mainExercises) ? workout.mainExercises : [] },
-      { phase: 'activation', items: [] },
-      { phase: 'carry',      items: workout?.finisher ? [workout.finisher] : [] },
-    ];
-
+    // Final payload
     const payload = {
       ok: true,
       name: out?.name || plan.name,
       message: out?.message || plan.name,
-      coach: synthCoach(out?.coach, plan, workout, split, minutes, style),
-      plan: { ...plan, phases },
+      coach,
+      plan,
       workout,
     };
     if (dbg) (payload as any).debug = debug;

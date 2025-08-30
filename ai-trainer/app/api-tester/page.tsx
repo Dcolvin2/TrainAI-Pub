@@ -113,10 +113,16 @@ export default function ApiTester() {
       minutes,
       forcedStyle: style,
     });
-    const res = await fetch(`/api/chat-workout?${qs}`, {
+    const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: chatMsg || 'plan a workout' }),
+      body: JSON.stringify({ 
+        messages: [{ role: 'user', content: chatMsg || 'plan a workout' }],
+        split: chatSplit || undefined,
+        minutes,
+        equipment: ['adjustable bench','barbells','dumbbells','trap bar','cables','cable attachments','bench','squat rack','trx'],
+        debug: true
+      }),
     });
     const json = await res.json();
     setChatOut(JSON.stringify(json, null, 2));
@@ -143,10 +149,16 @@ export default function ApiTester() {
       minutes,
       forcedStyle: style,
     });
-    const res = await fetch(`/api/chat-workout?${qs}`, {
+    const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: `${split} workout ${minutes} min use my equipment` }),
+      body: JSON.stringify({ 
+        messages: [{ role: 'user', content: `${split} workout ${minutes} min use my equipment` }],
+        split,
+        minutes,
+        equipment: ['adjustable bench','barbells','dumbbells','trap bar','cables','cable attachments','bench','squat rack','trx'],
+        debug: true
+      }),
     });
     const json = await res.json();
     setSplitResults(prev => ({
@@ -188,7 +200,7 @@ export default function ApiTester() {
 
       {/* Chat Playground (free text) */}
       <section className={card}>
-        <h2 className="font-semibold text-gray-900">Chat Playground (POST /api/chat-workout)</h2>
+        <h2 className="font-semibold text-gray-900">Chat Playground (POST /api/chat)</h2>
         <div className="grid gap-2 md:grid-cols-2">
           <div className="space-y-2">
             <label className="text-sm text-gray-700">Message</label>
