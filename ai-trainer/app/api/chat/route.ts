@@ -4,6 +4,8 @@ import { supabaseServer } from '@/lib/supabaseServer';
 import { claudeJSON } from '@/lib/llm';
 import { ResponseOut, phasesFromWorkout, budget } from '@/lib/schema';
 import { fetchCatalog, fetchUserEquipmentNames } from '@/lib/catalog';
+import { getUserPrefs, mergeUserPrefs } from '@/lib/prefs';
+import { sanitizeCooldown } from '@/lib/cooldownPolicy';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -132,6 +134,21 @@ export async function POST(req: NextRequest) {
         : (userId ? await fetchUserEquipmentNames(userId) : []);
     dpush(debug, 'equipment', { final: equipment, count: equipment.length });
 
+    // 1a) Get user preferences and learn from messages
+    const prefs = await getUserPrefs(userId);
+    
+    // Quick preference extraction from the last user message
+    const lastUserMsg = Array.isArray(body.messages) ? [...body.messages].reverse().find(m => m.role === 'user')?.content || '' : '';
+    if (/\b(no|don't|never)\b.*cool[-\s]?down.*\b(burpee|hiit|sprint|jump|thruster|climber)\b/i.test(lastUserMsg)) {
+      await mergeUserPrefs(userId, { cooldown: 'stretch_only', banned_exercises: ['burpee'] });
+      prefs.cooldown = 'stretch_only';
+      prefs.banned_exercises = Array.from(new Set([...(prefs.banned_exercises || []), 'burpee']));
+    }
+    if (/\b(prefer|want).*(stretch|mobility).*(cool[-\s]?down)/i.test(lastUserMsg)) {
+      await mergeUserPrefs(userId, { cooldown: 'stretch_priority' });
+      prefs.cooldown = 'stretch_priority';
+    }
+
     // 2) classify intent (you already do this); set split/minutes/style
     const classifierSystem =
 `Extract intent for workout planning. Output strict JSON:
@@ -159,6 +176,14 @@ Default: {"split":"pull","minutes":45,"style":"default"} if unclear.`;
     }
 
     // 4) Ask the LLM to PLAN everything using only your catalog/equipment
+    const policy = `
+Rules for cooldown:
+- Use 2–4 low-intensity stretches or mobility positions ONLY (static or dynamic).
+- Absolutely do NOT include high-intensity movements (no burpees, sprints, thrusters, box jumps, mountain climbers, jumping jacks).
+- Prefer stretches that target the muscles used in the session.
+${prefs.cooldown === 'stretch_only' ? '- Cooldown must be stretches/mobility exclusively.' : ''}
+`;
+
     const system =
 `You are TrainAI, a strength coach. Compose a complete ${split.toUpperCase()} workout as strict JSON only.
 
@@ -171,6 +196,8 @@ Constraints
     ? 'Joe Holder Ocho style — include crawling/ground-based core, tempo OR isometric cues on at least one accessory, pair accessories with breath/mobility resets when helpful, and prefer carries or sled work if equipment allows.'
     : 'Evidence-based general strength style.'}
 - Keep instructions concise.
+
+${policy}
 
 Schema (strict):
 {
@@ -218,6 +245,9 @@ Schema (strict):
       });
     }
 
+    // Sanitize cooldown based on user preferences
+    await sanitizeCooldown(workout, userId, prefs);
+
     // Derive plan & phases for your UI
     const mainLift = workout?.mainExercises?.[0]?.name || '';
     const plan = {
@@ -232,6 +262,13 @@ Schema (strict):
         { phase:'carry', items: workout.finisher ? [workout.finisher] : [] },
       ],
     };
+
+    // Also mirror into plan.phases if you use them:
+    if (Array.isArray(plan?.phases)) {
+      const coolIdx = plan.phases.findIndex((p: any) => /cool|carry|conditioning/i.test(String(p?.phase)));
+      if (coolIdx >= 0) plan.phases[coolIdx].items = workout.cooldown.map((i: any) => ({ name: i.name, duration: i.duration || '45–60s' }));
+      else plan.phases.push({ phase: 'cooldown', items: workout.cooldown });
+    }
 
     // Coach line (never "TrainAI")
     const coach = ((): string => {

@@ -77,7 +77,14 @@ function normalizeForUI(raw: any, split: string, minutes: number) {
       { phase: 'carry', items: finisher ? [finisher] : [] },
     ],
   };
-  const workout = { warmup, mainExercises: main, finisher };
+  const workout = { warmup, mainExercises: main, finisher, cooldown: [] };
+  
+  // Optional client-side safety net for cooldown
+  const banHi = (name: string) => /(burpee|sprint|thruster|box\s*jump|mountain\s*climber|jumping\s*jacks)/i.test(name);
+  const isStretch = (name: string) => /(stretch|mobility|pose|pigeon|child'?s|hamstring|quad|lat|pec|hip\s*flexor|thoracic|breathing)/i.test(name);
+  const cd = (workout.cooldown || []).filter((x: any) => !banHi(x.name));
+  if (!cd.length) workout.cooldown = (workout.cooldown || []).filter((x: any) => isStretch(x.name));
+  
   const coach =
     (raw?.coach && String(raw.coach).trim().length > 20 && !/^trainai$/i.test(raw.coach))
       ? raw.coach
