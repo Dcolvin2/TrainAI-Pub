@@ -167,10 +167,28 @@ function dedup(items: DisplayItem[]): DisplayItem[] {
 
 function llmToGeneratedWorkout(raw: any): GeneratedWorkout {
   const w = raw || {};
-  const warmup = Array.isArray(w.warmup) ? w.warmup.map(toDisplayItem).filter((i: DisplayItem) => i.name) : [];
-  const mainAll = Array.isArray(w.main) ? w.main.map(toDisplayItem).filter((i: DisplayItem) => i.name) : [];
-  const cooldown = Array.isArray(w.cooldown) ? w.cooldown.map(toDisplayItem).filter((i: DisplayItem) => i.name) : [];
-  const conditioning = Array.isArray(w.conditioning) ? w.conditioning.map(toDisplayItem).filter((i: DisplayItem) => i.name) : [];
+
+  const warmup = Array.isArray(w.warmup)
+    ? w.warmup.map(toDisplayItem).filter((i: DisplayItem) => i.name)
+    : [];
+
+  // Accept BOTH shapes: main[] OR mainExercises[]
+  const mainAll = Array.isArray(w.main)
+    ? w.main.map(toDisplayItem).filter((i: DisplayItem) => i.name)
+    : Array.isArray(w.mainExercises)
+    ? w.mainExercises.map(toDisplayItem).filter((i: DisplayItem) => i.name)
+    : [];
+
+  // Accept BOTH shapes: cooldown[] OR a single finisher object
+  const cooldown = Array.isArray(w.cooldown)
+    ? w.cooldown.map(toDisplayItem).filter((i: DisplayItem) => i.name)
+    : w.finisher
+    ? [toDisplayItem(w.finisher)].filter((i: DisplayItem) => i.name)
+    : [];
+
+  const conditioning = Array.isArray(w.conditioning)
+    ? w.conditioning.map(toDisplayItem).filter((i: DisplayItem) => i.name)
+    : [];
 
   let primaries = mainAll.filter((it: DisplayItem) => !it.isAccessory);
   let accessories = mainAll.filter((it: DisplayItem) => it.isAccessory);
@@ -445,37 +463,39 @@ export default function TodaysWorkoutPage() {
             content: `Error: ${raw.error}` 
           }]);
         } else {
+          // Resolve split from server if it gave you one; fallback to "pull" for chatty asks
+          const resolvedSplit = raw?.plan?.split || 'pull';
+
           // Use the adapter for consistent data handling
-          const { plan, workout, coach } = normalizeForUI(raw, 'pull', selectedTime);
-          
-          // Update state with normalized data
-          setResp(raw);
-          
+          const { plan, workout, coach } = normalizeForUI(raw, resolvedSplit, selectedTime);
+
+          // Persist the full raw response (so plan.phases is available for tables)
+          setResp({ ...raw, plan });
+
+          // Build a legacy shape that llmToGeneratedWorkout understands
+          const legacy = {
+            name: plan.name,
+            warmup: workout.warmup,
+            main: workout.mainExercises,                    // <-- key change
+            cooldown: workout.finisher ? [workout.finisher] : [],
+            est_total_minutes: plan.duration,
+          };
+
           // Handle modification responses
           if (raw.isModification && workout) {
-            // Update the workout with the modified version
-            const gw = llmToGeneratedWorkout(workout);
+            const gw = llmToGeneratedWorkout(legacy);
             setGeneratedWorkout(gw);
-            
-            // Show just the modification message
+
             setChatMessages(prev => [...prev, {
               role: 'assistant',
               content: raw.chatMsg || raw.message
             }]);
-            
           } else if (workout && !raw.isModification) {
-            // New workout generated
-            const gw = llmToGeneratedWorkout(workout);
+            const gw = llmToGeneratedWorkout(legacy);
             setGeneratedWorkout(gw);
-            
-            // Use the normalized coach text
-            setChatMessages(prev => [
-              ...prev,
-              { role: 'assistant', content: coach },
-            ]);
-            
+
+            setChatMessages(prev => [...prev, { role: 'assistant', content: coach }]);
           } else {
-            // Regular message without workout
             setChatMessages(prev => [...prev, {
               role: 'assistant',
               content: raw.chatMsg || raw.message || raw.response
@@ -532,10 +552,11 @@ export default function TodaysWorkoutPage() {
       return [...base, { role:'assistant', content: coach }];
     });
 
-    // For backward compatibility with existing UI
     const legacy = {
-      ...workout,
       name: plan.name,
+      warmup: workout.warmup,
+      main: workout.mainExercises,                    // <-- key change
+      cooldown: workout.finisher ? [workout.finisher] : [],
       est_total_minutes: plan.duration,
     };
     const gw = llmToGeneratedWorkout(legacy);
@@ -572,6 +593,11 @@ export default function TodaysWorkoutPage() {
   
   // Show "No items generated" only if BOTH warmup and main are empty
   const totalItems = warmup.length + main.length;
+  
+  // Alternative: use generatedWorkout for more accurate count
+  // const totalItems =
+  //   (generatedWorkout?.warmup?.length || 0) +
+  //   ((generatedWorkout?.main?.length || 0) + (generatedWorkout?.accessories?.length || 0));
 
   // Redirect if not authenticated
   if (!user) {
