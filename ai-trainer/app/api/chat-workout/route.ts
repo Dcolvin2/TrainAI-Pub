@@ -2,11 +2,64 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { supabase } from "@/lib/supabaseClient";
+import { devlog } from "@/lib/devlog";
+import { buildRuleBasedBackup, makeTitle } from "@/lib/backupWorkouts";
 
 export const runtime = "nodejs";
 
 // ---- Clients ----
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+
+// utils inside your /api route file
+type PhaseKey = 'prep'|'activation'|'strength'|'carry_block'|'conditioning'|'cooldown';
+
+type WorkoutItem = {
+  name: string;
+  sets?: number;
+  reps?: string | number;
+  duration_seconds?: number;
+  load?: string | number | null;
+  instruction?: string | null;
+  rest_seconds?: number | null;
+};
+
+type PlanShape = {
+  name: string;
+  phases: Array<{ phase: PhaseKey; items: WorkoutItem[] }>;
+};
+
+type WorkoutShape = {
+  warmup: WorkoutItem[];
+  main: WorkoutItem[];
+  cooldown: WorkoutItem[];
+};
+
+function extractJson(raw: string): { plan?: PlanShape; workout?: WorkoutShape; error?: string } {
+  // Try ```json fencing first
+  const fence = raw.match(/```json([\s\S]*?)```/i);
+  const candidate = fence ? fence[1] : raw;
+  const start = candidate.indexOf('{');
+  const end = candidate.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) return { error: 'No JSON object found in model output.' };
+  try {
+    const parsed = JSON.parse(candidate.slice(start, end + 1));
+    return { plan: parsed.plan, workout: parsed.workout };
+  } catch (e) {
+    return { error: `JSON.parse failed: ${(e as Error).message}` };
+  }
+}
+
+function validatePlan(plan?: PlanShape, workout?: WorkoutShape): { ok: boolean; why?: string } {
+  if (workout && (workout.main?.length || workout.warmup?.length || workout.cooldown?.length)) return { ok: true };
+  if (!plan) return { ok: false, why: 'Missing plan & workout.' };
+  if (!Array.isArray(plan.phases)) return { ok: false, why: 'plan.phases not array.' };
+  const anyItems = plan.phases.some(p => Array.isArray(p.items) && p.items.length > 0);
+  if (!anyItems) return { ok: false, why: 'All phases empty.' };
+  // light shape check
+  const badItem = plan.phases.flatMap(p => p.items).find(it => !it?.name);
+  if (badItem) return { ok: false, why: 'Item missing name.' };
+  return { ok: true };
+}
 
 /** Utilities */
 const S = (v: any) => (v == null ? "" : String(v).trim());
@@ -240,155 +293,56 @@ export async function POST(req: Request) {
       getRecentExerciseNames(userId),
     ]);
 
-    // ---------- Pass 1: Draft plan (LLM uses its own knowledge) ----------
-    const sysCapsule = `
-You are a strength coach producing "Joe Holder / Ocho System" workouts.
+    devlog('input', { split, minutes, equipmentCount: equipmentList.length });
 
-Constraints:
-- Name each session "Ocho System <descriptor>" (e.g., "Ocho System Power Flow").
-- Duration target: ${minutes} minutes total (±3). Budget time across phases.
-- Phases in order: ["prep", "activation", "strength", "carry_block", "conditioning", "cooldown"].
-- Strength = unilateral bias + tempo notes; no Olympic barbell cycling.
-- Conditioning = low‑skill cyclical or med‑ball work. Prefer rope/bike/row, jumps, slams.
-- Every item MUST include a short coaching cue ("— …").
-- Prefer minimal equipment swaps. Offer obvious substitutions if an item is missing.
+    // 1) Build messages for the model (keep this exactly what you send)
+    const systemPrompt = 'You are a workout generator that returns STRICT JSON with keys: plan{...} and workout{...}.';
+    const userPrompt = JSON.stringify({ split, minutes, equipment: equipmentList });
 
-Return BOTH:
-1) \`coach\` = a chat‑ready markdown summary for users.
-2) \`plan\` = structured JSON with fields exactly as below.
-
-JSON schema (must match):
-{
-  "name": "Ocho System Power Flow",
-  "duration_min": ${minutes},
-  "phases": [
-    {
-      "phase": "prep",
-      "items": [
-        { "name": "Box Breathing", "duration": "2 min", "instruction": "nasal, tall ribcage" }
-      ]
-    },
-    {
-      "phase": "activation",
-      "items": [
-        { "name": "Dead Bug + Band Pulldown", "sets": "2", "reps": "8/side", "instruction": "ribs down" }
-      ]
-    },
-    {
-      "phase": "strength",
-      "items": [
-        { "name": "Front-Foot Elevated Split Squat", "sets": "4", "reps": "6/side", "instruction": "3-1-1 tempo" },
-        { "name": "Ring Row", "sets": "4", "reps": "8-10", "instruction": "pause 1s at chest" },
-        { "name": "DB Half-Kneeling OH Press", "sets": "4", "reps": "6/side", "instruction": "ribs stacked" }
-      ]
-    },
-    {
-      "phase": "carry_block",
-      "items": [
-        { "name": "Suitcase Carry", "sets": "4", "duration": "45s", "instruction": "tall, no lean" }
-      ]
-    },
-    {
-      "phase": "conditioning",
-      "items": [
-        { "name": "Jump Rope", "sets": "8", "reps": "30s on/30s off", "instruction": "smooth wrists" },
-        { "name": "Med Ball Slams", "sets": "8", "reps": "30s on/30s off", "instruction": "hips drive" }
-      ]
-    },
-    {
-      "phase": "cooldown",
-      "items": [
-        { "name": "Box Breathing", "duration": "2", "instruction": "longer exhale" }
-      ]
-    }
-  ]
-}
-
-Also include:
-- \`message\`: short one-line title like "Ocho System Power Flow (~${minutes} min)".
-- Ensure time adds up to \`duration_min\`. If it won't, reduce reps/sets first, then shorten conditioning.
-
-Context:
-- User message: "${message || "(none)"}"
-- Split hint (optional): ${split || "(none)"}
-- Equipment: ${equipmentList.join(", ") || "(none)"}
-- Preferences: prefer ${(prefs.preferred_exercises || []).join(", ") || "(none)"}; avoid ${(prefs.avoided_exercises || []).join(", ") || "(none)"}.
-- Conditioning bias: ${prefs.conditioning_bias || "mixed"}
-- Detail level: ${prefs.detail_level ?? 2}
-
-If you include prose, also include a pure JSON object as the final message. Do not wrap the JSON in code fences.
-`;
-
-    const pass1Raw = await llmJSON({
-      system: sysCapsule,
-      user: "Create the workout plan JSON now.",
+    // 2) Call your existing chat service (unchanged)
+    const rawText = await llmJSON({
+      system: systemPrompt,
+      user: userPrompt,
       max_tokens: 1600,
-      temperature: 0.4
+      temperature: 0.3
     });
+    devlog('model.raw', rawText);
 
-    // ---------- Pass 2: Refine to constraints (no-repeat, canonical, prefs) ----------
-    const refineSystem = `
-You are revising an Ocho System workout plan to strictly adhere to constraints.
+    // 3) Parse & validate
+    const extracted = extractJson(rawText);
+    devlog('parse', extracted.error ? { error: extracted.error } : { planKeys: Object.keys(extracted.plan ?? {}), workoutKeys: Object.keys(extracted.workout ?? {}) });
 
-- Use ONLY these equipment names and their implements: ${equipmentList.join(", ") || "(none)"}.
-- If cardio bike is used and "Exercise Bike" exists, call it exactly "Exercise Bike".
-- Avoid exercises whose names match any of: ${recentLower.slice(0, 40).join(", ") || "(none recently)"} (recent window ${NO_REPEAT_DAYS} days). If something is essential, you may keep a close variant; otherwise swap to a comparable movement that uses owned equipment.
-- Respect user preferences: Prefer ${(prefs.preferred_exercises || []).join(", ") || "(none)"}; Avoid ${(prefs.avoided_exercises || []).join(", ") || "(none)"}.
-- Maintain Ocho System structure: prep → activation → strength → carry_block → conditioning → cooldown.
-- Keep unilateral bias in strength phase with tempo notes.
-- Ensure conditioning uses low-skill cyclical work or med-ball movements.
-- Keep structure and time realism; do not add fluff.
-- Return ONLY JSON in the exact schema of the input.
+    const validity = validatePlan(extracted.plan, extracted.workout);
+    devlog('validate', validity);
 
-If you include prose, also include a pure JSON object as the final message. Do not wrap the JSON in code fences.
+    // 4) If invalid, DO NOT silently switch to Ocho. Build rule-based backup for the split.
+    let finalPlan = extracted.plan;
+    let finalWorkout = extracted.workout;
 
-Refine this plan JSON:
-`;
-    const pass2Raw = await llmJSON({
-      system: refineSystem,
-      user: JSON.stringify(pass1Raw),
-      max_tokens: 1600,
-      temperature: 0.2
-    });
-
-    // Parse the final response robustly
-    const parsed = tryParseWorkout(pass2Raw);
-    
-    // Normalize response to the UI
-    const name =
-      (parsed.plan && (parsed.plan.name || parsed.plan.message)) ||
-      (parsed.coach ? (parsed.coach.split('\n')[0] || '').trim() : '') ||
-      'Workout';
-
-    let normalizedPlan = null;
-    let workout = null;
-    let warnings: string[] = [];
-
-    if (parsed.plan) {
-      // Normalize plan structure
-      const normalized = normalizePlan(parsed.plan);
-      normalizedPlan = normalized.plan;
-      warnings = normalized.warnings;
-      workout = toLegacyWorkout(normalizedPlan);
+    if (!validity.ok) {
+      devlog('fallback.reason', validity.why ?? 'unknown');
+      const backup = buildRuleBasedBackup(split, minutes, equipmentList);
+      finalPlan = backup.plan;
+      finalWorkout = backup.workout;
     }
 
+    // 5) Return with explicit debug
     return NextResponse.json({
       ok: true,
-      name,
-      message: parsed.plan?.message || `${name}`,
-      coach: parsed.coach ?? null,   // human-readable text if present
-      plan: normalizedPlan ?? null,     // structured if we got JSON
-      workout,
+      name: makeTitle(split, minutes), // see helper below
+      message: makeTitle(split, minutes),
+      coach: null,
+      plan: finalPlan,
+      workout: finalWorkout,
       debug: {
-        parseError: parsed.parseError,
-        usedTwoPass: Boolean(parsed.plan),
-        warnings,
+        usedTwoPass: false,   // set true only if you actually do it
         minutesRequested: minutes,
         split,
-        equipmentList,
-        recentWindowDays: NO_REPEAT_DAYS,
-      },
-    });
+        equipmentList: equipmentList,
+        parseError: extracted.error ?? null,
+        validity: validity.ok ? 'ok' : validity.why
+      }
+    }, { headers: { 'Content-Type': 'application/json' } });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: S(e?.message) || "Failed to generate workout plan" }, { status: 500 });
   }

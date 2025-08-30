@@ -95,6 +95,11 @@ export default function WorkoutChatBuilder({ userId }: { userId: string }) {
   const [workoutTimer, setWorkoutTimer] = useState(0)
   const [isWorkoutActive, setIsWorkoutActive] = useState(false)
   const [dbg, setDbg] = useState<string>('')
+  const [workoutData, setWorkoutData] = useState<any>(null)
+
+  // UI guardrails (stop showing lone "Start Workout")
+  const hasContent = (w?: { warmup?: unknown[]; main?: unknown[]; cooldown?: unknown[] }) =>
+    !!w && ((w.warmup?.length ?? 0) + (w.main?.length ?? 0) + (w.cooldown?.length ?? 0) > 0);
 
   // Convert exercises to sets when editableWorkout changes
   useEffect(() => {
@@ -267,11 +272,18 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
     try {
       console.log('DBG: starting workout request');
       
+      // Add 15s timeout with AbortController
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      
       const res = await fetch('/api/workoutChat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, messages: updated })
-      })
+        body: JSON.stringify({ userId, messages: updated }),
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
 
       let data: any = null;
       try {
@@ -287,6 +299,9 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
       if (!res.ok) {
         throw new Error(data.error || 'Failed to send message')
       }
+
+      // Store workout data for UI guardrails
+      setWorkoutData(data);
 
       // Title: use top-level name/message first
       const title =
@@ -313,9 +328,19 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
       }
     } catch (error) {
       console.error('Chat error:', error)
+      let errorMessage = 'Sorry, I encountered an error. Please try again.';
+      
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          errorMessage = 'Request timed out. Please try again.';
+        } else {
+          errorMessage = error.message || errorMessage;
+        }
+      }
+      
       setMessages(msgs => [...msgs, { 
         role: 'assistant', 
-        content: 'Sorry, I encountered an error. Please try again.' 
+        content: errorMessage
       }])
     } finally {
       setIsLoading(false)
@@ -447,7 +472,7 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
                 <span className="inline-block p-3 rounded-lg bg-[#334155] text-white">
                   <div className="flex items-center gap-2">
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                    AI is thinking...
+                    Generating...
                   </div>
                 </span>
               </div>
@@ -509,12 +534,16 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
       {/* Start Workout Button */}
       {workoutSets.length > 0 && !isWorkoutActive && (
         <div className="p-4">
-          <button
-            onClick={startWorkout}
-            className="w-full bg-[#22C55E] py-4 rounded-lg text-white font-medium hover:bg-[#16a34a] transition-colors text-lg"
-          >
-            Start Workout
-          </button>
+          {hasContent(workoutData?.workout) ? (
+            <button
+              onClick={startWorkout}
+              className="w-full bg-[#22C55E] py-4 rounded-lg text-white font-medium hover:bg-[#16a34a] transition-colors text-lg"
+            >
+              Start Workout
+            </button>
+          ) : (
+            <p className="text-red-400 text-sm">Generation failed. Please try again or switch split.</p>
+          )}
         </div>
       )}
 
