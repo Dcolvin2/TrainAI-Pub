@@ -6,6 +6,8 @@ import { ResponseOut, phasesFromWorkout, budget } from '@/lib/schema';
 import { fetchCatalog, fetchUserEquipmentNames } from '@/lib/catalog';
 import { getUserPrefs, mergeUserPrefs } from '@/lib/prefs';
 import { sanitizeCooldown } from '@/lib/cooldownPolicy';
+import { fetchRecentSetsForExercise, summarizeHistory } from '@/lib/history';
+import { buildCoachNote } from '@/lib/coach';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -175,7 +177,25 @@ Default: {"split":"pull","minutes":45,"style":"default"} if unclear.`;
       // In the future, you could modify getCatalog to accept a flag for equipment-only filtering
     }
 
-    // 4) Ask the LLM to PLAN everything using only your catalog/equipment
+    // 4) Fetch user history for the main lift (if we can predict it)
+    const predictedMainLift = split === 'pull' ? 'Trap Bar Deadlift' : 
+                              split === 'push' ? 'Barbell Bench Press' : 
+                              split === 'legs' ? 'Back Squat' : 
+                              split === 'upper' ? 'Shoulder Press' : 
+                              'Trap Bar Deadlift';
+    
+    const recentSets = await fetchRecentSetsForExercise(userId, predictedMainLift, 6);
+    const history = summarizeHistory(recentSets);
+    
+    const historyForPrompt = recentSets.slice(0, 6).map(s => ({
+      date: s.date?.slice(0,10),
+      exercise: s.exercise_name,
+      weight: s.actual_weight,
+      reps: s.reps,
+      rpe: s.rpe,
+    }));
+
+    // 5) Ask the LLM to PLAN everything using only your catalog/equipment
     const policy = `
 Rules for cooldown:
 - Use 2–4 low-intensity stretches or mobility positions ONLY (static or dynamic).
@@ -185,7 +205,12 @@ ${prefs.cooldown === 'stretch_only' ? '- Cooldown must be stretches/mobility exc
 `;
 
     const system =
-`You are TrainAI, a strength coach. Compose a complete ${split.toUpperCase()} workout as strict JSON only.
+`You are TrainAI, a concise strength coach.
+User equipment: ${(body?.equipment || []).join(', ') || 'bodyweight only'}.
+Focus on progressive overload with excellent form. Keep cooldown low-intensity mobility (no HIIT).
+Recent main-lift history for context (most recent first): ${JSON.stringify(historyForPrompt)}
+
+Compose a complete ${split.toUpperCase()} workout as strict JSON only.
 
 Constraints
 - Use ONLY exercises present in the provided "catalog" (by name) and that are possible with the provided "equipment". If an exercise needs unavailable equipment, pick another from the catalog.
@@ -295,12 +320,42 @@ Schema (strict):
       }
     }
 
-    // Coach line (never "TrainAI")
-    const coach = ((): string => {
-      const raw = String(out?.coach || '').trim();
-      if (raw && raw.length > 20 && !/^trainai$/i.test(raw)) return raw;
-      return `${split.toUpperCase()} day. Main lift: ${mainLift || '—'}. Warm-up includes scap/shoulder prep and thoracic rotation/anti-rotation.`;
-    })();
+    // who is the user
+    const userId = body.userId || req.headers.get('x-user-id') || '';
+
+    // which split/minutes & main lift did we end up with?
+    const splitOut: string =
+      raw?.plan?.split || body?.split || 'full';
+    const minutesOut: number =
+      Number(raw?.plan?.duration || body?.minutes || 45);
+
+    // prefer explicit field, else first main exercise
+    const mainLiftName: string =
+      (raw?.plan?.main_lift) ||
+      (raw?.workout?.mainExercises?.[0]?.name) ||
+      (raw?.workout?.main?.[0]?.name) ||
+      'Main Lift';
+
+    // fetch recent history for that lift
+    const recentSets = mainLiftName ? await fetchRecentSetsForExercise(userId, mainLiftName, 12) : [];
+    const hist = summarizeHistory(recentSets);
+
+    // user cooldown prefs (optional, if you added memory)
+    const prefs = await getUserPrefs(userId);
+
+    // compose a smart coach message
+    const smartCoach = buildCoachNote({
+      split: splitOut,
+      minutes: minutesOut,
+      mainLift: mainLiftName,
+      history: hist,
+      equipment: Array.isArray(body?.equipment) ? body.equipment : [],
+      prefs,
+    });
+
+    // attach or override coach text
+    const coach = smartCoach;
+    if (plan) plan.coach = smartCoach;
 
     // Final payload
     const payload = {

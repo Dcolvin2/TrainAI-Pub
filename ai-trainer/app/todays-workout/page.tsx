@@ -484,12 +484,20 @@ export default function TodaysWorkoutPage() {
           // Persist the full raw response (so plan.phases is available for tables)
           setResp({ ...raw, plan });
 
+          // Prefer the full cooldown array from plan.phases
+          const cooldownFromPlan =
+            Array.isArray(plan?.phases)
+              ? (plan.phases.find((p: any) => String(p?.phase).toLowerCase() === 'cooldown')?.items ?? [])
+              : [];
+
           // Build a legacy shape that llmToGeneratedWorkout understands
           const legacy = {
             name: plan.name,
             warmup: workout.warmup,
-            main: workout.mainExercises,                    // <-- key change
-            cooldown: workout.finisher ? [workout.finisher] : [],
+            main: workout.mainExercises,
+            cooldown: cooldownFromPlan.length
+              ? cooldownFromPlan
+              : (workout.finisher ? [workout.finisher] : []),
             est_total_minutes: plan.duration,
           };
 
@@ -565,11 +573,17 @@ export default function TodaysWorkoutPage() {
       return [...base, { role:'assistant', content: coach }];
     });
 
+    const cooldownFromPlan =
+      Array.isArray(plan?.phases)
+        ? (plan.phases.find((p: any) => String(p?.phase).toLowerCase() === 'cooldown')?.items ?? [])
+        : [];
     const legacy = {
       name: plan.name,
       warmup: workout.warmup,
-      main: workout.mainExercises,                    // <-- key change
-      cooldown: workout.finisher ? [workout.finisher] : [],
+      main: workout.mainExercises,
+      cooldown: cooldownFromPlan.length
+        ? cooldownFromPlan
+        : (workout.finisher ? [workout.finisher] : []),
       est_total_minutes: plan.duration,
     };
     const gw = llmToGeneratedWorkout(legacy);
@@ -600,17 +614,13 @@ export default function TodaysWorkoutPage() {
   // Use normalized data for rendering - single source of truth
   const normalized: NormalizedPlan | null = useMemo(() => normalizePlan(resp), [resp]);
   
-  // Read from plan.phases for table rendering
-  const warmup = resp?.plan?.phases?.find((p: any) => p.phase === 'prep')?.items ?? [];
-  const main = resp?.plan?.phases?.find((p: any) => p.phase === 'strength')?.items ?? [];
-  
-  // Show "No items generated" only if BOTH warmup and main are empty
-  const totalItems = warmup.length + main.length;
-  
-  // Alternative: use generatedWorkout for more accurate count
-  // const totalItems =
-  //   (generatedWorkout?.warmup?.length || 0) +
-  //   ((generatedWorkout?.main?.length || 0) + (generatedWorkout?.accessories?.length || 0));
+  // Use the rendered object as the single source of truth
+  const hasAny =
+    (generatedWorkout?.warmup?.length || 0) +
+    (generatedWorkout?.main?.length || 0) +
+    (generatedWorkout?.accessories?.length || 0) +
+    (generatedWorkout?.cooldown?.length || 0) > 0;
+  const isPlanning = chatMessages.some(m => m?.meta === 'planning');
 
   // Redirect if not authenticated
   if (!user) {
@@ -860,15 +870,23 @@ export default function TodaysWorkoutPage() {
                   </div>
                 )}
                 
-                {totalItems > 0 ? (
-                  <button 
+                {(isLoading || isPlanning) && !hasAny && (
+                  <div className="text-gray-400 text-sm mt-4">Building your workout…</div>
+                )}
+                
+                {hasAny ? (
+                  <button
                     onClick={() => console.log('Starting workout:', generatedWorkout)}
                     className="mt-4 w-full bg-green-600 hover:bg-green-700 py-3 rounded-lg font-semibold"
                   >
                     Start Workout
                   </button>
                 ) : (
-                  <div className="text-red-400 text-sm mt-4">No items generated. Check the debug drawer and try again.</div>
+                  !isLoading && !isPlanning && (
+                    <div className="text-red-400 text-sm mt-4">
+                      No items generated. Check the debug drawer and try again.
+                    </div>
+                  )
                 )}
               </div>
             )}
