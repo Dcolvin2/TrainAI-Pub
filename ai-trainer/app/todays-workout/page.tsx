@@ -8,6 +8,95 @@ import { supabase } from '@/lib/supabaseClient';
 import { normalizePlan, buildChatSummary, NormalizedPlan } from '@/lib/normalizePlan';
 import { getUserEquipment } from '@/lib/getUserEquipment';
 
+// ── Client-side adapter for consistent data normalization ─────────────────
+function toStr(v: any) {
+  if (v == null) return undefined;
+  return typeof v === 'number' ? String(v) : String(v);
+}
+
+function normalizeDuration(x: any) {
+  if (x?.duration) return x.duration;
+  if (x?.duration_seconds != null) {
+    const s = Number(x.duration_seconds);
+    if (Number.isFinite(s)) return s % 60 === 0 ? `${s / 60} min` : `${s}s`;
+  }
+  return undefined;
+}
+
+function normalizeItems(items: any[]) {
+  return (Array.isArray(items) ? items : [])
+    .map((it: any) => ({
+      name: it?.name ?? it?.exercise ?? '',
+      sets: it?.sets,
+      reps: toStr(it?.reps),
+      duration: normalizeDuration(it),
+      instruction: it?.instruction,
+      // accept either flag; we'll re-set below
+      isAccessory: typeof it?.isAccessory === 'boolean' ? it.isAccessory : undefined,
+      is_main: it?.is_main,
+    }))
+    .filter(x => x.name);
+}
+
+/** Accepts any of these:
+ *  - out.workout.mainExercises
+ *  - out.workout.main
+ *  - out.plan.phases[{ phase:'main'|'strength'|'prep'|'warmup'|'carry_block'|'cooldown' }]
+ * Returns { plan, workout } with plan.phases prep/strength/carry set.
+ */
+function normalizeForUI(out: any, split: string, minutes: number) {
+  // Phase-shaped?
+  const phases = Array.isArray(out?.plan?.phases) ? out.plan.phases : [];
+  const byPhase = (key: string) => {
+    const k = key.toLowerCase();
+    return phases.find((p: any) => String(p?.phase || '').toLowerCase() === k)?.items || [];
+  };
+
+  // Workout-shaped?
+  const w = out?.workout || {};
+  const warmA =
+    w?.warmup ?? w?.warm_up ?? (byPhase('warmup').length ? byPhase('warmup') : byPhase('prep'));
+  const mainA =
+    w?.mainExercises ?? w?.main ?? byPhase('main').concat(byPhase('strength'));
+  const finA =
+    w?.finisher ??
+    byPhase('carry_block')[0] ??
+    byPhase('conditioning')[0] ??
+    byPhase('cooldown')[0] ??
+    null;
+
+  const warmup = normalizeItems(warmA);
+  const main = normalizeItems(mainA);
+  if (main.length) {
+    main[0] = { ...main[0], isAccessory: false, is_main: undefined };
+    for (let i = 1; i < main.length; i++) {
+      main[i] = { ...main[i], isAccessory: true, is_main: undefined };
+    }
+  }
+  const finisher = finA ? normalizeItems([finA])[0] : undefined;
+
+  const mainLift = out?.plan?.main_lift || main?.[0]?.name || '';
+  const plan = {
+    split,
+    duration: minutes,
+    name: out?.name || `${split[0]?.toUpperCase()}${split.slice(1)} (~${minutes} min)`,
+    main_lift: mainLift,
+    phases: [
+      { phase: 'prep', items: warmup },
+      { phase: 'strength', items: main },
+      { phase: 'activation', items: [] },
+      { phase: 'carry', items: finisher ? [finisher] : [] },
+    ],
+  };
+  const workout = { warmup, mainExercises: main, finisher };
+  const coach =
+    (out?.coach && String(out.coach).trim().length > 20 && !/^trainai$/i.test(out.coach))
+      ? out.coach
+      : `${String(split).toUpperCase()} day. Main lift: ${mainLift || '—'}. Warm-up includes scap + thoracic rotation/anti-rotation.`;
+
+  return { plan, workout, coach };
+}
+
 // ── LLM → UI helpers (keeps your table layout) ─────────────────
 type DisplayItem = {
   name: string;
@@ -343,6 +432,7 @@ export default function TodaysWorkoutPage() {
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          cache: 'no-store', // avoid stale
           body: JSON.stringify({ 
             minutes: selectedTime,
             equipment,
@@ -357,47 +447,47 @@ export default function TodaysWorkoutPage() {
           const text = await response.text();
           throw new Error(`Expected JSON but got ${ct || 'unknown'} (status ${response.status}). First 120: ${text.slice(0,120)}`);
         }
-        const data = await response.json();
+        const raw = await response.json();
         
         // Handle error responses
-        if (data.error) {
+        if (raw.error) {
           setChatMessages(prev => [...prev, { 
             role: 'assistant', 
-            content: `Error: ${data.error}` 
+            content: `Error: ${raw.error}` 
           }]);
         } else {
           // Handle modification responses
-          if (data.isModification && data.workout) {
+          if (raw.isModification && raw.workout) {
             // Update the workout with the modified version
-            if (data.workout) {
-              const gw = llmToGeneratedWorkout(data.workout);
+            if (raw.workout) {
+              const gw = llmToGeneratedWorkout(raw.workout);
               setGeneratedWorkout(gw);
             }
             
             // Show just the modification message
             setChatMessages(prev => [...prev, {
               role: 'assistant',
-              content: data.chatMsg || data.message
+              content: raw.chatMsg || raw.message
             }]);
             
-          } else if (data.workout && !data.isModification) {
+          } else if (raw.workout && !raw.isModification) {
             // New workout generated
             let gw: GeneratedWorkout;
-            if (data.workout) {
-              gw = llmToGeneratedWorkout(data.workout);
+            if (raw.workout) {
+              gw = llmToGeneratedWorkout(raw.workout);
               setGeneratedWorkout(gw);
               
               // Title: use top-level name/message first
               const title =
-                data?.name ||       // "Ocho System Power Endurance (~45 min)"
-                data?.message ||    // fallback
+                raw?.name ||       // "Ocho System Power Endurance (~45 min)"
+                raw?.message ||    // fallback
                 gw.name ||          // last resort
                 'Workout';
 
               // Body: prefer explicit chatMsg (LLM-normalized summary), then coach text, then format the plan
               const body =
-                data?.chatMsg ||
-                data?.coach ||
+                raw?.chatMsg ||
+                raw?.coach ||
                 asCoachMessage(gw, title, gw.duration);
 
               setChatMessages(prev => [
@@ -410,13 +500,13 @@ export default function TodaysWorkoutPage() {
             // Regular message without workout
             setChatMessages(prev => [...prev, {
               role: 'assistant',
-              content: data.chatMsg || data.message || data.response
+              content: raw.chatMsg || raw.message || raw.response
             }]);
           }
           
           // If workout data is returned, update the display
-          if (data.workout) {
-            const gw = llmToGeneratedWorkout(data.workout);
+          if (raw.workout) {
+            const gw = llmToGeneratedWorkout(raw.workout);
             setGeneratedWorkout(gw);
           }
         }
@@ -436,13 +526,14 @@ export default function TodaysWorkoutPage() {
     // before the fetch
     setChatMessages?.(prev => [...prev, { role:'assistant', content:'Planning your session…', meta:'planning' }]);
 
-    const res = await fetch('/api/chat', {
-      method: 'POST',
+    const res = await fetch('/api/chat', { 
+      method: 'POST', 
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        split,
-        minutes,
-        equipment,
+      cache: 'no-store', // avoid stale
+      body: JSON.stringify({ 
+        split, 
+        minutes, 
+        equipment, 
         messages: [
           { role: 'user', content: `I'd like a ${minutes} minute ${split} workout.` }
         ],
@@ -450,61 +541,33 @@ export default function TodaysWorkoutPage() {
     });
 
     const ct = res.headers.get('content-type') || '';
-    const data = ct.includes('application/json') ? await res.json() : { ok:false, error: await res.text() };
+    const raw = ct.includes('application/json') ? await res.json() : { ok:false, error: await res.text() };
 
-    if (!data?.ok) {
-      setChatMessages?.(prev => [...prev, { role: 'assistant', content: data?.error || 'Sorry, I hit an error.' }]);
+    if (!raw?.ok) {
+      setChatMessages?.(prev => [...prev, { role: 'assistant', content: raw?.error || 'Sorry, I hit an error.' }]);
       return;
     }
 
-    // Update your existing UI state (keep your current setters)
-    setResp(data);
-    
-    // Safeguard arrays to stop ".map is not a function"
-    const safeWarmup = Array.isArray(data?.workout?.warmup) ? data.workout.warmup : [];
-    const safeMain = Array.isArray(data?.workout?.mainExercises) ? data.workout.mainExercises : [];
-    
-    // Prefer legacy workout; otherwise shape from plan.phases
-    const legacy = data?.workout
-      ? {
-          ...data.workout,
-          warmup: safeWarmup,
-          mainExercises: safeMain,
-        }
-      : {
-          name: data?.plan?.name,
-          warmup: data?.plan?.phases?.find((p: any) => p.phase === 'warmup')?.items ?? [],
-          main: data?.plan?.phases?.find((p: any) => p.phase === 'main')?.items ?? [],
-          conditioning: data?.plan?.phases?.find((p: any) => p.phase === 'conditioning')?.items ?? [],
-          cooldown: data?.plan?.phases?.find((p: any) => p.phase === 'cooldown')?.items ?? [],
-          est_total_minutes: data?.plan?.est_total_minutes ?? data?.plan?.duration_min,
-        };
+    // Adapt whatever shape came back → the one your tables use
+    const { plan, workout, coach } = normalizeForUI(raw, split, minutes);
 
-    const gw = llmToGeneratedWorkout(legacy);
-    setGeneratedWorkout(gw);
+    // Update your existing UI state (keep your current setters)
+    setResp(raw);
 
     // remove planning + placeholder, then append coach
-    const coachText = data?.coach ?? data?.chatMsg ?? data?.message ?? data?.name ?? '';
     setChatMessages?.(prev => {
       const base = prev.filter(m => m?.meta !== 'planning' && !(m?.content && /Session \(~\d+ min\)/i.test(m.content)));
-      return [...base, { role:'assistant', content: coachText }];
+      return [...base, { role:'assistant', content: coach }];
     });
 
-    // guarantee phases client-side as a safety net (should already be present)
-    if (!Array.isArray(data?.plan?.phases) || !(data.plan.phases.find((p:any)=>p.phase==='strength')?.items?.length)) {
-      const warm = Array.isArray(data?.workout?.warmup) ? data.workout.warmup : [];
-      const main = Array.isArray(data?.workout?.mainExercises) ? data.workout.mainExercises : [];
-      const fin  = data?.workout?.finisher ? [data.workout.finisher] : [];
-      data.plan = {
-        ...(data.plan || {}),
-        phases: [
-          { phase:'prep', items:warm },
-          { phase:'strength', items:main },
-          { phase:'activation', items:[] },
-          { phase:'carry', items:fin },
-        ],
-      };
-    }
+    // For backward compatibility with existing UI
+    const legacy = {
+      ...workout,
+      name: plan.name,
+      est_total_minutes: plan.duration,
+    };
+    const gw = llmToGeneratedWorkout(legacy);
+    setGeneratedWorkout(gw);
   }
 
   const handleWorkoutSelect = async (workoutType: string) => {
