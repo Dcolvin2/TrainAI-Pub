@@ -11,6 +11,16 @@ export const runtime = "nodejs";
 // ---- Clients ----
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
+// MAIN LIFT ANCHORS — only this repeats. Everything else can vary.
+const MAIN_LIFTS: Record<string, string[]> = {
+  pull: ['Trap Bar Deadlift', 'Conventional Deadlift', 'Dumbbell Romanian Deadlift'],
+  push: ['Barbell Bench Press', 'Dumbbell Bench Press', 'Incline Bench Press'],
+  legs: ['Back Squat', 'Front Squat', 'Belt Squat'],
+  upper: ['Standing Overhead Press', 'Seated DB Shoulder Press'],
+  full: ['Trap Bar Deadlift', 'Back Squat', 'Bench Press'],
+  hiit: [], // no fixed main lift
+};
+
 // ----- local types (unique to avoid collisions) -----
 type PhaseKey =
   | 'prep'
@@ -49,6 +59,161 @@ type ChatWorkout = {
 function titleFor(split: string | undefined, minutes: number) {
   const pretty = split ? split[0].toUpperCase() + split.slice(1) : 'Session';
   return `${pretty} (~${minutes} min)`;
+}
+
+// Pick the best main lift given the user's equipment
+function pickMainLift(split: string, equipment: string[]): string | null {
+  const anchors = MAIN_LIFTS[split] || [];
+  const have = (name: string) => {
+    const n = name.toLowerCase();
+    if (n.includes('trap bar')) return equipment.some(e => e.toLowerCase().includes('trap bar'));
+    if (n.includes('deadlift')) return equipment.some(e => /barbell|trap bar/.test(e.toLowerCase()));
+    if (n.includes('bench')) return equipment.some(e => /bench/.test(e.toLowerCase()));
+    if (n.includes('squat')) return equipment.some(e => /rack|belt squat|barbell/.test(e.toLowerCase()));
+    if (n.includes('press')) return equipment.some(e => /barbell|dumbbell/.test(e.toLowerCase()));
+    return true; // permissive fallback
+  };
+  for (const lift of anchors) if (have(lift)) return lift;
+  return anchors[0] ?? null;
+}
+
+// Pull candidate accessories from Supabase (including rotation)
+type Candidate = { name: string; instruction?: string | null };
+
+async function getCandidates(equipment: string[], wantedTags: string[], limit = 12): Promise<Candidate[]> {
+  // Try exercises_final first
+  const eq = equipment.map(e => e.toLowerCase());
+  const tags = wantedTags.map(t => t.toLowerCase());
+
+  // 1) Try exercises_final
+  let q = supabase
+    .from('exercises_final')
+    .select('name,instruction,equipment_required,category,target_muscles,movement_pattern', { count: 'exact' })
+    .limit(limit * 2); // get extra, we'll filter in JS too
+
+  const { data: efData } = await q;
+
+  const rows1 = (efData ?? []).filter(r => {
+    const rowStr = `${r.name} ${r.instruction ?? ''} ${r.category ?? ''} ${r.target_muscles ?? ''} ${r.movement_pattern ?? ''} ${r.equipment_required ?? ''}`.toLowerCase();
+    const equipOk = eq.length === 0 || eq.some(k => rowStr.includes(k));
+    const hasTag = tags.some(t => rowStr.includes(t));
+    return equipOk && hasTag;
+  });
+
+  // 2) Fallback to exercises (if needed)
+  let rows = rows1;
+  if (rows.length < limit) {
+    const { data: exData } = await supabase
+      .from('exercises')
+      .select('name,instruction,category,primary_muscle,equipment_required,exercise_phase,target_muscles,movement_pattern', { count: 'exact' })
+      .limit(limit * 2);
+
+    const rows2 = (exData ?? []).filter(r => {
+      const rowStr = `${r.name} ${r.instruction ?? ''} ${r.category ?? ''} ${r.primary_muscle ?? ''} ${r.exercise_phase ?? ''} ${r.target_muscles ?? ''} ${r.movement_pattern ?? ''} ${r.equipment_required ?? ''}`.toLowerCase();
+      const equipOk = eq.length === 0 || eq.some(k => rowStr.includes(k));
+      const hasTag = tags.some(t => rowStr.includes(t));
+      return equipOk && hasTag;
+    });
+
+    rows = [...rows1, ...rows2];
+  }
+
+  // Dedup by name and cap
+  const seen = new Set<string>();
+  const unique = rows.filter(r => {
+    const key = (r.name || '').toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return unique.slice(0, limit).map(r => ({ name: r.name, instruction: r.instruction ?? null }));
+}
+
+// Build a deterministic time budget for the LLM
+function phaseBudget(totalMin: number) {
+  const warmup = Math.min(10, Math.max(5, Math.round(totalMin * 0.18)));
+  const main = Math.round(totalMin * 0.42);
+  const accessories = Math.max(8, totalMin - warmup - main - 4); // leave ~4 for cooldown
+  const cooldown = Math.max(3, totalMin - warmup - main - accessories);
+  return { warmup, main, accessories, cooldown };
+}
+
+// System prompt to anchor main lift and vary the rest (rotation included)
+function buildSystemPrompt(split: string, mainLift: string, budget: ReturnType<typeof phaseBudget>) {
+  return [
+    `You are TrainAI, a strength coach. Build a ${split.toUpperCase()} workout respecting time budget.`,
+    `Rules:`,
+    `- The MAIN LIFT is fixed and must appear first in main exercises: "${mainLift}".`,
+    `- Everything else (warm-up, accessories, finisher, cooldown) is variable based on equipment and variety.`,
+    `- Warm-up MUST be 5–10 minutes and include shoulder/scap prep AND thoracic rotation or anti-rotation.`,
+    `- Include at least one rotational or anti-rotation core movement (e.g., chops, lifts, Pallof).`,
+    `- Favor high-quality pulls: horizontal pull, vertical pull, scap retraction/ER, posterior chain; add grip/carries if time allows.`,
+    `- Fit within minutes: warmup ${budget.warmup}, main ${budget.main}, accessories ${budget.accessories}, cooldown ${budget.cooldown}.`,
+    `Output JSON ONLY using keys: plan, workout.warmup[], workout.mainExercises[], workout.finisher (optional).`,
+    `For each item use { "name", "sets" (number or string), "reps" (string) OR "duration" (string), "instruction" (optional), "isAccessory" (boolean for accessories) }.`,
+  ].join('\n');
+}
+
+// Generate pull workout with anchored main lift and rotating accessories
+async function generatePullWorkoutLLM({
+  split,
+  totalMin,
+  equipment,
+  chatWithFunctions,
+}: {
+  split: 'pull';
+  totalMin: number;
+  equipment: string[];
+  chatWithFunctions: (args: { system: string; user: string }) => Promise<any>;
+}) {
+  const budget = phaseBudget(totalMin);
+  const mainLift = pickMainLift(split, equipment) || 'Dumbbell Romanian Deadlift';
+
+  // Pull candidates
+  const rot = await getCandidates(equipment, ['chop', 'lift', 'pallof', 'rotation', 'anti-rotation']);
+  const horiz = await getCandidates(equipment, ['row', 't-bar', 'seated row']);
+  const vert = await getCandidates(equipment, ['pull-up', 'lat pulldown']);
+  const scap = await getCandidates(equipment, ['face pull', 'external rotation', 'band pull apart']);
+  const post = await getCandidates(equipment, ['rdl', 'hinge', 'good morning']);
+  const grip = await getCandidates(equipment, ['farmer carry', 'suitcase carry', 'dead hang']);
+
+  const system = buildSystemPrompt(split, mainLift, budget);
+
+  const user = JSON.stringify({
+    equipment,
+    anchors: { mainLift },
+    candidates: {
+      rotation: rot,
+      horizontalPull: horiz,
+      verticalPull: vert,
+      scapular: scap,
+      posterior: post,
+      gripCarry: grip,
+    },
+    budget,
+  });
+
+  const raw = await chatWithFunctions({ system, user });
+
+  // Expect JSON back; if model returns string, parse
+  const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+
+  // Ensure main lift is first and flagged
+  const main = [{ name: mainLift, sets: '4', reps: '5', instruction: 'Build to working weight', isAccessory: false }];
+  const rest = Array.isArray(data?.workout?.mainExercises) ? data.workout.mainExercises : [];
+  const mainExercises = [ ...main, ...rest.map((x:any) => ({ ...x, isAccessory: true })) ];
+
+  return {
+    ok: true,
+    name: `Pull (~${totalMin} min)`,
+    message: `Pull (~${totalMin} min)`,
+    plan: { split, duration: totalMin, main_lift: mainLift, name: `Pull (~${totalMin} min)` },
+    workout: {
+      warmup: Array.isArray(data?.workout?.warmup) ? data.workout.warmup : [],
+      mainExercises,
+      finisher: data?.workout?.finisher,
+    },
+  };
 }
 
 function coachText(split: string | undefined, minutes: number, hasHistory: boolean) {
@@ -546,11 +711,35 @@ export async function POST(req: Request) {
 
     devlog('input', { split, minutes, equipmentCount: equipmentList.length });
 
-    // 1) Build messages for the model (keep this exactly what you send)
+    // 1) Check if this is a pull workout and use anchored main lift system
+    if (split === 'pull') {
+      const payload = await generatePullWorkoutLLM({
+        split: 'pull',
+        totalMin: minutes,
+        equipment: equipmentList,
+        chatWithFunctions: llmJSON,
+      });
+      
+      // Build chat message for pull workout
+      let chatMsg = `Pull day locked. Main lift: ${payload.plan.main_lift}. I'll rotate accessories based on your equipment and time.`;
+      
+      // Add equipment info
+      if (equipmentList.length > 0) {
+        chatMsg += `\n\nEquipment available: ${equipmentList.join(', ')}`;
+      }
+      
+      return NextResponse.json({
+        ...payload,
+        chatMsg,
+        coach: chatMsg,
+      }, { headers: { 'Content-Type': 'application/json' } });
+    }
+
+    // 2) Build messages for the model (keep this exactly what you send)
     const systemPrompt = 'You are a workout generator that returns STRICT JSON with keys: plan{...} and workout{...}.';
     const userPrompt = JSON.stringify({ split, minutes, equipment: equipmentList });
 
-    // 2) Call your existing chat service (unchanged)
+    // 3) Call your existing chat service (unchanged)
     const rawText = await llmJSON({
       system: systemPrompt,
       user: userPrompt,
@@ -559,14 +748,14 @@ export async function POST(req: Request) {
     });
     devlog('model.raw', rawText);
 
-    // 3) Parse & validate
+    // 4) Parse & validate
     const extracted = extractJson(rawText);
     devlog('parse', extracted.error ? { error: extracted.error } : { planKeys: Object.keys(extracted.plan ?? {}), workoutKeys: Object.keys(extracted.workout ?? {}) });
 
     const validity = validatePlan(extracted.plan, extracted.workout);
     devlog('validate', validity);
 
-    // 4) If invalid, DO NOT silently switch to Ocho. Build rule-based backup for the split.
+    // 5) If invalid, DO NOT silently switch to Ocho. Build rule-based backup for the split.
     let finalPlan = extracted.plan;
     let finalWorkout = extracted.workout;
 
@@ -577,7 +766,7 @@ export async function POST(req: Request) {
       finalWorkout = backup.workout;
     }
 
-    // 5) Return with explicit debug
+    // 6) Return with explicit debug
     const minutesNum = Number(minutes ?? 45);
     const respTitle = titleFor(split, minutesNum);
 

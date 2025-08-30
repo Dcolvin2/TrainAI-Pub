@@ -3,40 +3,43 @@ import { NextResponse } from 'next/server';
 
 export async function GET() {
   try {
-    // Return the exact sample payload you pasted (simulate the generator)
+    // Simulate the new pull workout generation with anchored main lift
     const payload = {
       ok: true,
       name: 'Push (~45 min)',
       message: 'Push (~45 min)',
-      coach:
-        "This is your first workout—great time to set a baseline. We'll do a 45-minute push session. Focus on smooth reps, controlled tempo, and stop 1–2 reps shy of failure.",
-      chatMsg: 'Workout\n\n🔥 Warm-up:\n1. Exercise 3×5 minutes\n2. Exercise 1×10 each direction\n\n',
-      plan: {
-        split: 'push',
-        duration: 45,
-        focus: ['chest', 'shoulders', 'triceps'],
-        intensity: 'moderate-high',
-        restPeriods: '45-60 seconds',
-        name: 'Push (~45 min)',
-      },
+              coach:
+          "Pull day locked. Main lift: Trap Bar Deadlift. I'll rotate accessories based on your equipment and time.",
+        chatMsg: 'Pull day locked. Main lift: Trap Bar Deadlift. I\'ll rotate accessories based on your equipment and time.\n\nEquipment available: Cables, Cable Attachments, Barbells, Bumper Plates, Bench, Dumbbells, Kettlebells, Trap Bar',
+              plan: {
+          split: 'pull',
+          duration: 45,
+          main_lift: 'Trap Bar Deadlift',
+          focus: ['back', 'biceps', 'posterior chain'],
+          intensity: 'moderate-high',
+          restPeriods: '2-3 minutes for main lift, 60-90s for accessories',
+          name: 'Pull (~45 min)',
+        },
       workout: {
         warmup: [
-          { exercise: 'Treadmill Walk/Light Jog', duration: '5 minutes' },
-          { exercise: 'Arm Circles', sets: 1, reps: '10 each direction' },
+          { exercise: 'Easy Bike/Row', duration: '3 minutes', instruction: 'Increase HR to 120-140' },
+          { exercise: 'Quadruped T-Spine Rotations', sets: 1, reps: '8/side' },
+          { exercise: 'Banded Face Pulls', sets: 2, reps: '15' },
+          { exercise: 'Half-Kneeling Pallof Press', sets: 2, reps: '10/side', instruction: 'Anti-rotation' },
         ],
         mainExercises: [
-          { exercise: 'Barbell Bench Press', sets: 4, reps: '8-10', equipment: ['Bench', 'Barbells', 'Bumper Plates'] },
-          { exercise: 'Standing Military Press', sets: 3, reps: '10-12', equipment: ['Barbells', 'Bumper Plates'] },
-          { exercise: 'Incline Dumbbell Press', sets: 3, reps: '12', equipment: ['Adjustable Bench', 'Dumbbells'] },
-          { exercise: 'Cable Tricep Pushdowns', sets: 3, reps: '12-15', equipment: ['Cables', 'Cable Attachments'] },
-          { exercise: 'Lateral Raises', sets: 3, reps: '15', equipment: ['Dumbbells'] },
+          { exercise: 'Trap Bar Deadlift', sets: 4, reps: '5', instruction: 'Build to working weight', isAccessory: false },
+          { exercise: 'One-Arm Cable Row', sets: 3, reps: '10/side', equipment: ['Cables', 'Cable Attachments'], isAccessory: true },
+          { exercise: 'Lat Pulldown', sets: 3, reps: '8-10', equipment: ['Cables', 'Cable Attachments'], isAccessory: true },
+          { exercise: 'Face Pull', sets: 3, reps: '12-15', equipment: ['Cables', 'Cable Attachments'], isAccessory: true },
+          { exercise: 'Half-Kneeling High-to-Low Cable Chop', sets: 2, reps: '10/side', equipment: ['Cables', 'Cable Attachments'], isAccessory: true },
         ],
-        finisher: { exercise: 'Push-up Burnout', sets: 1, reps: 'To failure', equipment: [] },
+        finisher: { exercise: 'Dead Hang', sets: 2, reps: '30-45s', equipment: [] },
       },
-      debug: {
-        usedTwoPass: false,
-        minutesRequested: 45,
-        split: 'push',
+              debug: {
+          usedTwoPass: false,
+          minutesRequested: 45,
+          split: 'pull',
         equipmentList: [
           'Adjustable Bench',
           'Barbells',
