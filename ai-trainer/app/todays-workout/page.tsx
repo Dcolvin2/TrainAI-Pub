@@ -57,6 +57,9 @@ const toDisplayItem = (x: any): DisplayItem => {
   };
 };
 
+// Helper for both exercise and name keys
+const toName = (it: any) => it?.name ?? it?.exercise ?? '';
+
 function dedup(items: DisplayItem[]): DisplayItem[] {
   const seen = new Set<string>();
   const out: DisplayItem[] = [];
@@ -292,7 +295,12 @@ export default function TodaysWorkoutPage() {
         });
         
         if (nikeResponse.ok) {
-          const nikeData = await nikeResponse.json();
+          const ct = nikeResponse.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) {
+          const text = await nikeResponse.text();
+          throw new Error(`Expected JSON but got ${ct || 'unknown'} (status ${nikeResponse.status}). First 120: ${text.slice(0,120)}`);
+        }
+        const nikeData = await nikeResponse.json();
           
           // Add Nike response to chat
           setChatMessages(prev => [...prev, { 
@@ -327,6 +335,11 @@ export default function TodaysWorkoutPage() {
           })
         });
 
+        const ct = response.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) {
+          const text = await response.text();
+          throw new Error(`Expected JSON but got ${ct || 'unknown'} (status ${response.status}). First 120: ${text.slice(0,120)}`);
+        }
         const data = await response.json();
         
         // Handle error responses
@@ -429,8 +442,31 @@ export default function TodaysWorkoutPage() {
         throw new Error(`API Error: ${response.status} - ${errorText}`);
       }
 
+      const ct = response.headers.get('content-type') || '';
+      if (!ct.includes('application/json')) {
+        const text = await response.text();
+        throw new Error(`Expected JSON but got ${ct || 'unknown'} (status ${response.status}). First 120: ${text.slice(0,120)}`);
+      }
       const data = await response.json();
+      
+      if (data && data.ok === false) {
+        setChatMessages(prev => [...prev, { 
+          role: 'assistant', 
+          content: data.error || 'Unknown error' 
+        }]);
+        return;
+      }
+      
       console.log('UI/response', data);
+      
+      // Console probe for debugging
+      console.table(
+        [
+          ['warmup', typeof data?.workout?.warmup, Array.isArray(data?.workout?.warmup)],
+          ['main',   typeof data?.workout?.mainExercises, Array.isArray(data?.workout?.mainExercises)],
+          ['coach',  typeof data?.coach, !!data?.coach],
+        ].map(([k,t,a]) => ({ key:k as string, type:t as string, isArray:Boolean(a) }))
+      );
       
       const normalized = normalizePlan(data);
       console.log('UI/normalized', { 
@@ -444,9 +480,17 @@ export default function TodaysWorkoutPage() {
       
       setResp(data);
 
+      // Safeguard arrays to stop ".map is not a function"
+      const safeWarmup = Array.isArray(data?.workout?.warmup) ? data.workout.warmup : [];
+      const safeMain = Array.isArray(data?.workout?.mainExercises) ? data.workout.mainExercises : [];
+      
       // Prefer legacy workout; otherwise shape from plan.phases
       const legacy = data?.workout
-        ? data.workout
+        ? {
+            ...data.workout,
+            warmup: safeWarmup,
+            mainExercises: safeMain,
+          }
         : {
             name: data?.plan?.name,
             warmup: data?.plan?.phases?.find((p: any) => p.phase === 'warmup')?.items ?? [],
@@ -557,7 +601,12 @@ export default function TodaysWorkoutPage() {
               {/* Nike Test Button - REMOVED - Now integrated into chat */}
             </div>
 
-            {/* Debug Drawer - Removed for cleaner UI */}
+            {/* Debug Drawer - Hidden unless explicitly enabled */}
+            {process.env.NEXT_PUBLIC_SHOW_DEBUG === '1' && resp?.debug && (
+              <div className="rounded-lg border border-slate-700 p-3 text-xs text-slate-300 mb-4">
+                <pre className="text-xs opacity-70">{JSON.stringify(resp.debug, null, 2)}</pre>
+              </div>
+            )}
 
             {/* Preview block removed to avoid duplicate rendering. The logger below is now the single source of truth. */}
 
