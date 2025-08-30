@@ -452,6 +452,7 @@ export default function TodaysWorkoutPage() {
           headers: { 'Content-Type': 'application/json' },
           cache: 'no-store', // avoid stale
           body: JSON.stringify({ 
+            userId: user?.id,
             minutes: selectedTime,
             equipment,
             messages: [
@@ -534,6 +535,7 @@ export default function TodaysWorkoutPage() {
       headers: { 'content-type': 'application/json' },
       cache: 'no-store', // avoid stale
       body: JSON.stringify({ 
+        userId: user?.id,
         split, 
         minutes, 
         equipment, 
