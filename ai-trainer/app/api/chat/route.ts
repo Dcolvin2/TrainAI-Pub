@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabaseServer';
 import { claudeJSON } from '@/lib/llm';
 import { ResponseOut, phasesFromWorkout, budget } from '@/lib/schema';
-import { fetchCatalog, fetchUserEquipmentNames } from '@/lib/catalog';
+import { fetchCatalog, fetchUserEquipmentNames, fetchMobilityByTargets } from '@/lib/catalog';
 import { getUserPrefs, mergeUserPrefs } from '@/lib/prefs';
 import { sanitizeCooldown } from '@/lib/cooldownPolicy';
 import { fetchRecentSetsForExercise, summarizeHistory } from '@/lib/history';
@@ -240,6 +240,68 @@ Schema (strict):
   }
 }`;
 
+    // Infer targets from split and user message for cooldown targeting
+    function inferTargetsFromSplit(split: string, userMessage: string): string[] {
+      const splitKey = String(split).toLowerCase();
+      const splitTargets: Record<string,string[]> = {
+        legs: ['hamstring','quad','glute','calf','hip flexor','thoracic'],
+        pull: ['lat','upper back','biceps','thoracic'],
+        push: ['pec','shoulder','triceps','thoracic'],
+        upper:['pec','shoulder','triceps','lat','upper back','biceps','thoracic'],
+        full: ['hamstring','quad','glute','hip flexor','lat','upper back','pec','shoulder','triceps','biceps','thoracic'],
+        hiit: ['hip flexor','hamstring','quad','calf','thoracic'],
+      };
+      
+      const baseTargets = splitTargets[splitKey] || ['thoracic'];
+      
+      // Also infer from user message if they mention specific exercises
+      const messageTargets: string[] = [];
+      const msg = userMessage.toLowerCase();
+      if (/(rdl|hamstring|leg\s*curl|good\s*morning)/i.test(msg)) messageTargets.push('hamstring');
+      if (/(quad|squat|split\s*squat|front\s*squat|lunge|leg\s*press)/i.test(msg)) messageTargets.push('quad');
+      if (/(glute|hip\s*thrust|bridge|hip\s*extension|step-?up)/i.test(msg)) messageTargets.push('glute');
+      if (/(calf|gastroc|soleus)/i.test(msg)) messageTargets.push('calf');
+      if (/(hip\s*flex|psoas|adductor|abductor|groin)/i.test(msg)) messageTargets.push('hip flexor');
+      if (/(lat|pull-?down|row|pull-?up|chin-?up|rack\s*pull|deadlift|trap\s*bar)/i.test(msg)) messageTargets.push('lat', 'upper back');
+      if (/(rear\s*delt|face\s*pull|band\s*pull-?apart|shrug|trap)/i.test(msg)) messageTargets.push('upper back');
+      if (/(bench|press|push-?up|fly|dip|pec)/i.test(msg)) messageTargets.push('pec', 'shoulder');
+      if (/(ohp|overhead|military|shoulder\s*press|lateral|front\s*raise)/i.test(msg)) messageTargets.push('shoulder');
+      if (/(tricep|pushdown|skull-?crusher|dip)/i.test(msg)) messageTargets.push('triceps');
+      if (/(bicep|curl|chin-?up)/i.test(msg)) messageTargets.push('biceps');
+      
+      return Array.from(new Set([...baseTargets, ...messageTargets]));
+    }
+
+    const targets = inferTargetsFromSplit(split, lastUser);
+    
+    // Fetch mobility options for cooldown targeting
+    const { byTarget, all: allMobility } = await fetchMobilityByTargets(targets);
+
+    // Build a compact options block the LLM can choose from
+    const TARGET_OPTIONS = targets.map(t => {
+      const list = (byTarget[t.toLowerCase()] || []).slice(0, 12); // keep prompt short
+      return `- ${t}: ${list.join(', ')}`;
+    }).join('\n');
+
+    const systemCoach = [
+      'You are a strength coach. Return strict JSON for the workout.',
+      'Cooldown rules:',
+      '• Choose 2–3 items.',
+      '• Only stretching/mobility/breathing—not strength or cardio.',
+      '• Must match the day\'s target muscles (see TARGETS below).',
+      '• Prefer options listed under each target. If empty, pick general t-spine/breathing.',
+      '• Each cooldown item has { name, duration: "45–60s" }, no reps/sets.',
+      '• Do NOT include pec/chest stretches on legs day, or non-target muscles.',
+    ].join('\n');
+
+    const cooldownContext = [
+      'TARGETS:',
+      `  ${targets.join(', ') || 'full'}`,
+      '',
+      'OPTIONS (per target):',
+      TARGET_OPTIONS || '(no mobility catalog found; use general t-spine/breathing)',
+    ].join('\n');
+
     const user = {
       minutes, split, style, budget: time,
       equipment,
@@ -247,7 +309,52 @@ Schema (strict):
       history: body.messages || [],
     };
 
+    // Build messages with cooldown context
+    const messages = [
+      { role: 'system', content: systemCoach },
+      { role: 'system', content: cooldownContext },
+      { role: 'user', content: JSON.stringify(user) }
+    ];
+
     let out = await claudeJSON(system, user);
+
+    // Safety validator for cooldown (last resort)
+    const cooldownNames = new Set(
+      targets.flatMap(t => (byTarget[t.toLowerCase()] || []))
+        .map(n => n.toLowerCase())
+    );
+
+    function isStretchy(n: string) {
+      return /(stretch|mobility|pose|pigeon|child'?s|hip\s*flexor|hamstring|quad|calf|lat|pec|thoracic|t-?spine|breath|thread)/i.test(n);
+    }
+
+    function repairCooldown(items: any[]) {
+      const keep = [];
+      for (const it of (items || [])) {
+        const n = String(it?.name || '').trim();
+        if (!n) continue;
+        if (!isStretchy(n)) continue;
+        if (cooldownNames.size && !cooldownNames.has(n.toLowerCase())) continue;
+        keep.push({ name: n, duration: it?.duration || '45–60s' });
+      }
+      // backfill by targets if we have <2
+      if (keep.length < 2) {
+        for (const t of targets) {
+          for (const n of byTarget[t.toLowerCase()] || []) {
+            if (keep.length >= 3) break;
+            if (!keep.some(k => k.name.toLowerCase() === n.toLowerCase()))
+              keep.push({ name: n, duration: '45–60s' });
+          }
+          if (keep.length >= 3) break;
+        }
+      }
+      return keep.slice(0, 3);
+    }
+
+    // Apply cooldown repair if needed
+    const llmCooldown = out?.workout?.cooldown || [];
+    const repaired = repairCooldown(llmCooldown);
+    out.workout = { ...(out.workout || {}), cooldown: repaired };
 
     // Normalize whatever the LLM returns into the ONE shape your UI expects
     let { workout } = normalizeLLM(out);
@@ -287,71 +394,19 @@ Schema (strict):
       ],
     };
 
-    function inferTargetsFromNames(names: string[]): string[] {
-      const S = names.join(' ').toLowerCase();
-      const out = new Set<string>();
-      const add = (k:string)=>out.add(k);
-
-      if (/(rdl|hamstring|leg\s*curl|good\s*morning)/i.test(S)) add('hamstring');
-      if (/(quad|squat|split\s*squat|front\s*squat|lunge|leg\s*press)/i.test(S)) add('quad');
-      if (/(glute|hip\s*thrust|bridge|hip\s*extension|step-?up)/i.test(S)) add('glute');
-      if (/(calf|gastroc|soleus)/i.test(S)) add('calf');
-      if (/(hip\s*flex|psoas|adductor|abductor|groin)/i.test(S)) add('hip flexor');
-      if (/(lat|pull-?down|row|pull-?up|chin-?up|rack\s*pull|deadlift|trap\s*bar)/i.test(S)) add('lat'), add('upper back');
-      if (/(rear\s*delt|face\s*pull|band\s*pull-?apart|shrug|trap)/i.test(S)) add('upper back');
-      if (/(bench|press|push-?up|fly|dip|pec)/i.test(S)) add('pec'), add('shoulder');
-      if (/(ohp|overhead|military|shoulder\s*press|lateral|front\s*raise)/i.test(S)) add('shoulder');
-      if (/(tricep|pushdown|skull-?crusher|dip)/i.test(S)) add('triceps');
-      if (/(bicep|curl|chin-?up)/i.test(S)) add('biceps');
-      if (/(anti-?rotation|pallof|carry|plank|rollout|dead\s*bug)/i.test(S)) add('core'), add('hip flexor');
-      return Array.from(out);
-    }
-
-    const splitKey = String(((plan as any)?.split || body?.split || 'full')).toLowerCase();
-    const splitTargets: Record<string,string[]> = {
-      legs: ['hamstring','quad','glute','calf','hip flexor','thoracic'],
-      pull: ['lat','upper back','biceps','thoracic'],
-      push: ['pec','shoulder','triceps','thoracic'],
-      upper:['pec','shoulder','triceps','lat','upper back','biceps','thoracic'],
-      full: ['hamstring','quad','glute','hip flexor','lat','upper back','pec','shoulder','triceps','biceps','thoracic'],
-      hiit: ['hip flexor','hamstring','quad','calf','thoracic'],
-    };
-
-    const namesMain = (workout?.mainExercises || []).map((i:any)=> String(i?.name || i?.exercise || '')).filter(Boolean);
-    const inferredTargets = inferTargetsFromNames(namesMain);
-    const targets = Array.from(new Set([...(splitTargets[splitKey]||[]), ...inferredTargets]));
-
-    // candidates from all shapes
-    const fromWorkoutArray = Array.isArray((workout as any)?.cooldown) ? (workout as any).cooldown : [];
-    const fromFinisher = workout?.finisher ? [workout.finisher] : [];
-    const fromPhases = Array.isArray(plan?.phases)
-      ? plan.phases
-          .filter((p: any) => /cooldown|carry|conditioning/i.test(String(p?.phase)))
-          .flatMap((p: any) => (Array.isArray(p?.items) ? p.items : []))
-      : [];
-    const initialCooldown = [...fromWorkoutArray, ...fromPhases, ...fromFinisher];
-
-    // sanitize: 2–3 stretches that match targets
-    const cdHolder = await sanitizeCooldown({ cooldown: initialCooldown }, userId, prefs, targets);
-    const sanitizedCooldown: any[] = Array.isArray(cdHolder?.cooldown) ? cdHolder.cooldown : [];
-
-    if (sanitizedCooldown.length) {
-      (workout as any).cooldown = sanitizedCooldown;       // preferred array
-      workout.finisher = sanitizedCooldown[0];              // legacy fallback
-
-      if (Array.isArray(plan?.phases)) {
-        const items = sanitizedCooldown.map((i:any)=>({ name:i.name, duration:i.duration || '45–60s', instruction:i.instruction }));
-        const idx = plan.phases.findIndex((p:any)=>String(p?.phase||'').toLowerCase()==='cooldown');
-        if (idx >= 0) plan.phases[idx].items = items;
-        else plan.phases.push({ phase: 'cooldown', items });
-      }
+    // Reflect cooldown into plan phases for UI rendering
+    if (Array.isArray(out?.plan?.phases)) {
+      const items = repaired.map(i => ({ name: i.name, duration: i.duration }));
+      const idx = out.plan.phases.findIndex(p => String(p?.phase).toLowerCase() === 'cooldown');
+      if (idx >= 0) out.plan.phases[idx].items = items;
+      else out.plan.phases.push({ phase: 'cooldown', items });
     }
 
     // debug so you can confirm in DevTools
     debug.cooldown = {
       targets,
-      initial: initialCooldown.map((i:any)=>i?.name).filter(Boolean),
-      sanitized: sanitizedCooldown.map((i:any)=>i?.name).filter(Boolean),
+      llmCooldown: llmCooldown.map((i:any)=>i?.name).filter(Boolean),
+      repaired: repaired.map((i:any)=>i?.name).filter(Boolean),
     };
 
     // which split/minutes & main lift did we end up with?

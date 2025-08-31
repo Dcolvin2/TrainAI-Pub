@@ -137,3 +137,63 @@ export async function fetchUserEquipmentNames(userId: string) {
   // Always unique + friendly
   return [...new Set(names)];
 }
+
+export async function fetchMobilityByTargets(targets: string[]) {
+  // Pull a generous pool; we'll filter/score in the LLM prompt
+  const { data, error } = await supabase
+    .from('exercises')
+    .select('name, category, primary_muscle, exercise_phase')
+    .ilike('category', '%mobility%'); // or use flags if you added them
+
+  if (error) {
+    console.error('fetchMobilityByTargets error', error);
+    return { byTarget: {}, all: [] as string[] };
+  }
+
+  const rows = (data || []);
+  const allNames = new Set<string>();
+  const byTarget: Record<string, string[]> = {};
+
+  const add = (t: string, n: string) => {
+    const key = t.toLowerCase();
+    if (!byTarget[key]) byTarget[key] = [];
+    if (!byTarget[key].some(x => x.toLowerCase() === n.toLowerCase())) byTarget[key].push(n);
+    allNames.add(n);
+  };
+
+  for (const r of rows) {
+    const name = String(r?.name || '').trim();
+    if (!name) continue;
+    // try to map by primary_muscle first, then name heuristics
+    const prim = Array.isArray(r?.primary_muscle) ? r.primary_muscle : [r?.primary_muscle].filter(Boolean);
+    for (const p of prim) add(String(p), name);
+
+    const n = name.toLowerCase();
+    if (/hamstring/.test(n)) add('hamstring', name);
+    if (/quad|quadricep/.test(n)) add('quad', name);
+    if (/glute|piriformis/.test(n)) add('glute', name);
+    if (/calf|gastroc|soleus/.test(n)) add('calf', name);
+    if (/hip\s*flexor|psoas/.test(n)) add('hip flexor', name);
+    if (/lat/.test(n)) add('lat', name);
+    if (/upper\s*back|t-?spine|thoracic/.test(n)) add('upper back', name);
+    if (/pec|chest/.test(n)) add('pec', name);
+    if (/shoulder|delt/.test(n)) add('shoulder', name);
+    if (/bicep/.test(n)) add('biceps', name);
+    if (/tricep/.test(n)) add('triceps', name);
+  }
+
+  // Include a small, safe generic set in case a target is empty
+  const SAFE_DEFAULTS = [
+    "Seated Hamstring Stretch",
+    "Hip Flexor Stretch",
+    "Calf Wall Stretch",
+    "Figure-4 Glute Stretch",
+    "Lat Stretch Against Wall",
+    "Doorway Pec Stretch",
+    "Child's Pose",
+    "Thread the Needle",
+  ];
+  for (const t of targets) if (!byTarget[t?.toLowerCase()]?.length) byTarget[t?.toLowerCase()] = SAFE_DEFAULTS;
+
+  return { byTarget, all: Array.from(allNames) };
+}
