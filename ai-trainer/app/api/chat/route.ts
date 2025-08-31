@@ -396,8 +396,13 @@ Schema (strict):
 
     // Reflect cooldown into plan phases for UI rendering
     if (Array.isArray(out?.plan?.phases)) {
-      const items = repaired.map(i => ({ name: i.name, duration: i.duration }));
-      const idx = out.plan.phases.findIndex(p => String(p?.phase).toLowerCase() === 'cooldown');
+      const items = repaired.map((i: { name: string; duration?: string | number }) => ({
+        name: i.name,
+        duration: i.duration,
+      }));
+      const idx = out.plan.phases.findIndex(
+        (p: { phase?: string }) => String(p?.phase).toLowerCase() === 'cooldown'
+      );
       if (idx >= 0) out.plan.phases[idx].items = items;
       else out.plan.phases.push({ phase: 'cooldown', items });
     }
