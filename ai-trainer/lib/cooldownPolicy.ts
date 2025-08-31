@@ -2,7 +2,8 @@ import { createClient } from '@supabase/supabase-js';
 import type { UserPrefs } from './prefs';
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const key =
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const sb = createClient(url, key);
 
 // Never in cooldown
@@ -18,8 +19,7 @@ const STRENGTH_OR_HI = new RegExp(
 // Must look like stretch/mobility
 const STRETCH = /(stretch|mobility|pose|pigeon|child'?s|hamstring|quad|quadriceps|calf|gastroc|soleus|lat|pec|chest|hip\s*flexor|psoas|thoracic|t-?spine|breathing|openers|thread\s*the\s*needle|world'?s\s*greatest)/i;
 
-function esc(s: string) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
-
+const esc = (s:string)=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
 function buildTargetRegex(targets: string[] = []) {
   const words = (targets||[]).flatMap(t => {
     switch (t.toLowerCase()) {
@@ -45,7 +45,7 @@ export async function sanitizeCooldown(
   holder: { cooldown: any[] },
   _userId: string,
   prefs: UserPrefs,
-  targets: string[] = []       // <<< NEW
+  targets: string[] = []          // <<< new param
 ) {
   const targetRe = buildTargetRegex(targets);
   const desired = (prefs?.cooldown ?? 'stretch_only') as 'stretch_only'|'stretch_priority'|'any';
@@ -60,14 +60,14 @@ export async function sanitizeCooldown(
     if (banned.some(b => n.toLowerCase().includes(b))) continue;
     if (STRENGTH_OR_HI.test(n)) continue;
     if (desired !== 'any' && !STRETCH.test(n)) continue;
-    // must match targets unless it's general breathing/ t-spine work
+    // must hit target muscles unless it's general breathing / t-spine
     if (targetRe && !/breath|diaphragm|thoracic|t-?spine/i.test(n) && !targetRe.test(n)) continue;
     keep.push({ ...it, duration: it?.duration || '45–60s' });
   }
 
   if (keep.length >= 2) { holder.cooldown = keep.slice(0, 3); return holder; }
 
-  // Backfill from catalog
+  // Backfill from DB mobility rows (your table has them)
   const { data } = await sb.from('exercises').select('name').limit(150);
   const pool = (data || [])
     .map(r => String(r?.name || ''))
@@ -84,7 +84,7 @@ export async function sanitizeCooldown(
       fills.push({ name: n, duration: '45–60s' });
   }
 
-  // Target-aware safe fallbacks
+  // Target-aware safe fallbacks (kept broad, but filtered by targetRe)
   const generics = [
     { name: "Seated Hamstring Stretch", duration: '45–60s' },
     { name: "Hip Flexor Stretch", duration: '45–60s' },

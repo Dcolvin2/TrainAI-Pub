@@ -287,7 +287,6 @@ Schema (strict):
       ],
     };
 
-    // --- helper to collect muscles from main exercise names
     function inferTargetsFromNames(names: string[]): string[] {
       const S = names.join(' ').toLowerCase();
       const out = new Set<string>();
@@ -308,7 +307,6 @@ Schema (strict):
       return Array.from(out);
     }
 
-    // derive split targets
     const splitKey = String(((plan as any)?.split || body?.split || 'full')).toLowerCase();
     const splitTargets: Record<string,string[]> = {
       legs: ['hamstring','quad','glute','calf','hip flexor','thoracic'],
@@ -316,40 +314,40 @@ Schema (strict):
       push: ['pec','shoulder','triceps','thoracic'],
       upper:['pec','shoulder','triceps','lat','upper back','biceps','thoracic'],
       full: ['hamstring','quad','glute','hip flexor','lat','upper back','pec','shoulder','triceps','biceps','thoracic'],
-      hiit: ['hip flexor','hamstring','quad','calf','thoracic']
+      hiit: ['hip flexor','hamstring','quad','calf','thoracic'],
     };
 
     const namesMain = (workout?.mainExercises || []).map((i:any)=> String(i?.name || i?.exercise || '')).filter(Boolean);
     const inferredTargets = inferTargetsFromNames(namesMain);
     const targets = Array.from(new Set([...(splitTargets[splitKey]||[]), ...inferredTargets]));
 
-    // ---- Build candidates from all shapes (same as you had)
+    // candidates from all shapes
     const fromWorkoutArray = Array.isArray((workout as any)?.cooldown) ? (workout as any).cooldown : [];
     const fromFinisher = workout?.finisher ? [workout.finisher] : [];
     const fromPhases = Array.isArray(plan?.phases)
-      ? plan.phases.filter((p:any)=>/cooldown|carry|conditioning/i.test(String(p?.phase)))
-          .flatMap((p:any)=>Array.isArray(p?.items)?p.items:[])
+      ? plan.phases
+          .filter((p: any) => /cooldown|carry|conditioning/i.test(String(p?.phase)))
+          .flatMap((p: any) => (Array.isArray(p?.items) ? p.items : []))
       : [];
     const initialCooldown = [...fromWorkoutArray, ...fromPhases, ...fromFinisher];
 
-    // ---- Sanitize to target-aware stretches (2–3)
+    // sanitize: 2–3 stretches that match targets
     const cdHolder = await sanitizeCooldown({ cooldown: initialCooldown }, userId, prefs, targets);
     const sanitizedCooldown: any[] = Array.isArray(cdHolder?.cooldown) ? cdHolder.cooldown : [];
 
-    // ---- Reflect back everywhere (array + phase + legacy)
     if (sanitizedCooldown.length) {
-      (workout as any).cooldown = sanitizedCooldown;
-      workout.finisher = sanitizedCooldown[0];
+      (workout as any).cooldown = sanitizedCooldown;       // preferred array
+      workout.finisher = sanitizedCooldown[0];              // legacy fallback
 
       if (Array.isArray(plan?.phases)) {
         const items = sanitizedCooldown.map((i:any)=>({ name:i.name, duration:i.duration || '45–60s', instruction:i.instruction }));
         const idx = plan.phases.findIndex((p:any)=>String(p?.phase||'').toLowerCase()==='cooldown');
         if (idx >= 0) plan.phases[idx].items = items;
-        else plan.phases.push({ phase:'cooldown', items });
+        else plan.phases.push({ phase: 'cooldown', items });
       }
     }
 
-    // (optional) debug
+    // debug so you can confirm in DevTools
     debug.cooldown = {
       targets,
       initial: initialCooldown.map((i:any)=>i?.name).filter(Boolean),
