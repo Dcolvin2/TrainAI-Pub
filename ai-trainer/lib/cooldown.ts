@@ -3,8 +3,8 @@ import { supabase } from '@/lib/supabase';
 
 export type CoolItem = { name: string; duration?: string; reps?: string; instruction?: string };
 
-function norm(s: string) {
-  return String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+function norm(s: unknown) {
+  return String(s ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
 export function focusFromSplit(split?: string): string[] {

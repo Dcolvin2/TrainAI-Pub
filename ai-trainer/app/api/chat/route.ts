@@ -151,8 +151,8 @@ function guardrailCooldowns(
   return out;
 }
 
-function norm(s: string) {
-  return String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+function norm(s: unknown) {
+  return String(s ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
 function synthCoach(raw: any, plan: any, workout: any, split: Split, minutes: number, style: 'default'|'ocho') {
