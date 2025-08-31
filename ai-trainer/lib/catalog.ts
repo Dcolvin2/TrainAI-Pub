@@ -140,7 +140,8 @@ export async function fetchUserEquipmentNames(userId: string) {
 
 export async function fetchMobilityByTargets(targets: string[]) {
   // Pull a generous pool; we'll filter/score in the LLM prompt
-  const { data, error } = await supabase
+  const client = sb();
+  const { data, error } = await client
     .from('exercises')
     .select('name, category, primary_muscle, exercise_phase')
     .ilike('category', '%mobility%'); // or use flags if you added them
