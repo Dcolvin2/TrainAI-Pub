@@ -34,16 +34,24 @@ export async function fetchCooldownContext(opts: {
 
   if (exErr) throw exErr;
 
-  const wanted = (opts.focusHints ?? []).map(norm);
+  const wanted: string[] = (opts.focusHints ?? []).map((v) =>
+    String(v ?? '').toLowerCase().trim()
+  );
 
   const pool = (exRows ?? []).filter((r) => {
-    const cat = norm(r.category ?? '');
-    const pm = norm(r.primary_muscle ?? '');
-    const tms = (r.target_muscles ?? []).map((x: unknown) => norm(String(x)));
+    const cat = String(r.category ?? '').toLowerCase();
+    const pm = String(r.primary_muscle ?? '').toLowerCase();
+    const tms: string[] = (r.target_muscles ?? []).map((x: unknown) =>
+      String(x ?? '').toLowerCase()
+    );
+
     const isMobilityish = /mobility|stretch|cooldown|yoga|flow|flex|release|breath/.test(cat);
-    const hitsTarget = wanted.length
-      ? wanted.some((t) => pm.includes(t) || tms.some((m) => m.includes(t)))
-      : true;
+
+    const hitsTarget =
+      wanted.length === 0
+        ? true
+        : wanted.some((t: string) => pm.includes(t) || tms.some((m: string) => m.includes(t)));
+
     return isMobilityish && hitsTarget;
   });
 
