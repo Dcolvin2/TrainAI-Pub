@@ -295,6 +295,46 @@ async function fetchRecentExerciseNames(userId: string, days = 14): Promise<Set<
   return s;
 }
 
+// Pull cooldown names from the user's recent saved workouts (since cooldowns aren't in log entries)
+async function fetchRecentCooldownNamesFromWorkouts(userId: string, days = 28): Promise<Set<string>> {
+  if (!userId) return new Set();
+
+  const since = new Date(Date.now() - days * 864e5).toISOString();
+
+  const { data, error } = await supabase
+    .from('workouts')
+    .select('cooldown, created_at')
+    .eq('user_id', userId)
+    .gte('created_at', since)
+    .order('created_at', { ascending: false })
+    .limit(200);
+
+  if (error) return new Set();
+
+  const names = new Set<string>();
+  const add = (nm: unknown) => {
+    const k = _norm(nm);
+    if (k) names.add(k);
+  };
+
+  for (const row of data ?? []) {
+    const cd = (row as any)?.cooldown;
+    // common shapes: array of items; or {items:[...]} ; or phase-shaped {phase:"cooldown", items:[...]}
+    if (Array.isArray(cd)) {
+      for (const it of cd) add((it as any)?.name);
+    } else if (cd && typeof cd === 'object') {
+      const items = Array.isArray((cd as any).items) ? (cd as any).items : undefined;
+      if (items) {
+        for (const it of items) add((it as any)?.name);
+      } else if (Array.isArray((cd as any)?.cooldown)) {
+        for (const it of (cd as any).cooldown) add((it as any)?.name);
+      }
+    }
+  }
+
+  return names;
+}
+
 
 
 export async function POST(req: NextRequest) {
@@ -788,12 +828,15 @@ Schema (strict):
         userId,
       });
 
+      // Also exclude cooldowns actually used in the user's recent saved workouts
+      const recentCooldownFromWorkouts = await fetchRecentCooldownNamesFromWorkouts(userId, 28);
+
       // --- diagnostics (server logs) ---
       const peek = (arr: { name: string }[], n = 8) => arr.slice(0, n).map((x) => x.name).join(', ');
       console.log('[cooldown] focusHints=', focusHints);
       console.log('[cooldown] rankedCandidates=', rankedCandidates.length, 'eg:', peek(rankedCandidates));
       console.log('[cooldown] allCandidates=', allCandidates.length, 'eg:', peek(allCandidates));
-      console.log('[cooldown] recentNames size=', recentNames.size);
+      console.log('[cooldown] recentNames size=', recentNames.size, 'recentCooldownFromWorkouts size=', recentCooldownFromWorkouts.size);
 
       // Ask LLM (your helper) for suggestions
       const sys =
@@ -836,7 +879,11 @@ Schema (strict):
       let picks = mapLLMToPlanItems(parsed?.items ?? []);
 
       // --- guardrail: no repeats (session + recent), then top-up from ranked, then from all ---
-      const exclude = new Set<string>([...sessionNames, ...recentNames]);
+      const exclude = new Set<string>([
+        ...sessionNames,
+        ...recentNames,
+        ...recentCooldownFromWorkouts,
+      ]);
       const seen = new Set<string>();
       const outItems: PlanItem[] = [];
 
@@ -943,9 +990,9 @@ Schema (strict):
     // Final payload
     const payload = {
       ok: true,
-      name: out?.name || plan.name,
-      message: out?.message || plan.name,
-      coach,
+      name: plan.name,            // keep steady, avoid hype names from LLM
+      message: plan.name,         // short, deterministic
+      coach,                      // already concise via buildCoachNote
       plan,
       workout,
     };
