@@ -724,6 +724,28 @@ Schema (strict):
       workout.mainExercises = [mainLiftItem, ...(workout.mainExercises || [])];
     }
 
+    // Ensure ≥ 2 accessories (1 main + 2 accessories minimum)
+    try {
+      const desiredMinTotal = 3;
+      if (!Array.isArray(workout.mainExercises)) workout.mainExercises = [];
+      const existingNames = new Set<string>(workout.mainExercises.map((i:any) => norm(i?.name)));
+      if (workout.mainExercises.length < desiredMinTotal) {
+        const pool = await fetchAccessoryPoolBySplit(userId, split, equipment, 40);
+        for (const p of pool) {
+          const n = norm(p.name);
+          if (!n || existingNames.has(n) || (mainLift && n === norm(mainLift))) continue;
+          workout.mainExercises.push({ name: p.name, sets: '3', reps: '8–12', isAccessory: true });
+          existingNames.add(n);
+          if (workout.mainExercises.length >= desiredMinTotal) break;
+        }
+      }
+    } catch {
+      // last resort bodyweight
+      while (Array.isArray(workout.mainExercises) && workout.mainExercises.length < 3) {
+        workout.mainExercises.push({ name: 'Plank', sets: '2', reps: '30–45s', isAccessory: true });
+      }
+    }
+
     // Generate proper plan name with day counter
     const dayCounter = Math.floor(Math.random() * 100) + 1; // Simple random day number
     const planName = `${split.charAt(0).toUpperCase() + split.slice(1)} — Day ${dayCounter}`;
