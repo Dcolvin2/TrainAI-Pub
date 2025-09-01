@@ -596,6 +596,13 @@ export async function POST(req: NextRequest) {
 Default: {"split":"pull","minutes":45,"style":"default"} if unclear.`;
 
     const lastUser = [...(body.messages||[])].reverse().find(m => m.role==='user')?.content || '';
+    if (!lastUser || lastUser.trim().length < 2) {
+      if (dbg) dpush(debug, 'lastUser', lastUser);
+      return NextResponse.json(
+        { ok: false, error: 'Missing user message in body.messages[]. Provide messages:[{role:"user",content:"..."}].', ...(dbg ? { debug } : {}) },
+        { status: 400 }
+      );
+    }
     const intents = await timedClaudeJSON('classifier', classifierSystem, { text: lastUser, provided: { split: body.split, minutes: body.minutes, style: body.style }}, { temperature: 0.2, max_tokens: 120 });
 
     const split: Split = (body.split || intents?.split || 'pull') as Split;
@@ -993,7 +1000,7 @@ Schema (strict):
     const recentMainSets = mainLiftName ? await fetchRecentSetsForExercise(userId, mainLiftName, 12) : [];
     const hist = summarizeHistory(recentMainSets);
 
-    // compose a smart coach message
+    // compose a smart coach message (workout mode)
     const smartCoach = buildCoachNote({
       split: splitOut,
       minutes: minutesOut,
@@ -1002,8 +1009,6 @@ Schema (strict):
       equipment: Array.isArray(body?.equipment) ? body.equipment : [],
       prefs,
     });
-
-    // attach/override coach text (return this field)
     if (plan) (plan as any).coach = smartCoach;
     const coach = smartCoach;
 
