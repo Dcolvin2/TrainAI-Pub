@@ -15,6 +15,133 @@ type Split = "pull" | "push" | "legs" | "upper" | "full" | "hiit";
 const makeTitle = (split: string, minutes?: number) =>
   `${split.charAt(0).toUpperCase() + split.slice(1)} (~${Number.isFinite(minutes as number) ? minutes : 45} min)`;
 
+// ---- Mobility-only cooldown helpers (server) -----------------
+const HIIT_OR_STRENGTHY = /(burpee|sprint|thruster|box\s*jump|mountain\s*climber|jump(ing)?\s*jacks?|press|row|curl|extension|raise|pull-?down|deadlift|squat|lunge|dip|carry|hang)/i;
+const STRETCHY = /(stretch|mobility|pose|pigeon|child'?s|hamstring|quad|quadriceps|calf|gastroc|soleus|lat|pec|chest|hip\s*flexor|psoas|thoracic|t-?spine|breath|diaphragm|thread\s*the\s*needle|world'?s\s*greatest|cat[-\s]*cow|wall\s*angel|openers?)/i;
+
+function splitFocus(split: string) {
+  const s = (split||'').toLowerCase();
+  if (s.includes('legs')) return ['hamstring','quad','glute','hip flexor','calf','thoracic'];
+  if (s.includes('push')) return ['pec','chest','shoulder','triceps','thoracic'];
+  if (s.includes('pull')) return ['lat','upper back','biceps','thoracic'];
+  if (s.includes('upper')) return ['chest','shoulder','back','arms','thoracic'];
+  if (s.includes('full')) return ['hips','back','core','glute','quad','hamstring','thoracic','calf'];
+  return ['thoracic','breathing'];
+}
+
+const FALLBACK_BY_SPLIT: Record<string,string[]> = {
+  pull:  ["Doorway Pec Stretch","Cross-Body Shoulder Stretch","Thread the Needle","Foam Roll Lats"],
+  push:  ["Doorway Pec Stretch","Overhead Triceps Stretch","Wall Angels","Thread the Needle"],
+  legs:  ["Seated Hamstring Stretch","Kneeling Hip Flexor Stretch","Figure-4 Glute Stretch","Standing Calf Stretch"],
+  upper: ["Doorway Pec Stretch","Cross-Body Shoulder Stretch","Lat Stretch Against Wall","Child's Pose"],
+  full:  ["World's Greatest Stretch","Cat-Cow","Child's Pose","90/90 Breathing"],
+  hiit:  ["Child's Pose","Thread the Needle","Calf Wall Stretch","90/90 Breathing"],
+};
+
+async function buildCooldownForSplit(
+  split: 'pull'|'push'|'legs'|'upper'|'full'|'hiit',
+  usedNames: string[] = []
+) {
+  const focus = splitFocus(split);
+  const used = new Set(usedNames.map(n => n.toLowerCase()));
+
+  const { data } = await supabase
+    .from('exercises')
+    .select('name, primary_muscle, target_muscles, exercise_phase')
+    .in('exercise_phase', ['cooldown','warmup'])
+    .limit(200);
+
+  const rows = (data ?? [])
+    .map(r => ({
+      name: String(r.name||'').trim(),
+      pm: (r as any).primary_muscle?.toString().toLowerCase() || '',
+      tms: Array.isArray((r as any).target_muscles) ? (r as any).target_muscles.map((t:string)=>t.toLowerCase()) : []
+    }))
+    .filter(r => r.name && STRETCHY.test(r.name) && !HIIT_OR_STRENGTHY.test(r.name));
+
+  const score = (r:any) => {
+    let s = 0;
+    for (const f of focus) {
+      const fL = f.toLowerCase();
+      if (r.pm.includes(fL)) s += 2;
+      if (r.tms.some((t:string)=>t.includes(fL))) s += 1;
+    }
+    return s;
+  };
+
+  const sorted = rows
+    .filter(r => !used.has(r.name.toLowerCase()))
+    .sort((a,b)=>score(b)-score(a));
+
+  let picks = sorted.slice(0, 4).map(r => ({ name: r.name, duration: '45–60s' }));
+
+  // Top-up if thin using curated fallback (split-aware)
+  if (picks.length < 3) {
+    const fb = (FALLBACK_BY_SPLIT[split] || FALLBACK_BY_SPLIT.full);
+    for (const name of fb) {
+      if (picks.length >= 4) break;
+      const k = name.toLowerCase();
+      if (!used.has(k) && !picks.some(p => p.name.toLowerCase()===k)) {
+        picks.push({ name, duration: '45–60s' });
+      }
+    }
+  }
+  return picks.slice(0,4);
+}
+
+function filterMobilityOnly(list: any[] = []) {
+  const seen = new Set<string>();
+  const out: { name: string; duration?: string }[] = [];
+  for (const it of (Array.isArray(list)?list:[])) {
+    const name = String(it?.name||it?.exercise||'').trim();
+    if (!name || !STRETCHY.test(name) || HIIT_OR_STRENGTHY.test(name)) continue;
+    const k = name.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push({ name, duration: it?.duration || (it?.reps && /^\d/.test(String(it.reps)) ? String(it.reps) : '45–60s') });
+  }
+  return out;
+}
+
+async function ensureCooldownOn(plan: any, workout: any, split: string) {
+  const fromWorkout = filterMobilityOnly(workout?.cooldown);
+  const fromPlan = filterMobilityOnly(
+    (Array.isArray(plan?.phases) ? plan.phases : [])
+      .find((p:any)=>String(p?.phase).toLowerCase()==='cooldown')?.items
+  );
+
+  let cooldown = (fromWorkout.length ? fromWorkout : fromPlan);
+
+  if (cooldown.length < 2) {
+    const sessionNames = [
+      ...(workout?.warmup||[]).map((x:any)=>x?.name).filter(Boolean),
+      ...(workout?.mainExercises||[]).map((x:any)=>x?.name).filter(Boolean)
+    ];
+    const topups = await buildCooldownForSplit((split||'full') as any, sessionNames);
+    const merged = [...cooldown, ...topups];
+
+    // de-dupe
+    const seen = new Set<string>();
+    cooldown = merged.filter(x=>{
+      const k = x.name.toLowerCase();
+      if (!k || seen.has(k)) return false;
+      seen.add(k); return true;
+    }).slice(0,4);
+  }
+
+  // write back into both shapes
+  if (!Array.isArray(workout.cooldown)) workout.cooldown = [];
+  workout.cooldown = cooldown;
+
+  // ensure plan has a cooldown phase
+  if (!Array.isArray(plan.phases)) plan.phases = [];
+  const idx = plan.phases.findIndex((p:any)=>String(p?.phase).toLowerCase()==='cooldown');
+  if (idx >= 0) plan.phases[idx].items = cooldown;
+  else plan.phases.push({ phase: 'cooldown', items: cooldown });
+
+  return cooldown;
+}
+
 // Catalog-based backup used ONLY if the LLM output is unusable.
 // Picks from the names already returned by your DB; no hardcoding of exercises.
 const buildRuleBasedBackup = (input: any) => {
@@ -243,68 +370,7 @@ async function callClaudeJson(system: string, user: unknown) {
   }
 }
 
-async function buildCooldownForSplit(
-  split: 'pull'|'push'|'legs'|'upper'|'full'|'hiit',
-  usedNames: string[] = []
-) {
-  // Focus tags for each split
-  const focus = (() => {
-    switch (split) {
-      case 'pull':  return ['lat','upper back','thoracic','biceps'];
-      case 'push':  return ['pec','chest','shoulder','triceps','thoracic'];
-      case 'legs':  return ['hamstring','quad','glute','hip flexor','calf','thoracic'];
-      case 'upper': return ['chest','shoulder','back','arms','thoracic'];
-      case 'full':  return ['hips','back','core','glute','quad','hamstring','thoracic','calf'];
-      default:      return ['thoracic','breathing'];
-    }
-  })();
 
-  // Pull from DB warmup/cooldown rows
-  const { data } = await supabase
-    .from('exercises')
-    .select('name, primary_muscle, target_muscles, exercise_phase')
-    .in('exercise_phase', ['cooldown','warmup'])
-    .limit(150);
-
-  const STRETCHY = /(stretch|mobility|pose|pigeon|child'?s|hamstring|quad|quadriceps|calf|gastroc|soleus|lat|pec|chest|hip\s*flexor|psoas|thoracic|t-?spine|breath|diaphragm|thread\s*the\s*needle|world'?s\s*greatest)/i;
-  const HIIT_OR_STRENGTHY = /(burpee|sprint|thruster|box\s*jump|mountain\s*climber|jump(ing)?\s*jacks?|press|row|curl|extension|raise|pull-?down|deadlift|squat|lunge|dip|carry|hang)/i;
-
-  const used = new Set(usedNames.map(n => n.toLowerCase()));
-  const rows = (data ?? [])
-    .map(r => ({ 
-      name: String(r.name||'').trim(),
-      primary: (r as any).primary_muscle?.toString().toLowerCase() || '',
-      targets: Array.isArray((r as any).target_muscles) ? (r as any).target_muscles.map((t:string)=>t.toLowerCase()) : []
-    }))
-    .filter(r => r.name && STRETCHY.test(r.name) && !HIIT_OR_STRENGTHY.test(r.name));
-
-  const score = (r:any) => {
-    let s = 0;
-    for (const f of focus) {
-      const fL = f.toLowerCase();
-      if (r.primary.includes(fL)) s += 2;
-      if (r.targets.some((t:string)=>t.includes(fL))) s += 1;
-    }
-    return s;
-  };
-
-  const sorted = rows
-    .filter(r => !used.has(r.name.toLowerCase()))
-    .sort((a,b) => score(b)-score(a));
-
-  const picks = sorted.slice(0, 4).map(r => ({ name: r.name, duration: '45–60s' }));
-  // Ensure at least some thoracic/breathing if focus rows are thin
-  if (picks.length < 3) {
-    const fillers = ['Child\'s Pose','Thread the Needle','90/90 Breathing','Doorway Pec Stretch','Lat Stretch Against Wall'];
-    for (const f of fillers) {
-      if (picks.length >= 3) break;
-      if (!used.has(f.toLowerCase()) && !picks.some(p => p.name.toLowerCase() === f.toLowerCase())) {
-        picks.push({ name: f, duration: '45–60s' });
-      }
-    }
-  }
-  return picks.slice(0, 4);
-}
 
 // Generate pull workout with anchored main lift and rotating accessories
 async function generatePullWorkoutLLM({
@@ -363,34 +429,46 @@ async function generatePullWorkoutLLM({
     ...rest.map((x: any) => ({ ...x, isAccessory: true })),
   ];
 
-  // Build mobility-only cooldown from DB, avoiding duplicates with session
-  const sessionNames = [
-    ...warmup.map((x:any)=>x?.name).filter(Boolean),
-    ...mainExercises.map((x:any)=>x?.name).filter(Boolean)
-  ];
-  const cooldown = await buildCooldownForSplit('pull', sessionNames);
+  // guarantee cooldown
+  const plan = {
+    phases: [
+      { phase: 'prep', items: warmup },
+      { phase: 'strength', items: mainExercises }
+    ]
+  };
+  const workout = { warmup, mainExercises, cooldown: [] };
+  
+  await ensureCooldownOn(plan, workout, 'pull');
 
-  // inject into both workout and plan.phases
+  // then assemble payload using those mutated objects:
+  const finalPlan = {
+    split: 'pull',
+    duration: user.minutes,
+    main_lift: selectedMainLift,
+    name: `Pull (~${user.minutes} min)`,
+    phases: [
+      { phase: 'prep', items: warmup },
+      { phase: 'strength', items: mainExercises },
+      { phase: 'activation', items: [] },
+      { phase: 'carry_block', items: [] },
+      { phase: 'conditioning', items: [] },
+      { phase: 'cooldown', items: plan.phases.find(p => p.phase === 'cooldown')?.items || [] }
+    ],
+  };
+  const finalWorkout = { 
+    warmup, 
+    mainExercises, 
+    finisher: llm?.workout?.finisher, 
+    cooldown: plan.phases.find(p => p.phase === 'cooldown')?.items || []
+  };
+
   const payload = {
     ok: true,
     name: `Pull (~${user.minutes} min)`,
     message: `Pull (~${user.minutes} min)`,
     coach: `Pull day locked. Main lift: ${selectedMainLift}. We'll rotate accessories and include rotation/anti-rotation.`,
-    plan: { 
-      split: 'pull', 
-      duration: user.minutes, 
-      main_lift: selectedMainLift, 
-      name: `Pull (~${user.minutes} min)`,
-      phases: [
-        { phase: 'prep', items: warmup },
-        { phase: 'strength', items: mainExercises },
-        { phase: 'activation', items: [] },
-        { phase: 'carry_block', items: [] },
-        { phase: 'conditioning', items: [] },
-        { phase: 'cooldown', items: cooldown },           // ← add
-      ]
-    },
-    workout: { warmup, mainExercises, finisher: llm?.workout?.finisher, cooldown }, // ← add
+    plan: finalPlan,
+    workout: finalWorkout,
   };
 
   return payload;
@@ -948,6 +1026,9 @@ export async function POST(req: Request) {
       chatBuildError = e?.message ?? String(e);
       // keep chatMsg as the simple default; DO NOT throw
     }
+
+    // guarantee cooldown before returning
+    await ensureCooldownOn(safePlan, finalWorkout, split || 'full');
 
     return NextResponse.json({
       ok: true,

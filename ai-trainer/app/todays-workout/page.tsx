@@ -501,7 +501,7 @@ export default function TodaysWorkoutPage() {
             name: plan.name,
             warmup: workout.warmup,
             main: workout.mainExercises,
-            cooldown: sanitizeCooldown(rawCooldown),
+            cooldown: normalizeCooldown(rawCooldown, plan.split), // ← pass split
             est_total_minutes: plan.duration,
           };
 
@@ -590,7 +590,7 @@ export default function TodaysWorkoutPage() {
       name: plan.name,
       warmup: workout.warmup,
       main: workout.mainExercises,
-      cooldown: sanitizeCooldown(rawCooldown),
+      cooldown: normalizeCooldown(rawCooldown, plan.split), // ← pass split
       est_total_minutes: plan.duration,
     };
     const gw = llmToGeneratedWorkout(legacy);
@@ -618,29 +618,48 @@ export default function TodaysWorkoutPage() {
     }
   };
 
-  // Mobility-only filter (no strength/calisthenics), de-dupe, no default pool
+  // client — split-aware fallback (only mobility)
   const HIIT_OR_STRENGTHY = /(burpee|sprint|thruster|box\s*jump|mountain\s*climber|jump(ing)?\s*jacks?|press|row|curl|extension|raise|pull-?down|deadlift|squat|lunge|dip|carry|hang)/i;
-  const STRETCHY = /(stretch|mobility|pose|pigeon|child'?s|hamstring|quad|quadriceps|calf|gastroc|soleus|lat|pec|chest|hip\s*flexor|psoas|thoracic|t-?spine|breath|diaphragm|thread\s*the\s*needle|world'?s\s*greatest)/i;
+  const STRETCHY = /(stretch|mobility|pose|pigeon|child'?s|hamstring|quad|quadriceps|calf|gastroc|soleus|lat|pec|chest|hip\s*flexor|psoas|thoracic|t-?spine|breath|diaphragm|thread\s*the\s*needle|world'?s\s*greatest|cat[-\s]*cow|wall\s*angel|openers?)/i;
 
-  function sanitizeCooldown(items: any[] = []) {
+  const FALLBACK_BY_SPLIT: Record<string,string[]> = {
+    pull:  ["Cross-Body Shoulder Stretch","Doorway Pec Stretch","Thread the Needle","Foam Roll Lats"],
+    push:  ["Doorway Pec Stretch","Overhead Triceps Stretch","Wall Angels","Thread the Needle"],
+    legs:  ["Seated Hamstring Stretch","Kneeling Hip Flexor Stretch","Figure-4 Glute Stretch","Standing Calf Stretch"],
+    upper: ["Doorway Pec Stretch","Cross-Body Shoulder Stretch","Lat Stretch Against Wall","Child's Pose"],
+    full:  ["World's Greatest Stretch","Cat-Cow","Child's Pose","90/90 Breathing"],
+    hiit:  ["Child's Pose","Thread the Needle","Calf Wall Stretch","90/90 Breathing"],
+  };
+
+  function normalizeCooldown(items: any[] = [], split?: string) {
     const src = Array.isArray(items) ? items : [];
-    const filtered = src
-      .map((i:any) => ({
-        name: i?.name || i?.exercise || '',
-        duration: i?.duration || (i?.reps && /^\d/.test(i.reps) ? i.reps : '45–60s')
-      }))
-      .filter(i => i.name && STRETCHY.test(i.name) && !HIIT_OR_STRENGTHY.test(i.name));
-
-    // de-dupe by name (case-insensitive)
-    const seen = new Set<string>();
     const out: { name: string; duration?: string }[] = [];
-    for (const it of filtered) {
-      const k = it.name.toLowerCase();
+
+    // filter mobility only
+    const seen = new Set<string>();
+    for (const it of src) {
+      const name = String(it?.name || it?.exercise || '').trim();
+      if (!name || !STRETCHY.test(name) || HIIT_OR_STRENGTHY.test(name)) continue;
+      const k = name.toLowerCase();
       if (seen.has(k)) continue;
       seen.add(k);
-      out.push(it);
+      out.push({ name, duration: it?.duration || (it?.reps && /^\d/.test(String(it.reps)) ? String(it.reps) : '45–60s') });
     }
-    return out;
+
+    // split-aware top-up to ensure 2–4 items
+    const want = Math.min(4, Math.max(2, out.length || 3));
+    if (out.length < want) {
+      const fb = FALLBACK_BY_SPLIT[(split||'full').toLowerCase()] || FALLBACK_BY_SPLIT.full;
+      for (const name of fb) {
+        if (out.length >= want) break;
+        const k = name.toLowerCase();
+        if (!seen.has(k)) {
+          seen.add(k);
+          out.push({ name, duration: '45–60s' });
+        }
+      }
+    }
+    return out.slice(0,4);
   }
 
   // Use normalized data for rendering - single source of truth
