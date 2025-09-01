@@ -576,6 +576,29 @@ export async function POST(req: NextRequest) {
 
     // 1a) Get user preferences and learn from messages
     const prefs = await getUserPrefs(userId);
+
+    // --- QA guard: equipment/gear question -> concise answer, early return ---
+    const latestMsg = [...(body.messages||[])].reverse().find(m => m.role==='user')?.content || '';
+    const looksLikeGearQA =
+      /\?/.test(latestMsg) &&
+      /\b(attachment|worth|buy|purchase|recommend|upgrade|brand|model|equipment|barbell|dumbbell|kettlebell|rack|bench|machine|landmine|t[-\s]?bar)\b/i.test(latestMsg);
+    if (looksLikeGearQA) {
+      const qaSys =
+        'You are a concise strength coach. Return STRICT JSON only: {"answer": string}.' +
+        ' Answer the user gear/equipment question in 4–7 sentences with practical pros/cons and a clear recommendation.';
+      const qaUser = { question: latestMsg, equipment: Array.isArray(body?.equipment) ? body.equipment : [] };
+      const qa = await claudeJSON(qaSys, qaUser);
+      const answer = (qa && typeof qa.answer === 'string') ? qa.answer : (qa?.text || 'I recommend choosing versatile gear that fits your current setup and goals.');
+      const payload = {
+        ok: true,
+        name: 'Coach Q&A',
+        message: answer,
+        coach: '',
+        plan: { split: 'qa', duration: 0, name: 'Coach Q&A', main_lift: '', phases: [] },
+        workout: { warmup: [], mainExercises: [], finisher: null }
+      };
+      return NextResponse.json(payload, { status: 200 });
+    }
     
     // Quick preference extraction from the last user message
     const lastUserMsg = Array.isArray(body.messages) ? [...body.messages].reverse().find(m => m.role === 'user')?.content || '' : '';
@@ -675,6 +698,8 @@ Constraints
     ? 'Joe Holder Ocho style — include crawling/ground-based core, tempo OR isometric cues on at least one accessory, pair accessories with breath/mobility resets when helpful, and prefer carries or sled work if equipment allows.'
     : 'Evidence-based general strength style.'}
 - Keep instructions concise.
+${/\bski|skiing|snow(board|)\b/i.test(lastUser) ? `
+- Since the latest message mentions skiing/snow sports, bias accessories toward: eccentric quads (e.g., step-downs, tempo squats), glute power, core stability/balance, and knee-friendly patterns. Minimize heavy hip-hinge volume today.` : ''}
 
 ${policy}
 
