@@ -335,7 +335,7 @@ export async function POST(req: NextRequest) {
       const equipmentList = Array.isArray(body?.equipment) && body.equipment.length
         ? body.equipment
         : (userId ? await fetchUserEquipmentNames(userId) : []);
-      const duration = Number(body?.minutes ?? profile?.preferred_workout_duration ?? 45);
+      const duration = Number(body?.minutes ?? 45);
 
       // 2) Main lift
       const main = pickMainLift(splitInput, equipmentList);
