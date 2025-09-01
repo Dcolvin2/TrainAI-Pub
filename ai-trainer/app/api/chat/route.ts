@@ -1,6 +1,7 @@
 // app/api/chat/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabaseServer';
+import { supabase } from '@/lib/supabase';
 import { claudeJSON } from '@/lib/llm';
 import { ResponseOut, phasesFromWorkout, budget } from '@/lib/schema';
 import { fetchCatalog, fetchUserEquipmentNames, fetchMobilityByTargets } from '@/lib/catalog';
@@ -14,91 +15,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const PROGRAMS_ENABLED = process.env.NEXT_PUBLIC_ENABLE_PROGRAMS === '1';
-
-// ---------- HYBRID SPLIT HELPERS (all local scope; no exports) ----------
-function hybridSplitLabel(split: string): string {
-  const s = (split || '').toLowerCase();
-  if (s === 'upper') return 'Upper Body';
-  if (s === 'full') return 'Full Body';
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-function hybridHas(equipmentList: string[], needle: string): boolean {
-  const n = needle.toLowerCase();
-  return equipmentList.some(e => e.toLowerCase().includes(n));
-}
-
-function hybridMainLiftForSplit(split: string, equipmentList: string[]): string | null {
-  const s = (split || '').toLowerCase();
-  // Prefer safe/hardware-aware choices
-  switch (s) {
-    case 'push': {
-      if (hybridHas(equipmentList, 'barbell')) return 'Barbell Bench Press';
-      if (hybridHas(equipmentList, 'barbell')) return 'Barbell Incline Bench Press';
-      if (hybridHas(equipmentList, 'dumbbell')) return 'Dumbbell Bench Press';
-      if (hybridHas(equipmentList, 'dumbbell')) return 'Dumbbell Incline Bench Press';
-      return 'Push-Up';
-    }
-    case 'pull': {
-      if (hybridHas(equipmentList, 'trap')) return 'Trap Bar Deadlift';
-      if (hybridHas(equipmentList, 'barbell')) return 'Barbell Deadlift';
-      return 'Romanian Deadlift (DB)';
-    }
-    case 'legs': {
-      if (hybridHas(equipmentList, 'belt')) return 'Belt Squat';
-      if (hybridHas(equipmentList, 'safety') && hybridHas(equipmentList, 'bar')) return 'Safety Bar Squat';
-      if (hybridHas(equipmentList, 'barbell')) return 'Back Squat';
-      if (hybridHas(equipmentList, 'barbell')) return 'Front Squat';
-      return 'Goblet Squat';
-    }
-    case 'upper': {
-      if (hybridHas(equipmentList, 'barbell')) return 'Overhead Press';
-      return 'Dumbbell Shoulder Press';
-    }
-    case 'full': {
-      // Reasonable full-body anchor main lift (prefer hinge/squat if available)
-      if (hybridHas(equipmentList, 'trap')) return 'Trap Bar Deadlift';
-      if (hybridHas(equipmentList, 'barbell')) return 'Back Squat';
-      if (hybridHas(equipmentList, 'barbell')) return 'Barbell Deadlift';
-      return 'Dumbbell Clean to Front Squat';
-    }
-    case 'hiit':
-      return null; // circuit-based; no single main lift
-    default:
-      return null;
-  }
-}
-
-function hybridClampAccessories(items: any[], mainName: string | null): { name: string; sets?: string; reps?: string; instruction?: string }[] {
-  const seen = new Set<string>();
-  const out: { name: string; sets?: string; reps?: string; instruction?: string }[] = [];
-  for (const it of Array.isArray(items) ? items : []) {
-    const name = typeof it?.name === 'string' ? it.name.trim() : '';
-    if (!name) continue;
-    if (mainName && name.toLowerCase() === mainName.toLowerCase()) continue; // don't duplicate main
-    if (seen.has(name.toLowerCase())) continue;
-    seen.add(name.toLowerCase());
-    out.push({
-      name,
-      sets: typeof it?.sets === 'string' || typeof it?.sets === 'number' ? String(it.sets) : undefined,
-      reps: typeof it?.reps === 'string' || typeof it?.reps === 'number' ? String(it.reps) : undefined,
-      instruction: typeof it?.instruction === 'string' ? it.instruction : undefined,
-    });
-    if (out.length >= 4) break; // cap 2–4; we'll accept up to 4
-  }
-  // Ensure at least 2 accessories; lightweight defaults if missing
-  while (out.length < 2) {
-    out.push({ name: 'Plank', sets: '2', reps: '30–45s' });
-  }
-  return out;
-}
-
-function hybridShortCoach(s: unknown): string {
-  const txt = typeof s === 'string' ? s.trim() : '';
-  if (!txt) return 'Move with control, keep 1–2 reps in reserve on main sets, and prioritize quality over load.';
-  // hard cap ~240 chars
-  return txt.length > 240 ? `${txt.slice(0, 237)}…` : txt;
-}
+const HYBRID_SPLIT_ENABLED = process.env.NEXT_PUBLIC_HYBRID_SPLIT_ENABLED === '1';
 
 type Msg = { role: 'user'|'assistant'|'system'; content: string };
 type Split = 'pull'|'push'|'legs'|'upper'|'full'|'hiit';
@@ -153,6 +70,41 @@ function parseCooldownJSON(payload: unknown): { items: { name: string; duration?
 
 function norm(s: unknown) {
   return String(s ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function mainLiftForSplit(split: string, equipment: string[]): string | null {
+  const equipmentSet = new Set(equipment.map(e => e.toLowerCase()));
+  
+  switch (split.toLowerCase()) {
+    case 'push':
+      if (equipmentSet.has('barbell') && equipmentSet.has('bench')) return 'Barbell Bench Press';
+      if (equipmentSet.has('barbell') && equipmentSet.has('incline bench')) return 'Barbell Incline Press';
+      if (equipmentSet.has('dumbbell')) return 'Dumbbell Bench Press';
+      if (equipmentSet.has('dumbbell') && equipmentSet.has('incline bench')) return 'Dumbbell Incline Press';
+      return 'Barbell Bench Press'; // fallback
+      
+    case 'pull':
+      if (equipmentSet.has('trap bar')) return 'Trap Bar Deadlift';
+      if (equipmentSet.has('barbell')) return 'Barbell Deadlift';
+      return 'Trap Bar Deadlift'; // fallback
+      
+    case 'legs':
+      if (equipmentSet.has('belt squat machine')) return 'Belt Squat';
+      if (equipmentSet.has('barbell') && equipmentSet.has('rack')) return 'Back Squat';
+      if (equipmentSet.has('barbell')) return 'Front Squat';
+      return 'Back Squat'; // fallback
+      
+    case 'upper':
+      if (equipmentSet.has('barbell')) return 'Overhead Press';
+      if (equipmentSet.has('dumbbell')) return 'Dumbbell Shoulder Press';
+      return 'Overhead Press'; // fallback
+      
+    case 'hiit':
+      return null; // no main lift for HIIT
+      
+    default:
+      return 'Trap Bar Deadlift'; // default fallback
+  }
 }
 
 function synthCoach(raw: any, plan: any, workout: any, split: Split, minutes: number, style: 'default'|'ocho') {
@@ -223,6 +175,126 @@ function normalizeLLM(out: any) {
   return { workout: { warmup: warm, mainExercises: main, finisher: fin } };
 }
 
+// ---------------- Hybrid helpers (local scope) ----------------
+function _norm(s: unknown): string { return typeof s === 'string' ? s.trim().toLowerCase() : ''; }
+function _has(equip: string[], needle: string): boolean {
+  const n = needle.toLowerCase();
+  return equip.some(e => e.toLowerCase().includes(n));
+}
+function _label(split: string): string {
+  const s = _norm(split);
+  if (s === 'upper') return 'Upper Body';
+  if (s === 'full') return 'Full Body';
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+function pickMainLift(split: string, equipment: string[]): string | null {
+  const s = _norm(split);
+  switch (s) {
+    case 'push':
+      if (_has(equipment, 'barbell')) return 'Barbell Bench Press';
+      if (_has(equipment, 'barbell')) return 'Barbell Incline Bench Press';
+      if (_has(equipment, 'dumbbell')) return 'Dumbbell Bench Press';
+      if (_has(equipment, 'dumbbell')) return 'Dumbbell Incline Bench Press';
+      return 'Push-Up';
+    case 'pull':
+      if (_has(equipment, 'trap')) return 'Trap Bar Deadlift';
+      if (_has(equipment, 'barbell')) return 'Barbell Deadlift';
+      return 'Romanian Deadlift (DB)';
+    case 'legs':
+      if (_has(equipment, 'belt')) return 'Belt Squat';
+      if (_has(equipment, 'safety') && _has(equipment, 'bar')) return 'Safety Bar Squat';
+      if (_has(equipment, 'barbell')) return 'Back Squat';
+      if (_has(equipment, 'barbell')) return 'Front Squat';
+      return 'Goblet Squat';
+    case 'upper':
+      return _has(equipment, 'barbell') ? 'Overhead Press' : 'Dumbbell Shoulder Press';
+    case 'full':
+      if (_has(equipment, 'trap')) return 'Trap Bar Deadlift';
+      if (_has(equipment, 'barbell')) return 'Back Squat';
+      if (_has(equipment, 'barbell')) return 'Barbell Deadlift';
+      return 'Dumbbell Clean to Front Squat';
+    case 'hiit':
+      return null;
+    default:
+      return null;
+  }
+}
+
+function clampCoach(s: unknown): string {
+  const txt = typeof s === 'string' ? s.trim() : '';
+  if (!txt) return 'Move crisply, leave 1–2 reps in reserve on main sets, and prioritize quality over load.';
+  return txt.length > 240 ? `${txt.slice(0, 237)}…` : txt;
+}
+
+function uniqByName<T extends { name?: string }>(arr: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const it of arr) {
+    const n = _norm(it?.name);
+    if (!n || seen.has(n)) continue;
+    seen.add(n);
+    out.push(it);
+  }
+  return out;
+}
+
+async function fetchAccessoryPoolBySplit(userId: string, split: string, equipment: string[], limit = 24) {
+  // Pull accessories; prefer those matching split focus & available equipment
+  const { data, error } = await supabase
+    .from('exercises')
+    .select('name, primary_muscle, target_muscles, equipment_required, exercise_phase')
+    .eq('exercise_phase', 'accessory')
+    .limit(limit);
+  if (error) return [];
+  const focus = (() => {
+    const s = _norm(split);
+    if (s === 'push') return ['chest', 'shoulders', 'triceps'];
+    if (s === 'pull') return ['back', 'lats', 'biceps'];
+    if (s === 'legs') return ['quads', 'glutes', 'hamstrings', 'hips'];
+    if (s === 'upper') return ['shoulders', 'chest', 'back', 'triceps', 'biceps'];
+    if (s === 'full') return ['full', 'hips', 'back', 'core', 'glutes', 'quads'];
+    if (s === 'hiit') return ['full', 'cardio', 'core'];
+    return [];
+  })();
+  const hasEquip = (req: any) => {
+    const raw = typeof req === 'string' ? req : JSON.stringify(req ?? '');
+    const lower = raw.toLowerCase();
+    // Any mention of an owned item is acceptable
+    return equipment.length === 0 || equipment.some(e => lower.includes(e.toLowerCase()));
+  };
+  const score = (row: any) => {
+    const pm = _norm(row?.primary_muscle);
+    const tm = typeof row?.target_muscles === 'string' ? row.target_muscles.toLowerCase() : JSON.stringify(row?.target_muscles ?? '').toLowerCase();
+    let s = 0;
+    for (const f of focus) {
+      if (pm.includes(f)) s += 2;
+      if (tm.includes(f)) s += 1;
+    }
+    if (hasEquip(row?.equipment_required)) s += 1;
+    return s;
+  };
+  const deduped = uniqByName((data ?? []).map(r => ({ name: r.name, row: r })));
+  deduped.sort((a, b) => score(b.row) - score(a.row));
+  return deduped.map(x => ({ name: x.name }));
+}
+
+async function fetchRecentExerciseNames(userId: string, days = 14): Promise<Set<string>> {
+  const since = new Date(Date.now() - days * 864e5).toISOString();
+  const { data, error } = await supabase
+    .from('workout_log_entries')
+    .select('exercise_name, created_at')
+    .gte('created_at', since)
+    .eq('user_id', userId)
+    .limit(500);
+  if (error) return new Set();
+  const s = new Set<string>();
+  for (const r of data ?? []) {
+    const n = _norm((r as any)?.exercise_name);
+    if (n) s.add(n);
+  }
+  return s;
+}
+
 
 
 export async function POST(req: NextRequest) {
@@ -243,107 +315,6 @@ export async function POST(req: NextRequest) {
 
     // identify user once for the whole handler
     const userId = (body?.userId ?? req.headers.get('x-user-id') ?? '') as string;
-    const splitInput = typeof body?.split === 'string' ? body.split.trim().toLowerCase() : undefined;
-
-    // ---------- HYBRID SHORT-CIRCUIT: explicit split wins ----------
-    if (splitInput) {
-      // 1) Load profile & equipment list
-      const profile = await getUserPrefs(userId); // existing helper
-      const equipmentList = Array.isArray(body?.equipment) ? body.equipment : [];
-      const duration = Number(body?.minutes ?? 45);
-
-      // 2) Deterministic main lift for split
-      const main = hybridMainLiftForSplit(splitInput, equipmentList);
-
-      // 3) Seed plan skeleton (LLM will only fill warmup/accessory/cooldown; must NOT change main)
-      const seed = {
-        split: splitInput,
-        duration,
-        phases: [
-          {
-            phase: 'warmup',
-            items: [
-              { name: 'Easy Cardio', duration: '3–5 min', instruction: 'Bike/row/jog to raise core temp' },
-              { name: 'Dynamic Mobility', duration: '2–3 min', instruction: 'Joint circles, band work' },
-            ],
-          },
-          {
-            phase: 'strength',
-            items: [
-              ...(main ? [{ name: main, sets: '4', reps: '5–8', instruction: 'Build to a moderate-heavy top set; 1–2 RIR' }] : []),
-            ],
-          },
-          { phase: 'accessory', items: [] },
-          { phase: 'cooldown', items: [] }, // will be filled by LLM draft now; upgraded in Step 2
-        ],
-      };
-
-      // 4) Ask LLM to fill warmup/accessory/cooldownDraft + short coach (STRICT JSON, no commentary)
-      const splitLabel = hybridSplitLabel(splitInput);
-      const sys =
-        'You are a world-class strength coach. STRICT JSON ONLY. No code fences. No extra text.\n' +
-        'Task: Fill ONLY warmup, accessory, cooldownDraft, and a short coach string for TODAY based on split and equipment.\n' +
-        'NON-NEGOTIABLE: Do NOT remove or change the main lift already selected. Do NOT invent unavailable equipment.\n' +
-        'Limits: warmup 1–4 total items; accessory 2–5 items; cooldownDraft 2–4 items; coach ≤ 240 characters.';
-      const usr = JSON.stringify({
-        split: splitLabel,
-        duration_min: duration,
-        equipment: equipmentList,
-        user_message: body?.messages?.[body.messages.length - 1]?.content || '',
-        main_lift_locked: main ?? null,
-        want: {
-          warmup: 'array of items {name, duration?, instruction?}',
-          accessory: 'array of items {name, sets?, reps?, instruction?}',
-          cooldownDraft: 'array of items {name, duration?}',
-          coach: 'string (<=240 chars)',
-        },
-        rules: [
-          'Do not change main_lift_locked.',
-          'Use only available equipment.',
-          'Match accessory choices to the split focus.',
-          'Return JSON object: { warmup:[], accessory:[], cooldownDraft:[], coach:"..." }',
-        ],
-      });
-
-      // @ts-ignore existing helper returns parsed JSON or throws
-      const llm = await claudeJSON(sys, usr);
-
-      const warmupItems = Array.isArray(llm?.warmup) ? llm.warmup.map((w: any) => ({
-        name: typeof w?.name === 'string' ? w.name : 'Light Cardio',
-        duration: typeof w?.duration === 'string' ? w.duration : undefined,
-        instruction: typeof w?.instruction === 'string' ? w.instruction : undefined,
-      })).slice(0, 4) : seed.phases[0].items;
-
-      const accessoryItems = hybridClampAccessories(llm?.accessory, main);
-
-      const cooldownDraft = (Array.isArray(llm?.cooldownDraft) ? llm.cooldownDraft : []).map((c: any) => ({
-        name: typeof c?.name === 'string' ? c.name : '',
-        duration: typeof c?.duration === 'string' ? c.duration : undefined,
-      })).filter((c: any) => c.name).slice(0, 4);
-
-      const coach = hybridShortCoach(llm?.coach);
-
-      // Merge into final plan
-      const plan = {
-        split: seed.split,
-        duration: seed.duration,
-        phases: [
-          { phase: 'warmup', items: warmupItems },
-          seed.phases[1], // strength with locked main lift
-          { phase: 'accessory', items: accessoryItems },
-          { phase: 'cooldown', items: cooldownDraft }, // Step 2 will guardrail/top-up
-        ],
-      };
-
-      const out = {
-        ok: true,
-        message: `${hybridSplitLabel(splitInput)} — Day`,
-        plan,
-        coach,
-      };
-      return NextResponse.json(out, { status: 200 });
-    }
-    // ---------- end HYBRID split short-circuit ----------
 
     const debug: DebugLog = {};
     const dbg = wantDebug(req, body);
@@ -355,7 +326,185 @@ export async function POST(req: NextRequest) {
       equipmentProvidedCount: Array.isArray(body?.equipment) ? body.equipment.length : 0,
     });
 
-    // 1) ensure we know the user & equipment
+    const splitInput = typeof body?.split === 'string' ? body.split.trim().toLowerCase() : undefined;
+
+    // ---------- HYBRID SPLIT v2 (gated) ----------
+    if (HYBRID_SPLIT_ENABLED && splitInput) {
+      // 1) Profile & equipment
+      const profile = await getUserPrefs(userId);
+      const equipmentList = Array.isArray(body?.equipment) && body.equipment.length
+        ? body.equipment
+        : (userId ? await fetchUserEquipmentNames(userId) : []);
+      const duration = Number(body?.minutes ?? profile?.preferred_workout_duration ?? 45);
+
+      // 2) Main lift
+      const main = pickMainLift(splitInput, equipmentList);
+
+      // 3) Seed plan (LLM fills warmup/accessory/cooldownDraft; may not change main)
+      const seed = {
+        split: splitInput,
+        duration,
+        phases: [
+          { phase: 'warmup', items: [
+            { name: 'Easy Cardio', duration: '3–5 min', instruction: 'Bike/row/jog to raise core temp' },
+            { name: 'Dynamic Mobility', duration: '2–3 min', instruction: 'Joint circles, band work' },
+          ]},
+          { phase: 'strength', items: [
+            ...(main ? [{ name: main, sets: '4', reps: '5–8', instruction: 'Build to a moderate-heavy top set; 1–2 RIR' }] : []),
+          ]},
+          { phase: 'accessory', items: [] },
+          { phase: 'cooldown', items: [] },
+        ],
+      };
+
+      // 4) LLM fill (STRICT JSON only)
+      const sys =
+        'You are a world-class strength coach. STRICT JSON ONLY. No code fences. No extra text.\n' +
+        'Fill ONLY: warmup, accessory, cooldownDraft, coach. Do NOT change the main lift already present.\n' +
+        'Limits: warmup 1–4 total items; accessory 2–5 items; cooldownDraft 2–4 items; coach ≤ 240 chars.';
+      const usr = JSON.stringify({
+        split: _label(splitInput),
+        duration_min: duration,
+        equipment: equipmentList,
+        user_message: body?.messages?.[body.messages.length - 1]?.content || '',
+        main_lift_locked: main ?? null,
+        want: {
+          warmup: 'array of {name, duration?, instruction?}',
+          accessory: 'array of {name, sets?, reps?, instruction?}',
+          cooldownDraft: 'array of {name, duration?}',
+          coach: 'string (<=240 chars)',
+        },
+        rules: [
+          'Do not change main_lift_locked.',
+          'Use only available equipment.',
+          'Match accessory choices to split focus.',
+          'Return JSON object: { warmup:[], accessory:[], cooldownDraft:[], coach:"..." }',
+        ],
+      });
+      // @ts-ignore existing helper returns parsed JSON
+      const llm = await claudeJSON(sys, usr);
+
+      // 5) Map + safety clamps (no accessory wipe)
+      const warmupItems = Array.isArray(llm?.warmup)
+        ? uniqByName(llm.warmup.map((w: any) => ({
+            name: typeof w?.name === 'string' ? w.name : 'Light Cardio',
+            duration: typeof w?.duration === 'string' ? w.duration : undefined,
+            instruction: typeof w?.instruction === 'string' ? w.instruction : undefined,
+          }))).slice(0, 4)
+        : seed.phases[0].items;
+
+      let accessoryItems = Array.isArray(llm?.accessory)
+        ? uniqByName(llm.accessory.map((a: any) => ({
+            name: typeof a?.name === 'string' ? a.name : '',
+            sets: typeof a?.sets === 'string' || typeof a?.sets === 'number' ? String(a.sets) : undefined,
+            reps: typeof a?.reps === 'string' || typeof a?.reps === 'number' ? String(a.reps) : undefined,
+            instruction: typeof a?.instruction === 'string' ? a.instruction : undefined,
+          }))).filter(a => a.name).slice(0, 5)
+        : [];
+
+      // If LLM under-returns, top-up from DB pool to ensure >=2 accessories (cap 4)
+      if (accessoryItems.length < 2) {
+        const pool = await fetchAccessoryPoolBySplit(userId, splitInput, equipmentList, 40);
+        const already = new Set<string>([...accessoryItems.map(i => _norm(i.name)), ...(main ? [_norm(main)] : [])]);
+        const topups: any[] = [];
+        for (const p of pool) {
+          const n = _norm(p.name);
+          if (!n || already.has(n)) continue;
+          already.add(n);
+          topups.push({ name: p.name, sets: '3', reps: '8–12' });
+          if (accessoryItems.length + topups.length >= 4) break;
+        }
+        accessoryItems = [...accessoryItems, ...topups];
+        // final guard: if still <2, add safe bodyweight moves
+        while (accessoryItems.length < 2) {
+          accessoryItems.push({ name: 'Plank', sets: '2', reps: '30–45s' });
+        }
+      }
+
+      let cooldownDraft = Array.isArray(llm?.cooldownDraft)
+        ? uniqByName(llm.cooldownDraft.map((c: any) => ({
+            name: typeof c?.name === 'string' ? c.name : '',
+            duration: typeof c?.duration === 'string' ? c.duration : undefined,
+          }))).filter(c => c.name).slice(0, 4)
+        : [];
+
+      // 6) Cooldown guardrails: dedupe vs session + recent, top-up to 3–6
+      const sessionNames = new Set<string>([
+        ...seed.phases.flatMap(p => p.items.map((i: any) => _norm(i?.name))),
+        ...warmupItems.map(i => _norm(i.name)),
+        ...accessoryItems.map(i => _norm(i.name)),
+      ].filter(Boolean));
+      const recentNames = await fetchRecentExerciseNames(userId, 14);
+      const isDup = (n: string) => sessionNames.has(_norm(n)) || recentNames.has(_norm(n));
+
+      cooldownDraft = cooldownDraft.filter(c => c?.name && !isDup(c.name));
+
+      if (cooldownDraft.length < 3) {
+        // DB pool for cooldown/warmup
+        const { data } = await supabase
+          .from('exercises')
+          .select('name, primary_muscle, target_muscles, exercise_phase')
+          .in('exercise_phase', ['cooldown', 'warmup'])
+          .limit(80);
+        const focusHints = (() => {
+          const s = _norm(splitInput);
+          if (s === 'push') return ['chest', 'shoulders', 'triceps'];
+          if (s === 'pull') return ['back', 'lats', 'biceps'];
+          if (s === 'legs') return ['quads', 'glutes', 'hamstrings', 'hips'];
+          if (s === 'upper') return ['shoulders', 'chest', 'back'];
+          if (s === 'full') return ['full', 'hips', 'back', 'core'];
+          if (s === 'hiit') return ['full', 'hips', 'back', 'core', 'hamstrings', 'quads'];
+          return [];
+        })();
+        const score = (row: any) => {
+          const pm = _norm(row?.primary_muscle);
+          const tm = typeof row?.target_muscles === 'string' ? row.target_muscles.toLowerCase() : JSON.stringify(row?.target_muscles ?? '').toLowerCase();
+          let s = 0;
+          for (const f of focusHints) {
+            if (pm.includes(f)) s += 2;
+            if (tm.includes(f)) s += 1;
+          }
+          return s;
+        };
+        const pool = uniqByName((data ?? []).map(r => ({ name: r.name, row: r })))
+          .filter(r => !isDup(r.name));
+        pool.sort((a, b) => score(b.row) - score(a.row));
+        shuffleInPlace(pool);
+        for (const p of pool) {
+          cooldownDraft.push({ name: p.name, duration: '30–60s' });
+          if (cooldownDraft.length >= 6) break;
+        }
+        cooldownDraft = uniqByName(cooldownDraft).slice(0, 6);
+        // ensure at least 3
+        while (cooldownDraft.length < 3) {
+          const fillers = ['Breathing — 90/90', 'Child\'s Pose', 'Couch Stretch'];
+          const pick = fillers.find(f => !isDup(f) && !cooldownDraft.some(c => _norm(c.name) === _norm(f)));
+          if (!pick) break;
+          cooldownDraft.push({ name: pick, duration: '30–60s' });
+        }
+      }
+
+      // 7) Build final plan
+      const plan = {
+        split: seed.split,
+        duration: seed.duration,
+        phases: [
+          { phase: 'warmup', items: warmupItems },
+          seed.phases[1], // strength with locked main
+          { phase: 'accessory', items: accessoryItems },
+          { phase: 'cooldown', items: cooldownDraft },
+        ],
+      };
+
+      const out = {
+        ok: true,
+        message: `${_label(splitInput)} — Day`,
+        plan,
+        coach: clampCoach(llm?.coach),
+      };
+      return NextResponse.json(out, { status: 200 });
+    }
+    // ---------- end HYBRID SPLIT v2 ----------
     const equipment =
       Array.isArray(body.equipment) && body.equipment.length
         ? body.equipment
@@ -561,7 +710,7 @@ Schema (strict):
     }
 
     // Derive plan & phases for your UI with proper main lift and naming
-    const mainLift = hybridMainLiftForSplit(split, equipment) || workout?.mainExercises?.[0]?.name || '';
+    const mainLift = mainLiftForSplit(split, equipment) || workout?.mainExercises?.[0]?.name || '';
     
     // Ensure the main lift is the first item in strength phase
     if (mainLift && (!workout.mainExercises?.[0] || workout.mainExercises[0].name !== mainLift)) {
