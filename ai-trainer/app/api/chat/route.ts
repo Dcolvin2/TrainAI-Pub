@@ -960,92 +960,28 @@ Schema (strict):
       console.log('[cooldown] allCandidates=', allCandidates.length, 'eg:', peek(allCandidates));
       console.log('[cooldown] recentNames size=', recentNames.size, 'recentCooldownFromWorkouts size=', recentCooldownFromWorkouts.size);
 
-      // Ask LLM (your helper) for suggestions
-      const sys =
-        'You are a strength coach. Propose varied, safe cooldown stretches/mobility matching today\'s focus. ' +
-        'Use the DB list as inspiration BUT you may also propose new items from your knowledge. ' +
-        'Avoid RECENT_COOLDOWNS and avoid duplicates with existing session items. Prefer 3–6 items. STRICT JSON only.';
-      const user =
-        `FOCUS_HINTS=${JSON.stringify(focusHints)}\n` +
-        `DB_CANDIDATES=${JSON.stringify(rankedCandidates)}\n` +
-        `RECENT_COOLDOWNS=${JSON.stringify(Array.from(recentNames))}\n\n` +
-        `Respond as:\n` +
-        `{"items":[{"name":"...", "duration":"30–60s", "reps":"optional", "instruction":"optional"}]}`;
+      // ✅ Fast DB-only cooldown (0 extra LLM calls; most robust)
+      let picks: { name: string; duration?: string; reps?: string; instruction?: string }[] = [];
 
-      // @ts-ignore replace with your real JSON chat helper
-      const raw = await timedClaudeJSON('cooldown', sys, user, { temperature: 0.7, max_tokens: 600 });
-
-      const parsed = ((): { items: { name: string; duration?: string; reps?: string; instruction?: string }[] } | null => {
-        if (!raw || typeof raw !== 'object') return null;
-        const r = raw as Record<string, unknown>;
-        const items = Array.isArray(r.items) ? r.items : null;
-        if (!items) return null;
-        const clean = items
-          .map((x) => (x && typeof x === 'object' ? x : null))
-          .filter(Boolean)
-          .map((x) => {
-            const it = x as Record<string, unknown>;
-            const name = typeof it.name === 'string' ? it.name.trim() : '';
-            if (!name) return null;
-            return {
-              name,
-              duration: typeof it.duration === 'string' ? it.duration : '30–60s',
-              reps: typeof it.reps === 'string' ? it.reps : undefined,
-              instruction: typeof it.instruction === 'string' ? it.instruction : '',
-            };
-          })
-          .filter(Boolean) as { name: string; duration?: string; reps?: string; instruction?: string }[];
-        return { items: clean };
-      })();
-
-      let picks = mapLLMToPlanItems(parsed?.items ?? []);
-
-      // --- guardrail: no repeats (session + recent), then top-up from ranked, then from all ---
-      const exclude = new Set<string>([
-        ...sessionNames,
-        ...recentNames,
-        ...recentCooldownFromWorkouts,
-      ]);
+      // Use ranked pool directly (already filtered/scored). Avoid session/recent dupes.
+      const exclude = new Set<string>([...sessionNames, ...recentNames, ...recentCooldownFromWorkouts]);
       const seen = new Set<string>();
-      const outItems: PlanItem[] = [];
-
-      const pushIfOk = (it: { name: string; duration?: string; reps?: string; instruction?: string }) => {
-        const k = norm(it.name);
-        if (!k || exclude.has(k) || seen.has(k)) return;
+      const outItems: any[] = [];
+      for (const cand of rankedCandidates) {
+        const k = norm(cand.name);
+        if (!k || exclude.has(k) || seen.has(k)) continue;
         seen.add(k);
-        outItems.push({
-          name: it.name,
-          duration: it.duration ?? '30–60s',
-          reps: it.reps,
-          instruction: it.instruction ?? '',
-        });
-      };
-
-      // 1) keep valid LLM picks
-      for (const p of picks) pushIfOk(p);
-
-      // 2) top-up from ranked if needed
-      if (outItems.length < 3) {
-        const fillers = rankedCandidates.filter((c) => {
-          const k = norm(c.name);
-          return k && !exclude.has(k) && !seen.has(k);
-        });
-        shuffleInPlace(fillers);
-        for (const f of fillers) {
-          pushIfOk({ name: f.name, duration: '30–60s' });
-          if (outItems.length >= 3) break;
-        }
+        outItems.push({ name: cand.name, duration: '30–60s' });
+        if (outItems.length >= 6) break;
       }
 
-      // 3) last-resort top-up from all candidates
+      // Top-up from allCandidates if still short
       if (outItems.length < 3) {
-        const any = allCandidates.filter((c) => {
-          const k = norm(c.name);
-          return k && !exclude.has(k) && !seen.has(k);
-        });
-        shuffleInPlace(any);
-        for (const f of any) {
-          pushIfOk({ name: f.name, duration: '30–60s' });
+        for (const cand of allCandidates) {
+          const k = norm(cand.name);
+          if (!k || exclude.has(k) || seen.has(k)) continue;
+          seen.add(k);
+          outItems.push({ name: cand.name, duration: '30–60s' });
           if (outItems.length >= 3) break;
         }
       }
@@ -1098,27 +1034,25 @@ Schema (strict):
         }
       }
 
-      // 4) Sanitize with prefs/targets — clamp only; keep variety if valid
-      const holder = { cooldown: outItems };
+      // Final policy filter/top-up so they match the day targets
       try {
-        await sanitizeCooldown(holder, userId || '', prefs, targets || []);
-      } catch (e) {
-        console.warn('[cooldown] sanitize failed; using pre-sanitize items', e);
-      }
-      const finalItems = Array.isArray(holder.cooldown) && holder.cooldown.length ? holder.cooldown : outItems;
+        const holder = { cooldown: outItems };
+        await sanitizeCooldown(holder, userId, prefs, targets);
+        outItems.splice(0, outItems.length, ...holder.cooldown);
+      } catch { /* ignore */ }
 
-      console.log('[cooldown] final picks=', finalItems.map((x) => x.name));
+      console.log('[cooldown] final picks=', outItems.map((x: any) => x.name));
 
       // Write into phases (place this near the END of your route so nothing overwrites it later)
       const cdIdx = phases.findIndex((p) => (p.phase ?? '').toLowerCase() === 'cooldown');
-      if (cdIdx >= 0) phases[cdIdx].items = finalItems;
-      else phases.push({ phase: 'cooldown', items: finalItems });
+      if (cdIdx >= 0) phases[cdIdx].items = outItems;
+      else phases.push({ phase: 'cooldown', items: outItems });
 
       out.plan.phases = phases;
       
       // Also surface to workout for UI consumers that ignore plan.phases
       if (!out.workout) out.workout = {};
-      (out.workout as any).cooldown = finalItems;
+      (out.workout as any).cooldown = outItems;
     }
 
     // --- In your main handler, AFTER you build the rest of the plan, call:
