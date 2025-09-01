@@ -493,32 +493,29 @@ export default function TodaysWorkoutPage() {
               ? (plan.phases.find((p: any) => String(p?.phase).toLowerCase() === 'cooldown')?.items ?? [])
               : [];
 
-          // Build a legacy shape that llmToGeneratedWorkout understands
+          const rawCooldown = cooldownFromWorkout.length
+            ? cooldownFromWorkout
+            : (cooldownFromPlan.length ? cooldownFromPlan : (workout.finisher ? [workout.finisher] : []));
+
           const legacy = {
             name: plan.name,
             warmup: workout.warmup,
             main: workout.mainExercises,
-            cooldown: cooldownFromWorkout.length
-              ? normalizeCooldown(cooldownFromWorkout)
-              : normalizeCooldown(cooldownFromPlan.length ? cooldownFromPlan : (workout.finisher ? [workout.finisher] : [])),
+            cooldown: sanitizeCooldown(rawCooldown),
             est_total_minutes: plan.duration,
           };
 
+          const gw = llmToGeneratedWorkout(legacy);
+          // do NOT overwrite gw.cooldown again; we already sanitized
+          setGeneratedWorkout(gw);
+
           // Handle modification responses
           if (raw.isModification && workout) {
-            const gw = llmToGeneratedWorkout(legacy);
-            gw.cooldown = normalizeCooldown(gw.cooldown);
-            setGeneratedWorkout(gw);
-
             setChatMessages(prev => [...prev, {
               role: 'assistant',
               content: raw.chatMsg || raw.message
             }]);
           } else if (workout && !raw.isModification) {
-            const gw = llmToGeneratedWorkout(legacy);
-            gw.cooldown = normalizeCooldown(gw.cooldown);
-            setGeneratedWorkout(gw);
-
             setChatMessages(prev => [...prev, { role: 'assistant', content: coach }]);
           } else {
             setChatMessages(prev => [...prev, {
@@ -585,17 +582,18 @@ export default function TodaysWorkoutPage() {
       Array.isArray(plan?.phases)
         ? (plan.phases.find((p: any) => String(p?.phase).toLowerCase() === 'cooldown')?.items ?? [])
         : [];
+    const rawCooldown = cooldownFromWorkout.length
+      ? cooldownFromWorkout
+      : (cooldownFromPlan.length ? cooldownFromPlan : (workout.finisher ? [workout.finisher] : []));
+
     const legacy = {
       name: plan.name,
       warmup: workout.warmup,
       main: workout.mainExercises,
-      cooldown: cooldownFromWorkout.length
-        ? normalizeCooldown(cooldownFromWorkout)
-        : normalizeCooldown(cooldownFromPlan.length ? cooldownFromPlan : (workout.finisher ? [workout.finisher] : [])),
+      cooldown: sanitizeCooldown(rawCooldown),
       est_total_minutes: plan.duration,
     };
     const gw = llmToGeneratedWorkout(legacy);
-    gw.cooldown = normalizeCooldown(gw.cooldown);
     setGeneratedWorkout(gw);
   }
 
@@ -621,32 +619,27 @@ export default function TodaysWorkoutPage() {
   };
 
   // client-side cooldown guard (in case an older route sneaks through)
-  const IS_STRETCH = /(stretch|mobility|pose|pigeon|child'?s|hamstring|quad|calf|lat|pec|hip\s*flexor|thoracic|breathing|thread\s*the\s*needle|world'?s\s*greatest)/i;
-  function normalizeCooldown(items: any[] = []) {
-    const cleaned = (Array.isArray(items) ? items : [])
-      .map((i:any) => ({ name: i?.name || i?.exercise || '', duration: i?.duration || '45–60s' }))
-      .filter(i => i.name && IS_STRETCH.test(i.name));
+  const BAN_HI = /(burpee|sprint|thruster|box\s*jump|mountain\s*climber|jump(ing)?\s*jacks?)/i;
+
+  function sanitizeCooldown(items: any[] = []) {
+    const src = Array.isArray(items) ? items : [];
+    // keep the server's picks; just strip HIITy items and dedupe
+    const cleaned = src
+      .map((i:any) => ({
+        name: i?.name || i?.exercise || '',
+        duration: i?.duration || i?.reps || '45–60s',
+      }))
+      .filter(i => i.name && !BAN_HI.test(i.name));
+
     const seen = new Set<string>();
-    const dedup = cleaned.filter(i => {
-      const k = i.name.toLowerCase();
-      if (seen.has(k)) return false;
+    const out: { name: string; duration?: string }[] = [];
+    for (const it of cleaned) {
+      const k = it.name.toLowerCase();
+      if (seen.has(k)) continue;
       seen.add(k);
-      return true;
-    });
-    // ensure 2–3
-    const pool = [
-      { name: "Child's Pose", duration: '45–60s' },
-      { name: 'Doorway Pec Stretch', duration: '45–60s' },
-      { name: 'Seated Hamstring Stretch', duration: '45–60s' },
-      { name: 'Hip Flexor Stretch', duration: '45–60s' },
-      { name: 'Lat Stretch Against Wall', duration: '45–60s' },
-      { name: 'Thread the Needle', duration: '45–60s' },
-    ];
-    for (const p of pool) {
-      if (dedup.length >= 3) break;
-      if (!dedup.some(d => d.name.toLowerCase() === p.name.toLowerCase())) dedup.push(p);
+      out.push(it);
     }
-    return dedup.slice(0, 3);
+    return out;
   }
 
   // Use normalized data for rendering - single source of truth
