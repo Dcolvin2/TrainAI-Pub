@@ -393,7 +393,7 @@ export async function POST(req: NextRequest) {
           }))).slice(0, 4)
         : seed.phases[0].items;
 
-      let accessoryItems = Array.isArray(llm?.accessory)
+      let accessoryItems: any[] = Array.isArray(llm?.accessory)
         ? uniqByName(llm.accessory.map((a: any) => ({
             name: typeof a?.name === 'string' ? a.name : '',
             sets: typeof a?.sets === 'string' || typeof a?.sets === 'number' ? String(a.sets) : undefined,
