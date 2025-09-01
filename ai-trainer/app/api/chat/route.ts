@@ -2,6 +2,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabaseServer';
 import { claudeJSON } from '@/lib/llm';
+import { fetchUserEquipmentNames } from '@/lib/catalog';
+import { getUserPrefs, mergeUserPrefs } from '@/lib/prefs';
 import { focusFromSplit, fetchCooldownContext, mapLLMToPlanItems, shuffleInPlace } from '@/lib/cooldown';
 import { supabase } from '@/lib/supabase';
 
