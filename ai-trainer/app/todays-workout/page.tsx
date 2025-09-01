@@ -495,7 +495,7 @@ export default function TodaysWorkoutPage() {
 
           const rawCooldown = cooldownFromWorkout.length
             ? cooldownFromWorkout
-            : (cooldownFromPlan.length ? cooldownFromPlan : (workout.finisher ? [workout.finisher] : []));
+            : cooldownFromPlan; // ← no finisher fallback
 
           const legacy = {
             name: plan.name,
@@ -584,7 +584,7 @@ export default function TodaysWorkoutPage() {
         : [];
     const rawCooldown = cooldownFromWorkout.length
       ? cooldownFromWorkout
-      : (cooldownFromPlan.length ? cooldownFromPlan : (workout.finisher ? [workout.finisher] : []));
+      : cooldownFromPlan; // ← no finisher fallback
 
     const legacy = {
       name: plan.name,
@@ -618,22 +618,23 @@ export default function TodaysWorkoutPage() {
     }
   };
 
-  // client-side cooldown guard (in case an older route sneaks through)
-  const BAN_HI = /(burpee|sprint|thruster|box\s*jump|mountain\s*climber|jump(ing)?\s*jacks?)/i;
+  // Mobility-only filter (no strength/calisthenics), de-dupe, no default pool
+  const HIIT_OR_STRENGTHY = /(burpee|sprint|thruster|box\s*jump|mountain\s*climber|jump(ing)?\s*jacks?|press|row|curl|extension|raise|pull-?down|deadlift|squat|lunge|dip|carry|hang)/i;
+  const STRETCHY = /(stretch|mobility|pose|pigeon|child'?s|hamstring|quad|quadriceps|calf|gastroc|soleus|lat|pec|chest|hip\s*flexor|psoas|thoracic|t-?spine|breath|diaphragm|thread\s*the\s*needle|world'?s\s*greatest)/i;
 
   function sanitizeCooldown(items: any[] = []) {
     const src = Array.isArray(items) ? items : [];
-    // keep the server's picks; just strip HIITy items and dedupe
-    const cleaned = src
+    const filtered = src
       .map((i:any) => ({
         name: i?.name || i?.exercise || '',
-        duration: i?.duration || i?.reps || '45–60s',
+        duration: i?.duration || (i?.reps && /^\d/.test(i.reps) ? i.reps : '45–60s')
       }))
-      .filter(i => i.name && !BAN_HI.test(i.name));
+      .filter(i => i.name && STRETCHY.test(i.name) && !HIIT_OR_STRENGTHY.test(i.name));
 
+    // de-dupe by name (case-insensitive)
     const seen = new Set<string>();
     const out: { name: string; duration?: string }[] = [];
-    for (const it of cleaned) {
+    for (const it of filtered) {
       const k = it.name.toLowerCase();
       if (seen.has(k)) continue;
       seen.add(k);

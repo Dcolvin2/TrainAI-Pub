@@ -243,6 +243,69 @@ async function callClaudeJson(system: string, user: unknown) {
   }
 }
 
+async function buildCooldownForSplit(
+  split: 'pull'|'push'|'legs'|'upper'|'full'|'hiit',
+  usedNames: string[] = []
+) {
+  // Focus tags for each split
+  const focus = (() => {
+    switch (split) {
+      case 'pull':  return ['lat','upper back','thoracic','biceps'];
+      case 'push':  return ['pec','chest','shoulder','triceps','thoracic'];
+      case 'legs':  return ['hamstring','quad','glute','hip flexor','calf','thoracic'];
+      case 'upper': return ['chest','shoulder','back','arms','thoracic'];
+      case 'full':  return ['hips','back','core','glute','quad','hamstring','thoracic','calf'];
+      default:      return ['thoracic','breathing'];
+    }
+  })();
+
+  // Pull from DB warmup/cooldown rows
+  const { data } = await supabase
+    .from('exercises')
+    .select('name, primary_muscle, target_muscles, exercise_phase')
+    .in('exercise_phase', ['cooldown','warmup'])
+    .limit(150);
+
+  const STRETCHY = /(stretch|mobility|pose|pigeon|child'?s|hamstring|quad|quadriceps|calf|gastroc|soleus|lat|pec|chest|hip\s*flexor|psoas|thoracic|t-?spine|breath|diaphragm|thread\s*the\s*needle|world'?s\s*greatest)/i;
+  const HIIT_OR_STRENGTHY = /(burpee|sprint|thruster|box\s*jump|mountain\s*climber|jump(ing)?\s*jacks?|press|row|curl|extension|raise|pull-?down|deadlift|squat|lunge|dip|carry|hang)/i;
+
+  const used = new Set(usedNames.map(n => n.toLowerCase()));
+  const rows = (data ?? [])
+    .map(r => ({ 
+      name: String(r.name||'').trim(),
+      primary: (r as any).primary_muscle?.toString().toLowerCase() || '',
+      targets: Array.isArray((r as any).target_muscles) ? (r as any).target_muscles.map((t:string)=>t.toLowerCase()) : []
+    }))
+    .filter(r => r.name && STRETCHY.test(r.name) && !HIIT_OR_STRENGTHY.test(r.name));
+
+  const score = (r:any) => {
+    let s = 0;
+    for (const f of focus) {
+      const fL = f.toLowerCase();
+      if (r.primary.includes(fL)) s += 2;
+      if (r.targets.some((t:string)=>t.includes(fL))) s += 1;
+    }
+    return s;
+  };
+
+  const sorted = rows
+    .filter(r => !used.has(r.name.toLowerCase()))
+    .sort((a,b) => score(b)-score(a));
+
+  const picks = sorted.slice(0, 4).map(r => ({ name: r.name, duration: '45–60s' }));
+  // Ensure at least some thoracic/breathing if focus rows are thin
+  if (picks.length < 3) {
+    const fillers = ['Child\'s Pose','Thread the Needle','90/90 Breathing','Doorway Pec Stretch','Lat Stretch Against Wall'];
+    for (const f of fillers) {
+      if (picks.length >= 3) break;
+      if (!used.has(f.toLowerCase()) && !picks.some(p => p.name.toLowerCase() === f.toLowerCase())) {
+        picks.push({ name: f, duration: '45–60s' });
+      }
+    }
+  }
+  return picks.slice(0, 4);
+}
+
 // Generate pull workout with anchored main lift and rotating accessories
 async function generatePullWorkoutLLM({
   split,
@@ -268,7 +331,7 @@ async function generatePullWorkoutLLM({
 
   const system = [
     'You are TrainAI. Output JSON only.',
-    'Keys: plan, workout.warmup[], workout.mainExercises[], workout.finisher',
+    'Keys: plan, workout.warmup[], workout.mainExercises[], workout.cooldown[] (2–4 items, mobility/stretch only).',
     'Include a real rotational or anti-rotation movement.',
     'Warm-up must be 5–10 min. Anchor the MAIN lift as the first item in mainExercises.',
   ].join('\n');
@@ -300,13 +363,34 @@ async function generatePullWorkoutLLM({
     ...rest.map((x: any) => ({ ...x, isAccessory: true })),
   ];
 
+  // Build mobility-only cooldown from DB, avoiding duplicates with session
+  const sessionNames = [
+    ...warmup.map((x:any)=>x?.name).filter(Boolean),
+    ...mainExercises.map((x:any)=>x?.name).filter(Boolean)
+  ];
+  const cooldown = await buildCooldownForSplit('pull', sessionNames);
+
+  // inject into both workout and plan.phases
   const payload = {
     ok: true,
     name: `Pull (~${user.minutes} min)`,
     message: `Pull (~${user.minutes} min)`,
     coach: `Pull day locked. Main lift: ${selectedMainLift}. We'll rotate accessories and include rotation/anti-rotation.`,
-    plan: { split: 'pull', duration: user.minutes, main_lift: selectedMainLift, name: `Pull (~${user.minutes} min)` },
-    workout: { warmup, mainExercises, finisher: llm?.workout?.finisher },
+    plan: { 
+      split: 'pull', 
+      duration: user.minutes, 
+      main_lift: selectedMainLift, 
+      name: `Pull (~${user.minutes} min)`,
+      phases: [
+        { phase: 'prep', items: warmup },
+        { phase: 'strength', items: mainExercises },
+        { phase: 'activation', items: [] },
+        { phase: 'carry_block', items: [] },
+        { phase: 'conditioning', items: [] },
+        { phase: 'cooldown', items: cooldown },           // ← add
+      ]
+    },
+    workout: { warmup, mainExercises, finisher: llm?.workout?.finisher, cooldown }, // ← add
   };
 
   return payload;
