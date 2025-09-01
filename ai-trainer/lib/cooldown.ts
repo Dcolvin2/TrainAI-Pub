@@ -70,14 +70,60 @@ export async function fetchCooldownContext(opts: {
 
   // 2) Recently used cooldown names (avoid repeats)
   const sinceISO = new Date(Date.now() - recentDays * 24 * 3600 * 1000).toISOString().slice(0, 10);
-  let recentQuery = supabase
-    .from('workout_log_entries')
-    .select('exercise_name, created_at')
-    .gte('created_at', sinceISO);
-  if (opts.userId) recentQuery = recentQuery.eq('user_id', opts.userId);
-  const { data: recentLogs, error: recErr } = await recentQuery;
+  
+  let recentLogs: { exercise_name?: string | null }[] = [];
 
-  if (recErr) throw recErr;
+  // If we have a userId, try a two-step lookup:
+  // (1) recent workouts for that user, (2) entries for those workout_ids.
+  if (opts.userId) {
+    try {
+      const { data: recentWorkouts, error: wErr } = await supabase
+        .from('workouts')
+        .select('id, created_at')
+        .eq('user_id', opts.userId)
+        .gte('created_at', sinceISO)
+        .limit(500);
+      if (wErr) throw wErr;
+
+      const workoutIds = (recentWorkouts ?? []).map((w: any) => w.id).filter(Boolean);
+
+      if (workoutIds.length > 0) {
+        const { data: logs, error: lErr } = await supabase
+          .from('workout_log_entries')
+          .select('exercise_name, created_at, workout_id')
+          .in('workout_id', workoutIds)
+          .gte('created_at', sinceISO)
+          .limit(5000);
+        if (lErr) throw lErr;
+        recentLogs = logs ?? [];
+      } else {
+        // No recent workouts for this user → fall back to global scope
+        const { data: logs, error: lErr } = await supabase
+          .from('workout_log_entries')
+          .select('exercise_name, created_at')
+          .gte('created_at', sinceISO)
+          .limit(5000);
+        if (lErr) throw lErr;
+        recentLogs = logs ?? [];
+      }
+    } catch {
+      // Any error → fall back to global scope
+      const { data: logs } = await supabase
+        .from('workout_log_entries')
+        .select('exercise_name, created_at')
+        .gte('created_at', sinceISO)
+        .limit(5000);
+      recentLogs = logs ?? [];
+    }
+  } else {
+    // No userId provided → global scope
+    const { data: logs } = await supabase
+      .from('workout_log_entries')
+      .select('exercise_name, created_at')
+      .gte('created_at', sinceISO)
+      .limit(5000);
+    recentLogs = logs ?? [];
+  }
 
   const recentNames = new Set<string>(
     (recentLogs ?? [])
