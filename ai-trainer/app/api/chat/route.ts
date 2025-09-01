@@ -519,41 +519,29 @@ export async function POST(req: NextRequest) {
         ...warmupItems.map(i => _norm(i.name)),
         ...accessoryItems.map(i => _norm(i.name)),
       ].filter(Boolean));
-      const recentNames = await fetchRecentExerciseNames(userId, 14);
+      // pull a ranked DB pool + recent cooldown names scoped to user (if available)
+      const { rankedCandidates, allCandidates, recentNames } = await fetchCooldownContext({
+        focusHints: (() => {
+          const s = _norm(splitInput);
+          if (s === 'push') return ['chest', 'shoulders', 'triceps'];
+          if (s === 'pull') return ['back', 'lats', 'biceps'];
+          if (s === 'legs') return ['quads', 'glutes', 'hamstrings', 'hips', 'calves', 'thoracic'];
+          if (s === 'upper') return ['chest', 'shoulders', 'back', 'arms'];
+          if (s === 'full') return ['hips', 'back', 'core', 'glutes', 'quads', 'hamstrings', 'thoracic', 'calves'];
+          if (s === 'hiit') return ['hips', 'core', 'hamstrings', 'quads', 'calves', 'thoracic'];
+          return ['thoracic'];
+        })(),
+        sampleLimit: 150,
+        recentDays: 14,
+        userId
+      });
       const isDup = (n: string) => sessionNames.has(_norm(n)) || recentNames.has(_norm(n));
 
       cooldownDraft = cooldownDraft.filter(c => c?.name && !isDup(c.name));
 
       if (cooldownDraft.length < 3) {
-        // DB pool for cooldown/warmup
-        const { data } = await supabase
-          .from('exercises')
-          .select('name, primary_muscle, target_muscles, exercise_phase')
-          .in('exercise_phase', ['cooldown', 'warmup'])
-          .limit(80);
-        const focusHints = (() => {
-          const s = _norm(splitInput);
-          if (s === 'push') return ['chest', 'shoulders', 'triceps'];
-          if (s === 'pull') return ['back', 'lats', 'biceps'];
-          if (s === 'legs') return ['quads', 'glutes', 'hamstrings', 'hips'];
-          if (s === 'upper') return ['shoulders', 'chest', 'back'];
-          if (s === 'full') return ['full', 'hips', 'back', 'core'];
-          if (s === 'hiit') return ['full', 'hips', 'back', 'core', 'hamstrings', 'quads'];
-          return [];
-        })();
-        const score = (row: any) => {
-          const pm = _norm(row?.primary_muscle);
-          const tm = typeof row?.target_muscles === 'string' ? row.target_muscles.toLowerCase() : JSON.stringify(row?.target_muscles ?? '').toLowerCase();
-          let s = 0;
-          for (const f of focusHints) {
-            if (pm.includes(f)) s += 2;
-            if (tm.includes(f)) s += 1;
-          }
-          return s;
-        };
-        const pool = uniqByName((data ?? []).map(r => ({ name: r.name, row: r })))
-          .filter(r => !isDup(r.name));
-        pool.sort((a, b) => score(b.row) - score(a.row));
+        // Use ranked DB pool (already scored) and avoid recent/session dupes
+        const pool = rankedCandidates.filter((c) => !isDup(c.name));
         shuffleInPlace(pool);
         for (const p of pool) {
           cooldownDraft.push({ name: p.name, duration: '30–60s' });
@@ -568,6 +556,14 @@ export async function POST(req: NextRequest) {
           cooldownDraft.push({ name: pick, duration: '30–60s' });
         }
       }
+      // Final policy pass (targets inferred below in legacy branch too)
+      try {
+        const holder = { cooldown: cooldownDraft };
+        const targets = focusFromSplit(splitInput);
+        const prefs = await getUserPrefs(userId);
+        await sanitizeCooldown(holder, userId, prefs, targets);
+        cooldownDraft = holder.cooldown || cooldownDraft;
+      } catch {}
 
       // 7) Build final plan
       const plan = {
@@ -676,30 +672,31 @@ export async function POST(req: NextRequest) {
       prefs.cooldown = 'stretch_priority';
     }
 
-    // 2) classify intent (you already do this); set split/minutes/style
+    // 2) classify intent only IF split/minutes/style are not provided
     const classifierSystem =
-`Extract intent for workout planning. Return STRICT JSON only:
+`Extract intent for workout planning. Output strict JSON:
 {"split":"pull|push|legs|upper|full|hiit","minutes":number,"style":"default|ocho"}.
-If "hints" are provided (from a prior TL;DR answer), choose the split that best matches them (e.g., ski -> legs/full bias with quad/core/balance).
-If unclear, default to {"split":"pull","minutes":45,"style":"default"}.`;
+Default: {"split":"pull","minutes":45,"style":"default"} if unclear.`;
 
     const lastUser = [...(body.messages||[])].reverse().find(m => m.role==='user')?.content || '';
-    if (!lastUser || lastUser.trim().length < 2) {
-      if (dbg) dpush(debug, 'lastUser', lastUser);
-      return NextResponse.json(
-        { ok: false, error: 'Missing user message in body.messages[]. Provide messages:[{role:"user",content:"..."}].', ...(dbg ? { debug } : {}) },
-        { status: 400 }
-      );
-    }
-    const intents = await timedClaudeJSON('classifier', classifierSystem, { 
-      text: lastUser, 
-      provided: { split: body.split, minutes: body.minutes, style: body.style },
-      hints: qaHintsText || ''
-    }, { temperature: 0.2, max_tokens: 120 });
+    let split: Split | undefined = body.split as Split | undefined;
+    let minutes: number | undefined = typeof body.minutes === 'number' ? body.minutes : undefined;
+    let style: 'default'|'ocho' | undefined = (body.style as any) || undefined;
 
-    const split: Split = (body.split || intents?.split || 'pull') as Split;
-    const minutes = Number(body.minutes || intents?.minutes || 45);
-    const style = (body.style || intents?.style || 'default') as 'default'|'ocho';
+    if (!split || !minutes || !style) {
+      const intents = await timedClaudeJSON('classifier', classifierSystem, { 
+        text: lastUser, 
+        provided: { split: body.split, minutes: body.minutes, style: body.style },
+        hints: qaHintsText || ''
+      }, { temperature: 0.2, max_tokens: 120 });
+      split = (split || intents?.split || 'pull') as Split;
+      minutes = Number(minutes || intents?.minutes || 45);
+      style = (style || intents?.style || 'default') as 'default'|'ocho';
+    }
+    // type guards
+    split = (split || 'pull') as Split;
+    minutes = Number(minutes || 45);
+    style = (style || 'default') as 'default'|'ocho';
     const time = budget(minutes);
     dpush(debug, 'classified', { split, minutes, style });
 
