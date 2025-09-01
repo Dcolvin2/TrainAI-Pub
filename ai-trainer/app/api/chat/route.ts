@@ -742,7 +742,7 @@ Schema (strict):
     };
 
     // --- Cooldown builder with diagnostics ---
-    async function buildCooldownPhase(out: any, req: Request) {
+    async function buildCooldownPhase(out: any, req: Request, userId: string, prefs: any, targets: any) {
       const phases = (Array.isArray(out?.plan?.phases) ? out.plan.phases : []) as PlanPhase[];
 
       // Names already in session (avoid dupes)
@@ -758,6 +758,7 @@ Schema (strict):
         focusHints,
         sampleLimit: 150,
         recentDays: 14,
+        userId,
       });
 
       // --- diagnostics (server logs) ---
@@ -856,18 +857,23 @@ Schema (strict):
       // Trim to max 6
       if (outItems.length > 6) outItems.length = 6;
 
-      console.log('[cooldown] final picks=', outItems.map((x) => x.name));
+      // Enforce stretch-only & target awareness using your policy helper
+      const holder = { cooldown: outItems };
+      await sanitizeCooldown(holder, userId, prefs, targets);
+      const finalCooldown = holder.cooldown;
+
+      console.log('[cooldown] final picks=', finalCooldown.map((x) => x.name));
 
       // Write into phases (place this near the END of your route so nothing overwrites it later)
       const cdIdx = phases.findIndex((p) => (p.phase ?? '').toLowerCase() === 'cooldown');
-      if (cdIdx >= 0) phases[cdIdx].items = outItems;
-      else phases.push({ phase: 'cooldown', items: outItems });
+      if (cdIdx >= 0) phases[cdIdx].items = finalCooldown;
+      else phases.push({ phase: 'cooldown', items: finalCooldown });
 
       out.plan.phases = phases;
     }
 
     // --- In your main handler, AFTER you build the rest of the plan, call:
-    await buildCooldownPhase(out, req);
+    await buildCooldownPhase(out, req, userId, prefs, targets);
 
     // debug so you can confirm in DevTools
     debug.cooldown = {

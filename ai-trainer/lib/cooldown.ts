@@ -21,6 +21,7 @@ export async function fetchCooldownContext(opts: {
   focusHints: string[];
   sampleLimit?: number;
   recentDays?: number;
+  userId?: string;
 }) {
   const sampleLimit = opts.sampleLimit ?? 120;
   const recentDays = opts.recentDays ?? 14;
@@ -69,10 +70,12 @@ export async function fetchCooldownContext(opts: {
 
   // 2) Recently used cooldown names (avoid repeats)
   const sinceISO = new Date(Date.now() - recentDays * 24 * 3600 * 1000).toISOString().slice(0, 10);
-  const { data: recentLogs, error: recErr } = await supabase
+  let recentQuery = supabase
     .from('workout_log_entries')
     .select('exercise_name, created_at')
     .gte('created_at', sinceISO);
+  if (opts.userId) recentQuery = recentQuery.eq('user_id', opts.userId);
+  const { data: recentLogs, error: recErr } = await recentQuery;
 
   if (recErr) throw recErr;
 
