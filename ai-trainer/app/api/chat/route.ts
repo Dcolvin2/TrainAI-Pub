@@ -581,22 +581,34 @@ export async function POST(req: NextRequest) {
     const latestMsg = [...(body.messages||[])].reverse().find(m => m.role==='user')?.content || '';
     const looksLikeGearQA =
       /\?/.test(latestMsg) &&
-      /\b(attachment|worth|buy|purchase|recommend|upgrade|brand|model|equipment|barbell|dumbbell|kettlebell|rack|bench|machine|landmine|t[-\s]?bar)\b/i.test(latestMsg);
+      /\b(attachment|worth|buy|purchase|recommend|upgrade|brand|model|equipment|barbell|dumbbell|kettlebell|rack|bench|machine|landmine|t[-\s]?bar|row\s*attachment|lat\s*pulldown|cable\s*attachment)\b/i.test(latestMsg);
     if (looksLikeGearQA) {
       const qaSys =
-        'You are a concise strength coach. Return STRICT JSON only: {"answer": string}.' +
-        ' Answer the user gear/equipment question in 4–7 sentences with practical pros/cons and a clear recommendation.';
+        'You are a concise strength coach. Return STRICT JSON only: {"answer": string}.\n' +
+        'Answer the user gear/equipment question in 4–7 sentences with practical pros/cons and a clear recommendation.';
       const qaUser = { question: latestMsg, equipment: Array.isArray(body?.equipment) ? body.equipment : [] };
       const qa = await claudeJSON(qaSys, qaUser);
-      const answer = (qa && typeof qa.answer === 'string') ? qa.answer : (qa?.text || 'I recommend choosing versatile gear that fits your current setup and goals.');
-      const payload = {
+      const answer: string =
+        (qa && typeof (qa as any).answer === 'string' && (qa as any).answer.trim())
+          ? (qa as any).answer.trim()
+          : (typeof (qa as any)?.text === 'string' && (qa as any).text.trim())
+            ? (qa as any).text.trim()
+            : 'Short version: it depends on your goals and space. You can usually mimic T-bar rows with a landmine/barbell setup. If you row often and want the fixed arc/comfort, the attachment can be worth it; otherwise, your current setup likely covers the pattern.';
+
+      const payload: any = {
         ok: true,
         name: 'Coach Q&A',
         message: answer,
-        coach: '',
+        coach: answer, // <- set coach too so UI won't synthesize a workout blurb
         plan: { split: 'qa', duration: 0, name: 'Coach Q&A', main_lift: '', phases: [] },
-        workout: { warmup: [], mainExercises: [], finisher: null }
+        workout: { warmup: [], mainExercises: [], finisher: null },
       };
+      if (wantDebug(req, body)) {
+        payload.debug = {
+          ...(payload.debug || {}),
+          qa: { asked: latestMsg, answerLen: answer.length }
+        };
+      }
       return NextResponse.json(payload, { status: 200 });
     }
     
