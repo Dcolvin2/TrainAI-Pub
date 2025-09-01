@@ -913,13 +913,13 @@ Schema (strict):
       const focusHints = focusFromSplit(out?.plan?.split);
       const { rankedCandidates, allCandidates, recentNames } = await fetchCooldownContext({
         focusHints,
-        sampleLimit: 150,
-        recentDays: 14,
+        sampleLimit: 250,
+        recentDays: 7,
         userId,
       });
 
       // Also exclude cooldowns actually used in the user's recent saved workouts
-      const recentCooldownFromWorkouts = await fetchRecentCooldownNamesFromWorkouts(userId, 28);
+      const recentCooldownFromWorkouts = await fetchRecentCooldownNamesFromWorkouts(userId, 7);
 
       // --- diagnostics (server logs) ---
       const peek = (arr: { name: string }[], n = 8) => arr.slice(0, n).map((x) => x.name).join(', ');
@@ -941,7 +941,7 @@ Schema (strict):
         `{"items":[{"name":"...", "duration":"30–60s", "reps":"optional", "instruction":"optional"}]}`;
 
       // @ts-ignore replace with your real JSON chat helper
-      const raw = await timedClaudeJSON('cooldown', sys, user, { temperature: 0.4, max_tokens: 500 });
+      const raw = await timedClaudeJSON('cooldown', sys, user, { temperature: 0.7, max_tokens: 600 });
 
       const parsed = ((): { items: { name: string; duration?: string; reps?: string; instruction?: string }[] } | null => {
         if (!raw || typeof raw !== 'object') return null;
@@ -1026,12 +1026,37 @@ Schema (strict):
         const safeFillers = [
           "Breathing — 90/90",
           "Thread the Needle",
-          "Child's Pose",
+          "Child's Pose", 
           "T-Spine Openers",
           "Couch Stretch",
           "Lat Stretch Against Wall",
           "Figure-4 Glute Stretch",
+          "Seated Hamstring Stretch",
+          "Hip Flexor Stretch",
+          "Calf Wall Stretch",
+          "Doorway Pec Stretch",
+          "World's Greatest Stretch",
+          "Pigeon Pose",
+          "Butterfly Stretch",
+          "Cat-Cow Stretch",
+          "Downward Dog",
+          "Cobra Stretch",
+          "Bridge Pose",
+          "Happy Baby Pose",
+          "Reclined Twist",
+          "Standing Forward Fold",
+          "Warrior I Stretch",
+          "Triangle Pose",
+          "Side Angle Stretch",
+          "Eagle Arms",
+          "Shoulder Rolls",
+          "Neck Stretches",
+          "Wrist Stretches",
+          "Ankle Circles",
+          "Hip Circles"
         ];
+        // Randomize the order to prevent same sequence
+        shuffleInPlace(safeFillers);
         for (const name of safeFillers) {
           if (outItems.length >= 3) break;
           const k = norm(name);

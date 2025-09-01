@@ -94,7 +94,48 @@ export async function sanitizeCooldown(
     { name: "Doorway Pec Stretch", duration: '45–60s' },
     { name: "Child's Pose", duration: '45–60s' },
     { name: "Thread the Needle", duration: '45–60s' },
+    { name: "World's Greatest Stretch", duration: '45–60s' },
+    { name: "Pigeon Pose", duration: '45–60s' },
+    { name: "Butterfly Stretch", duration: '45–60s' },
+    { name: "Cat-Cow Stretch", duration: '45–60s' },
+    { name: "Downward Dog", duration: '45–60s' },
+    { name: "Cobra Stretch", duration: '45–60s' },
+    { name: "Bridge Pose", duration: '45–60s' },
+    { name: "Happy Baby Pose", duration: '45–60s' },
+    { name: "Reclined Twist", duration: '45–60s' },
+    { name: "Standing Forward Fold", duration: '45–60s' },
+    { name: "Warrior I Stretch", duration: '45–60s' },
+    { name: "Triangle Pose", duration: '45–60s' },
+    { name: "Side Angle Stretch", duration: '45–60s' },
+    { name: "Eagle Arms", duration: '45–60s' },
+    { name: "Shoulder Rolls", duration: '45–60s' },
+    { name: "Neck Stretches", duration: '45–60s' },
+    { name: "Wrist Stretches", duration: '45–60s' },
+    { name: "Ankle Circles", duration: '45–60s' },
+    { name: "Hip Circles", duration: '45–60s' },
+    { name: "90/90 Hip Stretch", duration: '45–60s' },
+    { name: "T-Spine Extension", duration: '45–60s' },
+    { name: "Thoracic Rotation", duration: '45–60s' },
+    { name: "Quad Stretch", duration: '45–60s' },
+    { name: "Adductor Stretch", duration: '45–60s' },
+    { name: "IT Band Stretch", duration: '45–60s' },
+    { name: "Piriformis Stretch", duration: '45–60s' },
+    { name: "Psoas Stretch", duration: '45–60s' },
+    { name: "Chest Opener", duration: '45–60s' },
+    { name: "Shoulder Stretch", duration: '45–60s' },
+    { name: "Tricep Stretch", duration: '45–60s' },
+    { name: "Bicep Stretch", duration: '45–60s' },
+    { name: "Forearm Stretch", duration: '45–60s' },
+    { name: "Breathing — 90/90", duration: '45–60s' },
+    { name: "Diaphragmatic Breathing", duration: '45–60s' }
   ];
+  
+  // Randomize to prevent same sequence every time
+  for (let i = generics.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [generics[i], generics[j]] = [generics[j], generics[i]];
+  }
+  
   for (const g of generics) {
     if (fills.length >= 3) break;
     if (targetRe && !/breath|thoracic|t-?spine/i.test(g.name) && !targetRe.test(g.name)) continue;
