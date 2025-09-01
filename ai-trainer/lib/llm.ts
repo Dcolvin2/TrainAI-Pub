@@ -1,7 +1,13 @@
 // lib/llm.ts
-export async function claudeJSON(system: string, user: unknown) {
+export async function claudeJSON(
+  system: string,
+  user: unknown,
+  opts?: { temperature?: number; max_tokens?: number }
+) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) throw new Error('Missing ANTHROPIC_API_KEY');
+  const temperature = typeof opts?.temperature === 'number' ? opts.temperature : 0.6;
+  const max_tokens = typeof opts?.max_tokens === 'number' ? opts.max_tokens : 1400;
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -11,7 +17,8 @@ export async function claudeJSON(system: string, user: unknown) {
     },
     body: JSON.stringify({
       model: 'claude-3-5-sonnet-20240620',
-      max_tokens: 1400,
+      max_tokens,
+      temperature,
       system,
       messages: [{ role: 'user', content: JSON.stringify(user) }],
     }),

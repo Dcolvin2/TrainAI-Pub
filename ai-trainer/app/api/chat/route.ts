@@ -191,8 +191,8 @@ function pickMainLift(split: string, equipment: string[]): string | null {
   const s = _norm(split);
   switch (s) {
     case 'push':
-      if (_has(equipment, 'barbell')) return 'Barbell Bench Press';
-      if (_has(equipment, 'barbell')) return 'Barbell Incline Bench Press';
+      if (_has(equipment, 'barbell') && _has(equipment, 'bench')) return 'Barbell Bench Press';
+      if (_has(equipment, 'barbell') && _has(equipment, 'incline')) return 'Barbell Incline Bench Press';
       if (_has(equipment, 'dumbbell')) return 'Dumbbell Bench Press';
       if (_has(equipment, 'dumbbell')) return 'Dumbbell Incline Bench Press';
       return 'Push-Up';
@@ -382,7 +382,7 @@ export async function POST(req: NextRequest) {
         ],
       });
       // @ts-ignore existing helper returns parsed JSON
-      const llm = await claudeJSON(sys, usr);
+      const llm = await claudeJSON(sys, usr, { temperature: 0.5, max_tokens: 700 });
 
       // 5) Map + safety clamps (no accessory wipe)
       const warmupItems = Array.isArray(llm?.warmup)
@@ -533,7 +533,11 @@ export async function POST(req: NextRequest) {
 Default: {"split":"pull","minutes":45,"style":"default"} if unclear.`;
 
     const lastUser = [...(body.messages||[])].reverse().find(m => m.role==='user')?.content || '';
-    const intents = await claudeJSON(classifierSystem, { text: lastUser, provided: { split: body.split, minutes: body.minutes, style: body.style }});
+    const intents = await claudeJSON(
+      classifierSystem,
+      { text: lastUser, provided: { split: body.split, minutes: body.minutes, style: body.style }},
+      { temperature: 0.2, max_tokens: 120 }
+    );
 
     const split: Split = (body.split || intents?.split || 'pull') as Split;
     const minutes = Number(body.minutes || intents?.minutes || 45);
@@ -684,7 +688,7 @@ Schema (strict):
       { role: 'user', content: JSON.stringify(user) }
     ];
 
-    let out = await claudeJSON(system, user);
+    let out = await claudeJSON(system, user, { temperature: 0.6, max_tokens: 1200 });
 
     // Normalize whatever the LLM returns into the ONE shape your UI expects
     let { workout } = normalizeLLM(out);
@@ -700,7 +704,8 @@ Schema (strict):
       dpush(debug, 'repairIssues', ['mainExercises is empty']);
       out = await claudeJSON(
         system + '\nYour previous JSON omitted "workout.mainExercises". Repair it using only names from "catalog".',
-        { previous: out, equipment, catalog, split, minutes, style }
+        { previous: out, equipment, catalog, split, minutes, style },
+        { temperature: 0.3, max_tokens: 600 }
       );
       ({ workout } = normalizeLLM(out));
       dpush(debug, 'secondPass', {
@@ -803,7 +808,7 @@ Schema (strict):
         `{"items":[{"name":"...", "duration":"30–60s", "reps":"optional", "instruction":"optional"}]}`;
 
       // @ts-ignore replace with your real JSON chat helper
-      const raw = await claudeJSON(sys, user);
+      const raw = await claudeJSON(sys, user, { temperature: 0.4, max_tokens: 500 });
 
       const parsed = ((): { items: { name: string; duration?: string; reps?: string; instruction?: string }[] } | null => {
         if (!raw || typeof raw !== 'object') return null;
