@@ -33,6 +33,24 @@ type PlanPhase = { phase?: string; items: PlanItem[] };
 function J(status:number, body:any){ return NextResponse.json(body, { status }); }
 const A = Array.isArray;
 
+// Extract the most recent assistant QA block (our TL;DR format) to guide a follow-up workout
+function extractQAHints(messages?: Msg[]): string | null {
+  if (!Array.isArray(messages)) return null;
+  
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m?.role !== 'assistant') continue;
+    
+    const t = String(m.content || '').trim();
+    if (t.startsWith('TL;DR:')) {
+      // Keep it compact; help the LLM but avoid token bloat
+      return t.split('\n').slice(0, 6).join('\n');
+    }
+  }
+  
+  return null;
+}
+
 // Debug accumulator — returned only when body.debug === true or ?debug=1 is sent
 type DebugLog = Record<string, any>;
 function dpush(d: DebugLog, key: string, val: any) {
@@ -366,6 +384,10 @@ export async function POST(req: NextRequest) {
       equipmentProvidedCount: Array.isArray(body?.equipment) ? body.equipment.length : 0,
     });
 
+    // If the prior turn was a QA answer (TL;DR format), capture it to bias the next workout
+    const qaHintsText = extractQAHints(body?.messages);
+    if (qaHintsText) dpush(debug, 'hints', { qa: qaHintsText.slice(0, 240) });
+
     const splitInput = typeof body?.split === 'string' ? body.split.trim().toLowerCase() : undefined;
 
     // Mark which path we take
@@ -559,10 +581,19 @@ export async function POST(req: NextRequest) {
         ],
       };
 
+      // Also expose cooldown to workout payload so UI can render it directly
+      const workout = {
+        warmup: warmupItems,
+        mainExercises: seed.phases[1].items,
+        finisher: null as any,
+        cooldown: cooldownDraft,
+      };
+
       const out = {
         ok: true,
         message: `${_label(splitInput)} — Day`,
         plan,
+        workout,
         coach: clampCoach(llm?.coach),
       };
       return NextResponse.json(out, { status: 200 });
@@ -647,14 +678,10 @@ export async function POST(req: NextRequest) {
 
     // 2) classify intent (you already do this); set split/minutes/style
     const classifierSystem =
-`Extract intent for workout planning from "text" (latest user message). Output strict JSON:
+`Extract intent for workout planning. Return STRICT JSON only:
 {"split":"pull|push|legs|upper|full|hiit","minutes":number,"style":"default|ocho"}.
-Rules:
-- If user explicitly names a split, honor it.
-- If message mentions skiing or snow sports (e.g., "ski", "skiing", "ski trip", "snowboard"), prefer {"split":"legs"} unless the user clearly asked for a different split.
-- If message asks for "full body", pick {"split":"full"}.
-- Otherwise infer from context; if unclear use {"split":"pull"}.
-Default: {"split":"pull","minutes":45,"style":"default"} if still unclear.`;
+If "hints" are provided (from a prior TL;DR answer), choose the split that best matches them (e.g., ski -> legs/full bias with quad/core/balance).
+If unclear, default to {"split":"pull","minutes":45,"style":"default"}.`;
 
     const lastUser = [...(body.messages||[])].reverse().find(m => m.role==='user')?.content || '';
     if (!lastUser || lastUser.trim().length < 2) {
@@ -664,7 +691,11 @@ Default: {"split":"pull","minutes":45,"style":"default"} if still unclear.`;
         { status: 400 }
       );
     }
-    const intents = await timedClaudeJSON('classifier', classifierSystem, { text: lastUser, provided: { split: body.split, minutes: body.minutes, style: body.style }}, { temperature: 0.2, max_tokens: 120 });
+    const intents = await timedClaudeJSON('classifier', classifierSystem, { 
+      text: lastUser, 
+      provided: { split: body.split, minutes: body.minutes, style: body.style },
+      hints: qaHintsText || ''
+    }, { temperature: 0.2, max_tokens: 120 });
 
     const split: Split = (body.split || intents?.split || 'pull') as Split;
     const minutes = Number(body.minutes || intents?.minutes || 45);
@@ -802,6 +833,9 @@ Schema (strict):
       '• Prefer options listed under each target. If empty, pick general t-spine/breathing.',
       '• Each cooldown item has { name, duration: "45–60s" }, no reps/sets.',
       '• Do NOT include pec/chest stretches on legs day, or non-target muscles.',
+      '',
+      `Hints (use these to bias priorities, exercise choices, and energy systems; do NOT echo them back):`,
+      `${qaHintsText ? qaHintsText : '(none)'}`,
     ].join('\n');
 
     const user = {
@@ -809,6 +843,7 @@ Schema (strict):
       equipment,
       catalog,            // ← your DB exercises
       history: body.messages || [],
+      hints: qaHintsText || '',
     };
 
     // Build messages
@@ -1066,19 +1101,27 @@ Schema (strict):
         }
       }
 
-      // Enforce stretch-only & target awareness using your policy helper
+      // 4) Sanitize with prefs/targets — clamp only; keep variety if valid
       const holder = { cooldown: outItems };
-      await sanitizeCooldown(holder, userId, prefs, targets);
-      const finalCooldown = holder.cooldown;
+      try {
+        await sanitizeCooldown(holder, userId || '', prefs, targets || []);
+      } catch (e) {
+        console.warn('[cooldown] sanitize failed; using pre-sanitize items', e);
+      }
+      const finalItems = Array.isArray(holder.cooldown) && holder.cooldown.length ? holder.cooldown : outItems;
 
-      console.log('[cooldown] final picks=', finalCooldown.map((x) => x.name));
+      console.log('[cooldown] final picks=', finalItems.map((x) => x.name));
 
       // Write into phases (place this near the END of your route so nothing overwrites it later)
       const cdIdx = phases.findIndex((p) => (p.phase ?? '').toLowerCase() === 'cooldown');
-      if (cdIdx >= 0) phases[cdIdx].items = finalCooldown;
-      else phases.push({ phase: 'cooldown', items: finalCooldown });
+      if (cdIdx >= 0) phases[cdIdx].items = finalItems;
+      else phases.push({ phase: 'cooldown', items: finalItems });
 
-    out.plan.phases = phases;
+      out.plan.phases = phases;
+      
+      // Also surface to workout for UI consumers that ignore plan.phases
+      if (!out.workout) out.workout = {};
+      (out.workout as any).cooldown = finalItems;
     }
 
     // --- In your main handler, AFTER you build the rest of the plan, call:
