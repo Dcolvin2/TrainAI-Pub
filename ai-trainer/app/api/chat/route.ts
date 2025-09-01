@@ -72,22 +72,6 @@ function norm(s: unknown) {
   return String(s ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
-// Heuristic: decide if the last user message is a general Q&A (not a workout request)
-function isLikelyQA(msg: string, splitInput?: string | undefined): boolean {
-  const m = String(msg || '').toLowerCase().trim();
-  if (!m) return false;
-
-  // if a split was explicitly provided, it's a workout request
-  if (typeof splitInput === 'string' && splitInput) return false;
-
-  // keywords & shape that imply Q&A (gear, injuries, how/why/should/compare), often with a question mark
-  const qaHints = /\b(gear|equipment|attachment|worth|compare|difference|should i|how (do|to)|why|when|injur|pain|rest day|nutrition|cardio|form|technique)\b/;
-  const looksQuestion = m.includes('?');
-  const mentionsSplit = /\b(push|pull|legs|upper|full|hiit)\b/.test(m);
-
-  return !mentionsSplit && (looksQuestion || qaHints.test(m));
-}
-
 function mainLiftForSplit(split: string, equipment: string[]): string | null {
   const equipmentSet = new Set(equipment.map(e => e.toLowerCase()));
   
@@ -372,10 +356,6 @@ export async function POST(req: NextRequest) {
     // identify user once for the whole handler
     const userId = (body?.userId ?? req.headers.get('x-user-id') ?? '') as string;
 
-    const lastUserEarly = Array.isArray(body?.messages)
-      ? [...body.messages].reverse().find(m => m.role === 'user')?.content || ''
-      : '';
-
     const debug: DebugLog = {};
     const dbg = wantDebug(req, body);
     dpush(debug, 'incoming', {
@@ -388,35 +368,28 @@ export async function POST(req: NextRequest) {
 
     const splitInput = typeof body?.split === 'string' ? body.split.trim().toLowerCase() : undefined;
 
-    // ---------- Q&A SHORT-CIRCUIT ----------
-    if (isLikelyQA(lastUserEarly, splitInput)) {
-      const qaSystem =
-        'You are a concise, evidence-informed strength coach. Answer the question directly, in <=120 words. ' +
-        'Give a clear recommendation with 1–2 pros/cons that matter most. Avoid hype. STRICT JSON only: {"answer":"..."}';
-      const qaUser = {
-        question: lastUserEarly,
-        known_equipment: Array.isArray(body?.equipment) ? body.equipment : undefined,
-      };
-      const qa = await claudeJSON(qaSystem, qaUser, { temperature: 0.3, max_tokens: 220 });
-      const answer = typeof qa?.answer === 'string'
-        ? qa.answer.trim()
-        : (typeof (qa as any)?.text === 'string' ? (qa as any).text.trim() : 'Here\'s my take, briefly: prioritize usefulness and versatility for your goals and space.');
+    // Mark which path we take
+    const branch = (HYBRID_SPLIT_ENABLED && !!splitInput) ? 'HYBRID' : 'LEGACY';
+    if (dbg) dpush(debug, 'branch', branch);
 
-      if (dbg) dpush(debug, 'qa', { asked: lastUserEarly, answerLen: answer.length });
-
-      // Return a minimal, schema-safe payload so the UI doesn't crash expecting fields.
-      const payload = {
-        ok: true,
-        name: 'Coach Q&A',
-        message: answer,
-        coach: '',
-        plan: { split: 'qa', duration: 0, name: 'Coach Q&A', main_lift: '', phases: [] },
-        workout: { warmup: [], mainExercises: [], finisher: null as any },
-        ...(dbg ? { debug } : {}),
-      };
-      return NextResponse.json(payload, { status: 200 });
+    // Helper: time + record any LLM call
+    async function timedClaudeJSON(tag: string, system: string, user: unknown, opts?: { temperature?: number; max_tokens?: number }) {
+      const t0 = Date.now();
+      try {
+        const res = await claudeJSON(system, user, opts);
+        if (dbg) {
+          debug.llm = debug.llm || {};
+          debug.llm[tag] = { ms: Date.now() - t0, ok: true };
+        }
+        return res;
+      } catch (e: any) {
+        if (dbg) {
+          debug.llm = debug.llm || {};
+          debug.llm[tag] = { ms: Date.now() - t0, ok: false, err: String(e?.message || e) };
+        }
+        throw e;
+      }
     }
-    // ---------- end Q&A SHORT-CIRCUIT ----------
 
     // ---------- HYBRID SPLIT v2 (gated) ----------
     if (HYBRID_SPLIT_ENABLED && splitInput) {
@@ -472,7 +445,7 @@ export async function POST(req: NextRequest) {
         ],
       });
       // @ts-ignore existing helper returns parsed JSON
-      const llm = await claudeJSON(sys, usr, { temperature: 0.5, max_tokens: 700 });
+      const llm = await timedClaudeJSON('hybrid_fill', sys, usr, { temperature: 0.5, max_tokens: 700 });
 
       // 5) Map + safety clamps (no accessory wipe)
       const warmupItems = Array.isArray(llm?.warmup)
@@ -623,11 +596,7 @@ export async function POST(req: NextRequest) {
 Default: {"split":"pull","minutes":45,"style":"default"} if unclear.`;
 
     const lastUser = [...(body.messages||[])].reverse().find(m => m.role==='user')?.content || '';
-    const intents = await claudeJSON(
-      classifierSystem,
-      { text: lastUser, provided: { split: body.split, minutes: body.minutes, style: body.style }},
-      { temperature: 0.2, max_tokens: 120 }
-    );
+    const intents = await timedClaudeJSON('classifier', classifierSystem, { text: lastUser, provided: { split: body.split, minutes: body.minutes, style: body.style }}, { temperature: 0.2, max_tokens: 120 });
 
     const split: Split = (body.split || intents?.split || 'pull') as Split;
     const minutes = Number(body.minutes || intents?.minutes || 45);
@@ -778,7 +747,7 @@ Schema (strict):
       { role: 'user', content: JSON.stringify(user) }
     ];
 
-    let out = await claudeJSON(system, user, { temperature: 0.6, max_tokens: 1200 });
+    let out = await timedClaudeJSON('plan', system, user, { temperature: 0.6, max_tokens: 1200 });
 
     // Normalize whatever the LLM returns into the ONE shape your UI expects
     let { workout } = normalizeLLM(out);
@@ -792,7 +761,8 @@ Schema (strict):
     // If main is still empty -> ask the model to repair its own JSON (no hardcoded moves)
     if (!Array.isArray(workout.mainExercises) || workout.mainExercises.length === 0) {
       dpush(debug, 'repairIssues', ['mainExercises is empty']);
-      out = await claudeJSON(
+      out = await timedClaudeJSON(
+        'repair',
         system + '\nYour previous JSON omitted "workout.mainExercises". Repair it using only names from "catalog".',
         { previous: out, equipment, catalog, split, minutes, style },
         { temperature: 0.3, max_tokens: 600 }
@@ -860,12 +830,12 @@ Schema (strict):
 
     // --- Cooldown builder with diagnostics ---
     async function buildCooldownPhase(out: any, req: Request, userId: string, prefs: any, targets: any) {
-      const phases = (Array.isArray(out?.plan?.phases) ? out.plan.phases : []) as PlanPhase[];
+    const phases = (Array.isArray(out?.plan?.phases) ? out.plan.phases : []) as PlanPhase[];
 
       // Names already in session (avoid dupes)
-      const sessionNames = new Set<string>();
-      for (const ph of phases) {
-        for (const it of ph.items ?? []) {
+    const sessionNames = new Set<string>();
+    for (const ph of phases) {
+      for (const it of ph.items ?? []) {
           if (it?.name) sessionNames.add(norm(it.name));
         }
       }
@@ -901,7 +871,7 @@ Schema (strict):
         `{"items":[{"name":"...", "duration":"30–60s", "reps":"optional", "instruction":"optional"}]}`;
 
       // @ts-ignore replace with your real JSON chat helper
-      const raw = await claudeJSON(sys, user, { temperature: 0.4, max_tokens: 500 });
+      const raw = await timedClaudeJSON('cooldown', sys, user, { temperature: 0.4, max_tokens: 500 });
 
       const parsed = ((): { items: { name: string; duration?: string; reps?: string; instruction?: string }[] } | null => {
         if (!raw || typeof raw !== 'object') return null;
@@ -993,7 +963,7 @@ Schema (strict):
       if (cdIdx >= 0) phases[cdIdx].items = finalCooldown;
       else phases.push({ phase: 'cooldown', items: finalCooldown });
 
-      out.plan.phases = phases;
+    out.plan.phases = phases;
     }
 
     // --- In your main handler, AFTER you build the rest of the plan, call:
