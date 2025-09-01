@@ -421,7 +421,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      let cooldownDraft = Array.isArray(llm?.cooldownDraft)
+      let cooldownDraft: any[] = Array.isArray(llm?.cooldownDraft)
         ? uniqByName(llm.cooldownDraft.map((c: any) => ({
             name: typeof c?.name === 'string' ? c.name : '',
             duration: typeof c?.duration === 'string' ? c.duration : undefined,
