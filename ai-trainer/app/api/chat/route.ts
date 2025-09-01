@@ -2,30 +2,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabaseServer';
 import { claudeJSON } from '@/lib/llm';
-import { fetchUserEquipmentNames } from '@/lib/catalog';
+import { ResponseOut, phasesFromWorkout, budget } from '@/lib/schema';
+import { fetchCatalog, fetchUserEquipmentNames, fetchMobilityByTargets } from '@/lib/catalog';
 import { getUserPrefs, mergeUserPrefs } from '@/lib/prefs';
+import { sanitizeCooldown } from '@/lib/cooldownPolicy';
+import { fetchRecentSetsForExercise, summarizeHistory } from '@/lib/history';
+import { buildCoachNote } from '@/lib/coach';
 import { focusFromSplit, fetchCooldownContext, mapLLMToPlanItems, shuffleInPlace } from '@/lib/cooldown';
-import { supabase } from '@/lib/supabase';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// Intent detection types
-type Intent = 'start_program' | 'continue_program' | 'ad_hoc';
-type IntentPayload = { intent: Intent; programName?: string; durationMin?: number };
-
-// Program management types
-type ProgramRow = { id: string; program_name: string; status: string; current_week: number; current_day: number };
-type PastWorkout = { id: string; date: string; main_lift: string | null; workout_type: string | null; cooldown: unknown; accessory_lifts: unknown; duration_minutes: number | null };
-type Profile = { preferred_workout_duration: number; fitness_level: string | null; injuries: unknown; equipment: string | null; training_goal: string | null };
-
-// LLM crafted workout type
-type LLMCrafted = {
-  name: string;
-  duration: number;
-  phases: { phase: string; items: any[] }[];
-  coach: string;
-};
+const PROGRAMS_ENABLED = process.env.NEXT_PUBLIC_ENABLE_PROGRAMS === '1';
 
 type Msg = { role: 'user'|'assistant'|'system'; content: string };
 type Split = 'pull'|'push'|'legs'|'upper'|'full'|'hiit';
@@ -82,123 +70,108 @@ function norm(s: unknown) {
   return String(s ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
-// Intent detection function
-async function detectIntent(userMsg: string): Promise<IntentPayload> {
-  const sys =
-    'Classify the user message.\n' +
-    '- start_program: starting a named training program (infer concise programName like "Ski Prep").\n' +
-    '- continue_program: user wants next day of a previously named program (infer same programName).\n' +
-    '- ad_hoc: not a multi-day program; just generate a single workout.\n' +
-    'Return STRICT JSON: {"intent":"start_program|continue_program|ad_hoc","programName":string|undefined,"durationMin":number|undefined}.';
-  const usr = `MESSAGE=${JSON.stringify(userMsg)}\nProvide only the JSON.`;
-
-  // @ts-ignore replace with your JSON helper
-  const raw = await claudeJSON(sys, usr);
-  const o = (raw && typeof raw === 'object') ? raw as Record<string, unknown> : {};
-  return {
-    intent: (o.intent === 'start_program' || o.intent === 'continue_program' || o.intent === 'ad_hoc') ? o.intent : 'ad_hoc',
-    programName: typeof o.programName === 'string' && o.programName.trim() ? o.programName.trim() : undefined,
-    durationMin: typeof o.durationMin === 'number' ? o.durationMin : undefined,
-  };
+function mainLiftForSplit(split: string, equipment: string[]): string | null {
+  const equipmentSet = new Set(equipment.map(e => e.toLowerCase()));
+  
+  switch (split.toLowerCase()) {
+    case 'push':
+      if (equipmentSet.has('barbell') && equipmentSet.has('bench')) return 'Barbell Bench Press';
+      if (equipmentSet.has('barbell') && equipmentSet.has('incline bench')) return 'Barbell Incline Press';
+      if (equipmentSet.has('dumbbell')) return 'Dumbbell Bench Press';
+      if (equipmentSet.has('dumbbell') && equipmentSet.has('incline bench')) return 'Dumbbell Incline Press';
+      return 'Barbell Bench Press'; // fallback
+      
+    case 'pull':
+      if (equipmentSet.has('trap bar')) return 'Trap Bar Deadlift';
+      if (equipmentSet.has('barbell')) return 'Barbell Deadlift';
+      return 'Trap Bar Deadlift'; // fallback
+      
+    case 'legs':
+      if (equipmentSet.has('belt squat machine')) return 'Belt Squat';
+      if (equipmentSet.has('barbell') && equipmentSet.has('rack')) return 'Back Squat';
+      if (equipmentSet.has('barbell')) return 'Front Squat';
+      return 'Back Squat'; // fallback
+      
+    case 'upper':
+      if (equipmentSet.has('barbell')) return 'Overhead Press';
+      if (equipmentSet.has('dumbbell')) return 'Dumbbell Shoulder Press';
+      return 'Overhead Press'; // fallback
+      
+    case 'hiit':
+      return null; // no main lift for HIIT
+      
+    default:
+      return 'Trap Bar Deadlift'; // default fallback
+  }
 }
 
-// Program management helpers
-async function getOrCreateProgram(userId: string, programName: string): Promise<ProgramRow> {
-  const { data: existing } = await supabase
-    .from('training_programs')
-    .select('id, program_name, status, current_week, current_day')
-    .eq('user_id', userId)
-    .eq('program_name', programName)
-    .limit(1)
-    .maybeSingle();
-
-  if (existing) return existing as ProgramRow;
-
-  const { data, error } = await supabase
-    .from('training_programs')
-    .insert([{ user_id: userId, program_name: programName, status: 'active' }])
-    .select('id, program_name, status, current_week, current_day')
-    .single();
-  if (error) throw error;
-  return data as ProgramRow;
+function synthCoach(raw: any, plan: any, workout: any, split: Split, minutes: number, style: 'default'|'ocho') {
+  const s = String(raw || '').trim();
+  if (s.length >= 20 && !/^trainai$/i.test(s)) return s;
+  const main = plan?.main_lift || workout?.mainExercises?.[0]?.name || 'primary lift';
+  const tag = style === 'ocho' ? ' (Ocho style)' : '';
+  return `${split.toUpperCase()} day${tag}. Main lift: ${main}. Warm-up includes scap/shoulder prep and thoracic rotation/anti-rotation. We'll fill accessories within ${minutes} minutes and finish with a short cooldown.`;
 }
 
-async function getRecentProgramWorkouts(userId: string, programName: string, limit = 3): Promise<PastWorkout[]> {
-  const { data, error } = await supabase
-    .from('workouts')
-    .select('id, date, main_lift, workout_type, cooldown, accessory_lifts, duration_minutes')
-    .eq('user_id', userId)
-    .eq('program_name', programName)
-    .order('date', { ascending: false })
-    .limit(limit);
-  if (error) throw error;
-  return (data ?? []) as PastWorkout[];
+function toStringRep(v: any) {
+  if (v == null) return undefined;
+  if (typeof v === 'number') return String(v);
+  return String(v);
 }
 
-async function getProfile(userId: string): Promise<Profile> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('preferred_workout_duration, fitness_level, injuries, equipment, training_goal')
-    .eq('user_id', userId)
-    .maybeSingle();
-  if (error) throw error;
-  return (data ?? { preferred_workout_duration: 45 }) as Profile;
+function normalizeDuration(x: any) {
+  if (x?.duration) return x.duration;
+  if (x?.duration_seconds) {
+    const s = Number(x.duration_seconds);
+    if (!isFinite(s)) return undefined;
+    if (s % 60 === 0) return `${s/60} min`;
+    return `${s}s`;
+  }
+  return undefined;
 }
 
-// LLM-first workout generation
-async function generateProgrammedWorkout({
-  userMsg, programName, durationMin, profile, equipmentList, recent
-}: {
-  userMsg: string;
-  programName: string;
-  durationMin?: number;
-  profile: { preferred_workout_duration?: number; fitness_level?: string | null; injuries?: unknown; equipment?: string | null; training_goal?: string | null };
-  equipmentList: string[];
-  recent: any[];
-}): Promise<LLMCrafted> {
-  const d = durationMin ?? profile.preferred_workout_duration ?? 45;
-
-  const system =
-    'You are a world-class strength coach.\n' +
-    `Program focus: ${programName}. Design TODAY's session end-to-end in JSON.\n` +
-    'Rules:\n' +
-    '- Do NOT default to generic splits (push/pull/legs/upper) unless the user asked specifically.\n' +
-    '- Use the user profile, injuries, equipment, and recent program days to progress intelligently.\n' +
-    '- Respect available equipment only.\n' +
-    '- Output STRICT JSON only; no commentary, no code fences.';
-
-  const user =
-    `PROGRAM_NAME=${JSON.stringify(programName)}\n` +
-    `TODAY_MINUTES=${d}\n` +
-    `PROFILE=${JSON.stringify(profile)}\n` +
-    `EQUIPMENT=${JSON.stringify(equipmentList)}\n` +
-    `RECENT_PROGRAM_WORKOUTS=${JSON.stringify(recent)}\n` +
-    `USER_MESSAGE=${JSON.stringify(userMsg)}\n\n` +
-    `Respond exactly as:\n` +
-    `{\n` +
-    `  "name": "${programName} — Day X",\n` +
-    `  "duration": ${d},\n` +
-    `  "phases": [\n` +
-    `    {"phase":"warmup","items":[{"name":"...", "duration":"...","instruction":"..."}]},\n` +
-    `    {"phase":"strength","items":[{"name":"...", "sets":"...", "reps":"...", "instruction":"..."}]},\n` +
-    `    {"phase":"accessory","items":[{"name":"...", "sets":"...", "reps":"..."}]},\n` +
-    `    {"phase":"cooldown","items":[{"name":"...", "duration":"30–60s"}]}\n` +
-    `  ],\n` +
-    `  "coach":"One-paragraph coaching cues tailored to ${programName} and today's plan."\n` +
-    `}`;
-
-  // @ts-ignore replace with your JSON helper
-  const raw = await claudeJSON(system, user);
-
-  // minimal shape-check
-  const plan = (raw && typeof raw === 'object') ? raw as LLMCrafted : { name: `${programName} — Day`, duration: d, phases: [], coach: '' };
-  plan.duration = typeof plan.duration === 'number' ? plan.duration : d;
-  plan.name = typeof plan.name === 'string' && plan.name ? plan.name : `${programName} — Day`;
-  plan.phases = Array.isArray(plan.phases) ? plan.phases : [];
-  return plan;
+function normalizeItems(items: any[]): any[] {
+  return (Array.isArray(items) ? items : []).map((it: any) => ({
+    name: it?.name ?? it?.exercise ?? '',
+    sets: it?.sets,
+    reps: toStringRep(it?.reps),
+    duration: normalizeDuration(it),
+    instruction: it?.instruction,
+    isAccessory: typeof it?.isAccessory === 'boolean' ? it.isAccessory : undefined,
+    is_main: it?.is_main, // we'll convert below
+  })).filter(x => x.name);
 }
 
-// Intent detection function
+// Accepts any of: {workout:{main:[]}}, {workout:{mainExercises:[]}}, or {plan:{phases:[...]}}
+function normalizeLLM(out: any) {
+  // A) Phase-shaped JSON
+  const phases = Array.isArray(out?.plan?.phases) ? out.plan.phases : [];
+  const byPhase = (key: string) =>
+    phases.find((p: any) => (p?.phase||'').toLowerCase() === key)?.items || [];
+
+  // B) Workout-shaped JSON (various keys we've seen)
+  const w = out?.workout || {};
+  const mainA = w?.mainExercises ?? w?.main ?? w?.strength ?? [];
+  const warmA = w?.warmup ?? w?.warm_up ?? [];
+  const finA  = w?.finisher ?? w?.cooldown?.[0] ?? null;
+
+  // Prefer explicit workout if it has main items; else derive from phases
+  const warm = normalizeItems(
+    Array.isArray(mainA) && mainA.length ? warmA : byPhase('warmup').length ? byPhase('warmup') : byPhase('prep')
+  );
+  const main = normalizeItems(
+    Array.isArray(mainA) && mainA.length ? mainA : byPhase('main').concat(byPhase('strength'))
+  );
+  const fin  = finA ? normalizeItems([finA])[0] : (byPhase('carry_block')[0] || byPhase('conditioning')[0] || byPhase('cooldown')[0]);
+
+  // First main is the anchor; others are accessories
+  if (main.length) {
+    main[0] = { ...main[0], isAccessory: false, is_main: undefined };
+    for (let i=1;i<main.length;i++) main[i] = { ...main[i], isAccessory: true, is_main: undefined };
+  }
+
+  return { workout: { warmup: warm, mainExercises: main, finisher: fin } };
+}
 
 
 
@@ -253,58 +226,224 @@ export async function POST(req: NextRequest) {
       prefs.cooldown = 'stretch_priority';
     }
 
-    // 2) Detect intent and handle program-based or ad-hoc requests
-    const userMsg = Array.isArray(body.messages) ? [...body.messages].reverse().find(m => m.role === 'user')?.content || '' : '';
-    const intent = await detectIntent(userMsg);
+    // 2) classify intent (you already do this); set split/minutes/style
+    const classifierSystem =
+`Extract intent for workout planning. Output strict JSON:
+{"split":"pull|push|legs|upper|full|hiit","minutes":number,"style":"default|ocho"}.
+Default: {"split":"pull","minutes":45,"style":"default"} if unclear.`;
+
+    const lastUser = [...(body.messages||[])].reverse().find(m => m.role==='user')?.content || '';
+    const intents = await claudeJSON(classifierSystem, { text: lastUser, provided: { split: body.split, minutes: body.minutes, style: body.style }});
+
+    const split: Split = (body.split || intents?.split || 'pull') as Split;
+    const minutes = Number(body.minutes || intents?.minutes || 45);
+    const style = (body.style || intents?.style || 'default') as 'default'|'ocho';
+    const time = budget(minutes);
+    dpush(debug, 'classified', { split, minutes, style });
+
+    if (PROGRAMS_ENABLED) {
+      // TODO: Implement program/intent routing when enabled
+      // detectIntent, getOrCreateProgram, generateProgrammedWorkout
+    } else {
+      // --- OLD SPLIT FLOW ---
+    const catalog = await fetchCatalog(split, equipment);
+    dpush(debug, 'catalog', { count: catalog.length, sample: catalog.slice(0, 8).map(r => r.name) });
+
+    // Optional: fallback if catalog too small
+    if (catalog.length < 10) {
+      dpush(debug, 'catalogFallback', 'split filter too narrow; using equipment-only catalog');
+      // For now, we'll keep the current catalog but log the fallback
+      // In the future, you could modify getCatalog to accept a flag for equipment-only filtering
+    }
+
+    // 4) Fetch user history for the main lift (if we can predict it)
+    const predictedMainLift = split === 'pull' ? 'Trap Bar Deadlift' : 
+                              split === 'push' ? 'Barbell Bench Press' : 
+                              split === 'legs' ? 'Back Squat' : 
+                              split === 'upper' ? 'Shoulder Press' : 
+                              'Trap Bar Deadlift';
     
-    dpush(debug, 'intent', { intent: intent.intent, programName: intent.programName, durationMin: intent.durationMin });
+    const recentSets = await fetchRecentSetsForExercise(userId, predictedMainLift, 6);
+    const history = summarizeHistory(recentSets);
+    
+    const historyForPrompt = recentSets.slice(0, 6).map(s => ({
+      date: s.date?.slice(0,10),
+      exercise: s.exercise_name,
+      weight: s.actual_weight,
+      reps: s.reps,
+      rpe: s.rpe,
+    }));
 
-    // 3) Fetch profile, equipment, and program history
-    const profile = await getProfile(userId);
-    const equipmentList = (profile.equipment ? profile.equipment.split(',') : []).map(s => s.trim()).filter(Boolean);
-    const programName = intent.programName ?? (intent.intent === 'ad_hoc' ? 'Ad Hoc' : 'General Program');
-    const recent = await getRecentProgramWorkouts(userId, programName, 3);
+    // 5) Ask the LLM to PLAN everything using only your catalog/equipment
+    const policy = `
+Rules for cooldown:
+- Use 2–4 low-intensity stretches or mobility positions ONLY (static or dynamic).
+- Absolutely do NOT include high-intensity movements (no burpees, sprints, thrusters, box jumps, mountain climbers, jumping jacks).
+- Prefer stretches that target the muscles used in the session.
+${prefs.cooldown === 'stretch_only' ? '- Cooldown must be stretches/mobility exclusively.' : ''}
+`;
 
-    dpush(debug, 'context', { 
-      programName, 
-      equipmentCount: equipmentList.length, 
-      recentWorkouts: recent.length,
-      profileDuration: profile.preferred_workout_duration 
-    });
+    const system =
+`You are TrainAI, a concise strength coach.
+User equipment: ${(body?.equipment || []).join(', ') || 'bodyweight only'}.
+Focus on progressive overload with excellent form. Keep cooldown low-intensity mobility (no HIIT).
+Recent main-lift history for context (most recent first): ${JSON.stringify(historyForPrompt)}
 
-    // 4) Generate workout using LLM-first approach
-    const plan = await generateProgrammedWorkout({ 
-      userMsg, 
-      programName, 
-      durationMin: intent.durationMin, 
-      profile, 
-      equipmentList, 
-      recent 
-    });
+Compose a complete ${split.toUpperCase()} workout as STRICT JSON only—no commentary.
 
-    // 5) Build output structure
-    const out: any = { ok: true };
-    out.plan = { 
-      split: programName.toLowerCase(), 
-      duration: plan.duration, 
-      phases: plan.phases 
+Constraints
+- Use ONLY exercises present in the provided "catalog" (by name) and that are possible with the provided "equipment". If an exercise needs unavailable equipment, pick another from the catalog.
+- Warm-up must be ${time.warmup} minutes (5–10 min window) and MUST include scap/shoulder prep AND thoracic rotation or anti-rotation.
+- Choose ONE main lift that suits the split and equipment; make it the first item of "workout.mainExercises" with {"isAccessory":false}. All other main items are accessories with {"isAccessory":true}.
+- Fit within minutes: warmup ${time.warmup}, main ${time.main}, accessories ${time.accessories}, cooldown ${time.cooldown}.
+- Style: ${style === 'ocho'
+    ? 'Joe Holder Ocho style — include crawling/ground-based core, tempo OR isometric cues on at least one accessory, pair accessories with breath/mobility resets when helpful, and prefer carries or sled work if equipment allows.'
+    : 'Evidence-based general strength style.'}
+- Keep instructions concise.
+
+${policy}
+
+Schema (strict):
+{
+  "ok": true,
+  "name": string,
+  "message": string,
+  "coach": string,
+  "plan": { "split": "${split}", "duration": ${minutes}, "name": string, "main_lift": string },
+  "workout": {
+    "warmup": [{ "name": string, "sets"?: number|string, "reps"?: string, "duration"?: string, "instruction"?: string }],
+    "mainExercises": [{ "name": string, "sets"?: number|string, "reps"?: string, "duration"?: string, "instruction"?: string, "isAccessory": boolean }],
+    "finisher"?: { "name": string, "sets"?: number|string, "reps"?: string, "duration"?: string, "instruction"?: string }
+  }
+}`;
+
+    // Infer targets from split and user message for cooldown targeting
+    function inferTargetsFromSplit(split: string, userMessage: string): string[] {
+      const splitKey = String(split).toLowerCase();
+      const splitTargets: Record<string,string[]> = {
+        legs: ['hamstring','quad','glute','calf','hip flexor','thoracic'],
+        pull: ['lat','upper back','biceps','thoracic'],
+        push: ['pec','shoulder','triceps','thoracic'],
+        upper:['pec','shoulder','triceps','lat','upper back','biceps','thoracic'],
+        full: ['hamstring','quad','glute','hip flexor','lat','upper back','pec','shoulder','triceps','biceps','thoracic'],
+        hiit: ['hip flexor','hamstring','quad','calf','thoracic'],
+      };
+      
+      const baseTargets = splitTargets[splitKey] || ['thoracic'];
+      
+      // Also infer from user message if they mention specific exercises
+      const messageTargets: string[] = [];
+      const msg = userMessage.toLowerCase();
+      if (/(rdl|hamstring|leg\s*curl|good\s*morning)/i.test(msg)) messageTargets.push('hamstring');
+      if (/(quad|squat|split\s*squat|front\s*squat|lunge|leg\s*press)/i.test(msg)) messageTargets.push('quad');
+      if (/(glute|hip\s*thrust|bridge|hip\s*extension|step-?up)/i.test(msg)) messageTargets.push('glute');
+      if (/(calf|gastroc|soleus)/i.test(msg)) messageTargets.push('calf');
+      if (/(hip\s*flex|psoas|adductor|abductor|groin)/i.test(msg)) messageTargets.push('hip flexor');
+      if (/(lat|pull-?down|row|pull-?up|chin-?up|rack\s*pull|deadlift|trap\s*bar)/i.test(msg)) messageTargets.push('lat', 'upper back');
+      if (/(rear\s*delt|face\s*pull|band\s*pull-?apart|shrug|trap)/i.test(msg)) messageTargets.push('upper back');
+      if (/(bench|press|push-?up|fly|dip|pec)/i.test(msg)) messageTargets.push('pec', 'shoulder');
+      if (/(ohp|overhead|military|shoulder\s*press|lateral|front\s*raise)/i.test(msg)) messageTargets.push('shoulder');
+      if (/(tricep|pushdown|skull-?crusher|dip)/i.test(msg)) messageTargets.push('triceps');
+      if (/(bicep|curl|chin-?up)/i.test(msg)) messageTargets.push('biceps');
+      
+      return Array.from(new Set([...baseTargets, ...messageTargets]));
+    }
+
+    const targets = inferTargetsFromSplit(split, lastUser);
+    
+    // Fetch mobility options for cooldown targeting
+    const { byTarget, all: allMobility } = await fetchMobilityByTargets(targets);
+
+    // Build a compact options block the LLM can choose from
+    const TARGET_OPTIONS = targets.map(t => {
+      const list = (byTarget[t.toLowerCase()] || []).slice(0, 12); // keep prompt short
+      return `- ${t}: ${list.join(', ')}`;
+    }).join('\n');
+
+    const systemCoach = [
+      'You are a strength coach. Return strict JSON for the workout.',
+      'Cooldown rules:',
+      '• Choose 2–3 items.',
+      '• Only stretching/mobility/breathing—not strength or cardio.',
+      '• Must match the day\'s target muscles (see TARGETS below).',
+      '• Prefer options listed under each target. If empty, pick general t-spine/breathing.',
+      '• Each cooldown item has { name, duration: "45–60s" }, no reps/sets.',
+      '• Do NOT include pec/chest stretches on legs day, or non-target muscles.',
+    ].join('\n');
+
+    const user = {
+      minutes, split, style, budget: time,
+      equipment,
+      catalog,            // ← your DB exercises
+      history: body.messages || [],
     };
-    out.message = plan.name;
-    out.coach = plan.coach;
 
-    // 6) Optional: cooldown top-up if needed (using existing guardrails)
-    const phases = Array.isArray(out?.plan?.phases) ? out.plan.phases : [];
-    const cdIdx = phases.findIndex((p: any) => (p?.phase ?? '').toLowerCase() === 'cooldown');
-    const cooldownItems = cdIdx >= 0 ? (phases[cdIdx].items ?? []) : [];
+    // Build messages
+    const messages = [
+      { role: 'system', content: systemCoach },
+      { role: 'user', content: JSON.stringify(user) }
+    ];
 
-    if (cooldownItems.length < 3) {
-      // Fallback: use existing cooldown system to top-up
-      const focusHints = focusFromSplit(out?.plan?.split);
-      const { rankedCandidates, recentNames } = await fetchCooldownContext({
-        focusHints,
-        sampleLimit: 150,
-        recentDays: 14,
+    let out = await claudeJSON(system, user);
+
+    // Normalize whatever the LLM returns into the ONE shape your UI expects
+    let { workout } = normalizeLLM(out);
+
+    dpush(debug, 'firstPass', {
+      warm: Array.isArray(workout?.warmup) ? workout.warmup.length : 0,
+      main: Array.isArray(workout?.mainExercises) ? workout.mainExercises.length : 0,
+      coachLen: (out?.coach || '').length,
+    });
+
+    // If main is still empty -> ask the model to repair its own JSON (no hardcoded moves)
+    if (!Array.isArray(workout.mainExercises) || workout.mainExercises.length === 0) {
+      dpush(debug, 'repairIssues', ['mainExercises is empty']);
+      out = await claudeJSON(
+        system + '\nYour previous JSON omitted "workout.mainExercises". Repair it using only names from "catalog".',
+        { previous: out, equipment, catalog, split, minutes, style }
+      );
+      ({ workout } = normalizeLLM(out));
+      dpush(debug, 'secondPass', {
+        warm: Array.isArray(workout?.warmup) ? workout.warmup.length : 0,
+        main: Array.isArray(workout?.mainExercises) ? workout.mainExercises.length : 0,
       });
+    }
+
+    // Derive plan & phases for your UI with proper main lift and naming
+    const mainLift = mainLiftForSplit(split, equipment) || workout?.mainExercises?.[0]?.name || '';
+    
+    // Ensure the main lift is the first item in strength phase
+    if (mainLift && (!workout.mainExercises?.[0] || workout.mainExercises[0].name !== mainLift)) {
+      const mainLiftItem = {
+        name: mainLift,
+        sets: 3,
+        reps: '5-8',
+        isAccessory: false,
+        instruction: 'Focus on form and progressive overload'
+      };
+      workout.mainExercises = [mainLiftItem, ...(workout.mainExercises || [])];
+    }
+
+    // Generate proper plan name with day counter
+    const dayCounter = Math.floor(Math.random() * 100) + 1; // Simple random day number
+    const planName = `${split.charAt(0).toUpperCase() + split.slice(1)} — Day ${dayCounter}`;
+    
+    const plan = {
+      split,
+      duration: minutes,
+      name: planName,
+      main_lift: mainLift,
+      phases: [
+        { phase:'prep', items: workout.warmup },
+        { phase:'strength', items: workout.mainExercises },
+        { phase:'activation', items: [] },
+        { phase:'carry', items: workout.finisher ? [workout.finisher] : [] },
+      ],
+    };
+
+    // --- Cooldown builder with diagnostics ---
+    async function buildCooldownPhase(out: any, req: Request) {
+      const phases = (Array.isArray(out?.plan?.phases) ? out.plan.phases : []) as PlanPhase[];
 
       // Names already in session (avoid dupes)
       const sessionNames = new Set<string>();
@@ -314,10 +453,64 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Top-up from ranked candidates
+      const focusHints = focusFromSplit(out?.plan?.split);
+      const { rankedCandidates, allCandidates, recentNames } = await fetchCooldownContext({
+        focusHints,
+        sampleLimit: 150,
+        recentDays: 14,
+      });
+
+      // --- diagnostics (server logs) ---
+      const peek = (arr: { name: string }[], n = 8) => arr.slice(0, n).map((x) => x.name).join(', ');
+      console.log('[cooldown] focusHints=', focusHints);
+      console.log('[cooldown] rankedCandidates=', rankedCandidates.length, 'eg:', peek(rankedCandidates));
+      console.log('[cooldown] allCandidates=', allCandidates.length, 'eg:', peek(allCandidates));
+      console.log('[cooldown] recentNames size=', recentNames.size);
+
+      // Ask LLM (your helper) for suggestions
+      const sys =
+        'You are a strength coach. Propose varied, safe cooldown stretches/mobility matching today\'s focus. ' +
+        'Use the DB list as inspiration BUT you may also propose new items from your knowledge. ' +
+        'Avoid RECENT_COOLDOWNS and avoid duplicates with existing session items. Prefer 3–6 items. STRICT JSON only.';
+      const user =
+        `FOCUS_HINTS=${JSON.stringify(focusHints)}\n` +
+        `DB_CANDIDATES=${JSON.stringify(rankedCandidates)}\n` +
+        `RECENT_COOLDOWNS=${JSON.stringify(Array.from(recentNames))}\n\n` +
+        `Respond as:\n` +
+        `{"items":[{"name":"...", "duration":"30–60s", "reps":"optional", "instruction":"optional"}]}`;
+
+      // @ts-ignore replace with your real JSON chat helper
+      const raw = await claudeJSON(sys, user);
+
+      const parsed = ((): { items: { name: string; duration?: string; reps?: string; instruction?: string }[] } | null => {
+        if (!raw || typeof raw !== 'object') return null;
+        const r = raw as Record<string, unknown>;
+        const items = Array.isArray(r.items) ? r.items : null;
+        if (!items) return null;
+        const clean = items
+          .map((x) => (x && typeof x === 'object' ? x : null))
+          .filter(Boolean)
+          .map((x) => {
+            const it = x as Record<string, unknown>;
+            const name = typeof it.name === 'string' ? it.name.trim() : '';
+            if (!name) return null;
+            return {
+              name,
+              duration: typeof it.duration === 'string' ? it.duration : '30–60s',
+              reps: typeof it.reps === 'string' ? it.reps : undefined,
+              instruction: typeof it.instruction === 'string' ? it.instruction : '',
+            };
+          })
+          .filter(Boolean) as { name: string; duration?: string; reps?: string; instruction?: string }[];
+        return { items: clean };
+      })();
+
+      let picks = mapLLMToPlanItems(parsed?.items ?? []);
+
+      // --- guardrail: no repeats (session + recent), then top-up from ranked, then from all ---
       const exclude = new Set<string>([...sessionNames, ...recentNames]);
       const seen = new Set<string>();
-      const outItems: any[] = [...cooldownItems]; // Keep existing items
+      const outItems: PlanItem[] = [];
 
       const pushIfOk = (it: { name: string; duration?: string; reps?: string; instruction?: string }) => {
         const k = norm(it.name);
@@ -331,7 +524,10 @@ export async function POST(req: NextRequest) {
         });
       };
 
-      // Top-up from ranked if needed
+      // 1) keep valid LLM picks
+      for (const p of picks) pushIfOk(p);
+
+      // 2) top-up from ranked if needed
       if (outItems.length < 3) {
         const fillers = rankedCandidates.filter((c) => {
           const k = norm(c.name);
@@ -344,43 +540,85 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Update cooldown phase
+      // 3) last-resort top-up from all candidates
+      if (outItems.length < 3) {
+        const any = allCandidates.filter((c) => {
+          const k = norm(c.name);
+          return k && !exclude.has(k) && !seen.has(k);
+        });
+        shuffleInPlace(any);
+        for (const f of any) {
+          pushIfOk({ name: f.name, duration: '30–60s' });
+          if (outItems.length >= 3) break;
+        }
+      }
+
+      // Trim to max 6
+      if (outItems.length > 6) outItems.length = 6;
+
+      console.log('[cooldown] final picks=', outItems.map((x) => x.name));
+
+      // Write into phases (place this near the END of your route so nothing overwrites it later)
+      const cdIdx = phases.findIndex((p) => (p.phase ?? '').toLowerCase() === 'cooldown');
       if (cdIdx >= 0) phases[cdIdx].items = outItems;
       else phases.push({ phase: 'cooldown', items: outItems });
 
       out.plan.phases = phases;
     }
 
-    // 7) Save to workouts table
-    const { data: saved } = await supabase
-      .from('workouts')
-      .insert([{
-        user_id: userId,
-        program_name: programName,
-        workout_type: programName.toLowerCase().replace(/\s+/g, '_'),
-        duration_minutes: out?.plan?.duration ?? 45,
-        warmup: out?.plan?.phases?.find((p: any) => p.phase?.toLowerCase() === 'warmup')?.items ?? [],
-        main_lifts: out?.plan?.phases?.find((p: any) => p.phase?.toLowerCase() === 'strength')?.items ?? [],
-        accessory_lifts: out?.plan?.phases?.find((p: any) => p.phase?.toLowerCase() === 'accessory')?.items ?? [],
-        cooldown: out?.plan?.phases?.find((p: any) => p.phase?.toLowerCase() === 'cooldown')?.items ?? [],
-        notes: out?.coach ?? null,
-        generated_by: 'claude',
-      }])
-      .select('id')
-      .single();
+    // --- In your main handler, AFTER you build the rest of the plan, call:
+    await buildCooldownPhase(out, req);
 
-    // 8) Build final response
-    const payload = {
-      ok: true,
-      name: out?.message || plan.name,
-      message: out?.message || plan.name,
-      coach: out?.coach || plan.coach,
-      plan: out?.plan,
-      workout_id: saved?.id ?? null,
+    // debug so you can confirm in DevTools
+    debug.cooldown = {
+      targets,
+      focusHints: focusFromSplit(out?.plan?.split),
+      finalCooldown: out?.plan?.phases?.find((p: any) => p?.phase?.toLowerCase() === 'cooldown')?.items?.map((i: any) => i?.name).filter(Boolean) || [],
     };
 
+    // which split/minutes & main lift did we end up with?
+    const splitOut: string =
+      (plan as any)?.split || body?.split || 'full';
+    const minutesOut: number =
+      Number((plan as any)?.duration ?? body?.minutes ?? 45);
+
+    // prefer explicit field, else first main exercise
+    const mainLiftName: string =
+      (plan as any)?.main_lift ||
+      workout?.mainExercises?.[0]?.name ||
+      (workout as any)?.main?.[0]?.name ||
+      'Main Lift';
+
+    // fetch recent history for that lift (avoid name collision)
+    const recentMainSets = mainLiftName ? await fetchRecentSetsForExercise(userId, mainLiftName, 12) : [];
+    const hist = summarizeHistory(recentMainSets);
+
+    // compose a smart coach message
+    const smartCoach = buildCoachNote({
+      split: splitOut,
+      minutes: minutesOut,
+      mainLift: mainLiftName,
+      history: hist,
+      equipment: Array.isArray(body?.equipment) ? body.equipment : [],
+      prefs,
+    });
+
+    // attach/override coach text (return this field)
+    if (plan) (plan as any).coach = smartCoach;
+    const coach = smartCoach;
+
+    // Final payload
+    const payload = {
+      ok: true,
+      name: out?.name || plan.name,
+      message: out?.message || plan.name,
+      coach,
+      plan,
+      workout,
+    };
     if (dbg) (payload as any).debug = debug;
     return NextResponse.json(payload, { status: 200 });
+    }
   } catch (err:any) {
     console.error('api/chat fatal', err?.stack || err);
     return J(200, { ok:false, error: err?.message || 'Internal server error' });
