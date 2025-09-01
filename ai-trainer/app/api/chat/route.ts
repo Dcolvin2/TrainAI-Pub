@@ -1057,14 +1057,24 @@ Schema (strict):
     }
 
     // --- In your main handler, AFTER you build the rest of the plan, call:
-    await buildCooldownPhase(out, req, userId, prefs, targets);
+    // Important: pass a holder that references the REAL plan object so mutations land in the response.
+    await buildCooldownPhase({ plan }, req, userId, prefs, targets);
 
-    // debug so you can confirm in DevTools
-    debug.cooldown = {
-      targets,
-      focusHints: focusFromSplit(out?.plan?.split),
-      finalCooldown: out?.plan?.phases?.find((p: any) => p?.phase?.toLowerCase() === 'cooldown')?.items?.map((i: any) => i?.name).filter(Boolean) || [],
-    };
+    // Mirror cooldown into workout.cooldown for legacy UI readers
+    {
+      const cd = plan.phases.find((p: any) => (p?.phase || '').toLowerCase() === 'cooldown');
+      if (cd) (workout as any).cooldown = cd.items;
+    }
+
+    // debug so you can confirm in DevTools (read from plan, not out.plan)
+    {
+      const cd = plan.phases.find((p: any) => (p?.phase || '').toLowerCase() === 'cooldown');
+      debug.cooldown = {
+        targets,
+        focusHints: focusFromSplit(plan?.split),
+        finalCooldown: (cd?.items || []).map((i: any) => i?.name).filter(Boolean),
+      };
+    }
 
     // which split/minutes & main lift did we end up with?
     const splitOut: string =
