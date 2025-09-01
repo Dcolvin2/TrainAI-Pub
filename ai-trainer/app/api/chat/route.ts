@@ -591,9 +591,14 @@ export async function POST(req: NextRequest) {
 
     // 2) classify intent (you already do this); set split/minutes/style
     const classifierSystem =
-`Extract intent for workout planning. Output strict JSON:
+`Extract intent for workout planning from "text" (latest user message). Output strict JSON:
 {"split":"pull|push|legs|upper|full|hiit","minutes":number,"style":"default|ocho"}.
-Default: {"split":"pull","minutes":45,"style":"default"} if unclear.`;
+Rules:
+- If user explicitly names a split, honor it.
+- If message mentions skiing or snow sports (e.g., "ski", "skiing", "ski trip", "snowboard"), prefer {"split":"legs"} unless the user clearly asked for a different split.
+- If message asks for "full body", pick {"split":"full"}.
+- Otherwise infer from context; if unclear use {"split":"pull"}.
+Default: {"split":"pull","minutes":45,"style":"default"} if still unclear.`;
 
     const lastUser = [...(body.messages||[])].reverse().find(m => m.role==='user')?.content || '';
     if (!lastUser || lastUser.trim().length < 2) {
@@ -957,6 +962,26 @@ Schema (strict):
 
       // Trim to max 6
       if (outItems.length > 6) outItems.length = 6;
+
+      // 4) Guarantee at least 3 with safe general mobility if still short
+      if (outItems.length < 3) {
+        const safeFillers = [
+          "Breathing — 90/90",
+          "Thread the Needle",
+          "Child's Pose",
+          "T-Spine Openers",
+          "Couch Stretch",
+          "Lat Stretch Against Wall",
+          "Figure-4 Glute Stretch",
+        ];
+        for (const name of safeFillers) {
+          if (outItems.length >= 3) break;
+          const k = norm(name);
+          if (!k || exclude.has(k) || seen.has(k)) continue;
+          seen.add(k);
+          outItems.push({ name, duration: '30–60s' });
+        }
+      }
 
       // Enforce stretch-only & target awareness using your policy helper
       const holder = { cooldown: outItems };

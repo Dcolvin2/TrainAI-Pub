@@ -9,12 +9,13 @@ function norm(s: unknown) {
 
 export function focusFromSplit(split?: string): string[] {
   const s = norm(split);
-  if (s.includes('leg') || s.includes('lower')) return ['legs', 'quads', 'hamstrings', 'glutes', 'hips', 'calves'];
+  if (s.includes('leg') || s.includes('lower')) return ['legs', 'quads', 'hamstrings', 'glutes', 'hips', 'calves', 'thoracic'];
   if (s.includes('push')) return ['chest', 'shoulders', 'triceps'];
   if (s.includes('pull')) return ['back', 'lats', 'biceps', 'posterior chain'];
   if (s.includes('upper')) return ['chest', 'shoulders', 'back', 'arms'];
-  if (s.includes('hiit')) return [];
-  return [];
+  if (s.includes('full')) return ['hips', 'back', 'core', 'glutes', 'quads', 'hamstrings', 'thoracic', 'calves'];
+  if (s.includes('hiit')) return ['hips', 'core', 'hamstrings', 'quads', 'calves', 'thoracic'];
+  return ['thoracic'];
 }
 
 export async function fetchCooldownContext(opts: {
