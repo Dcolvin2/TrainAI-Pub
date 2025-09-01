@@ -64,93 +64,6 @@ function parseCooldownJSON(payload: unknown): { items: { name: string; duration?
   return { items: cleaned };
 }
 
-// Helper: call your existing JSON chat with retry-on-invalid
-async function getCooldownFromLLM(
-  focusHints: string[],
-  dbCandidates: { name: string }[],
-  recentNames: Set<string>,
-): Promise<{ name: string; duration?: string; reps?: string; instruction?: string }[]> {
-  const sys =
-    'You are a strength coach. Propose varied, safe cooldown stretches/mobility matching today\'s focus. ' +
-    'Use the DB list for inspiration BUT you may also propose new items from your general knowledge. ' +
-    'Avoid any name in RECENT_COOLDOWNS. Prefer 3–6 items. STRICT JSON only.';
-  const user =
-    `FOCUS_HINTS=${JSON.stringify(focusHints)}\n` +
-    `DB_CANDIDATES=${JSON.stringify(dbCandidates)}\n` +
-    `RECENT_COOLDOWNS=${JSON.stringify(Array.from(recentNames))}\n\n` +
-    `Respond as:\n` +
-    `{"items":[{"name":"...", "duration":"30–60s", "reps":"optional", "instruction":"optional"}]}`;
-
-  // Replace with your actual helper. Must return a parsed JSON object if possible.
-  // Example: const raw = await chatJSON([{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.6 });
-  let raw: unknown;
-  try {
-    // @ts-ignore – Replace with your real JSON-call helper:
-    raw = await claudeJSON(sys, user);
-  } catch {
-    raw = null;
-  }
-
-  let parsed = parseCooldownJSON(raw);
-  if (!parsed || !parsed.items.length) {
-    // one light retry with stronger instruction
-    const userRetry =
-      user +
-      `\nIMPORTANT: Return STRICT JSON only. Do not include commentary, code fences, or extra keys. Provide at least 3 items if safe.`;
-    try {
-      // @ts-ignore – Replace with your real JSON-call helper:
-      const retryRaw = await claudeJSON(sys, userRetry);
-      parsed = parseCooldownJSON(retryRaw);
-    } catch {
-      parsed = null;
-    }
-  }
-
-  return parsed?.items ?? [];
-}
-
-// Helper: enforce guardrails (dedupe vs session & recent, constrain count, top-up from DB)
-function guardrailCooldowns(
-  llmItems: { name: string; duration?: string; reps?: string; instruction?: string }[],
-  sessionNames: Set<string>,
-  recentNames: Set<string>,
-  dbCandidates: { name: string }[],
-  min = 3,
-  max = 6,
-) {
-  const exclude = new Set<string>([...sessionNames, ...recentNames]);
-  const out: { name: string; duration?: string; reps?: string; instruction?: string }[] = [];
-  const seen = new Set<string>();
-
-  const pushIfOk = (it: { name: string; duration?: string; reps?: string; instruction?: string }) => {
-    const key = norm(it.name);
-    if (!key || exclude.has(key) || seen.has(key)) return;
-    seen.add(key);
-    out.push(it);
-  };
-
-  // 1) Start with LLM picks
-  llmItems.forEach(pushIfOk);
-
-  // 2) Top-up from DB if needed
-  if (out.length < min) {
-    const fillers = dbCandidates.filter((r) => {
-      const k = norm(r.name);
-      return k && !exclude.has(k) && !seen.has(k);
-    });
-    shuffleInPlace(fillers);
-    for (const f of fillers) {
-      pushIfOk({ name: f.name, duration: '30–60s' });
-      if (out.length >= min) break;
-    }
-  }
-
-  // 3) Trim to max
-  if (out.length > max) out.length = max;
-
-  return out;
-}
-
 function norm(s: unknown) {
   return String(s ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
@@ -417,14 +330,6 @@ Schema (strict):
       '• Do NOT include pec/chest stretches on legs day, or non-target muscles.',
     ].join('\n');
 
-    const cooldownContext = [
-      'TARGETS:',
-      `  ${targets.join(', ') || 'full'}`,
-      '',
-      'OPTIONS (per target):',
-      TARGET_OPTIONS || '(no mobility catalog found; use general t-spine/breathing)',
-    ].join('\n');
-
     const user = {
       minutes, split, style, budget: time,
       equipment,
@@ -432,52 +337,13 @@ Schema (strict):
       history: body.messages || [],
     };
 
-    // Build messages with cooldown context
+    // Build messages
     const messages = [
       { role: 'system', content: systemCoach },
-      { role: 'system', content: cooldownContext },
       { role: 'user', content: JSON.stringify(user) }
     ];
 
     let out = await claudeJSON(system, user);
-
-    // Safety validator for cooldown (last resort)
-    const cooldownNames = new Set(
-      targets.flatMap(t => (byTarget[t.toLowerCase()] || []))
-        .map(n => n.toLowerCase())
-    );
-
-    function isStretchy(n: string) {
-      return /(stretch|mobility|pose|pigeon|child'?s|hip\s*flexor|hamstring|quad|calf|lat|pec|thoracic|t-?spine|breath|thread)/i.test(n);
-    }
-
-    function repairCooldown(items: any[]) {
-      const keep = [];
-      for (const it of (items || [])) {
-        const n = String(it?.name || '').trim();
-        if (!n) continue;
-        if (!isStretchy(n)) continue;
-        if (cooldownNames.size && !cooldownNames.has(n.toLowerCase())) continue;
-        keep.push({ name: n, duration: it?.duration || '45–60s' });
-      }
-      // backfill by targets if we have <2
-      if (keep.length < 2) {
-        for (const t of targets) {
-          for (const n of byTarget[t.toLowerCase()] || []) {
-            if (keep.length >= 3) break;
-            if (!keep.some(k => k.name.toLowerCase() === n.toLowerCase()))
-              keep.push({ name: n, duration: '45–60s' });
-          }
-          if (keep.length >= 3) break;
-        }
-      }
-      return keep.slice(0, 3);
-    }
-
-    // Apply cooldown repair if needed
-    const llmCooldown = out?.workout?.cooldown || [];
-    const repaired = repairCooldown(llmCooldown);
-    out.workout = { ...(out.workout || {}), cooldown: repaired };
 
     // Normalize whatever the LLM returns into the ONE shape your UI expects
     let { workout } = normalizeLLM(out);
@@ -517,49 +383,139 @@ Schema (strict):
       ],
     };
 
-    // === Enhanced cooldown system with strict JSON parsing and duplicate prevention ===
-    const phases = (Array.isArray(out?.plan?.phases) ? out.plan.phases : []) as PlanPhase[];
+    // --- Cooldown builder with diagnostics ---
+    async function buildCooldownPhase(out: any, req: Request) {
+      const phases = (Array.isArray(out?.plan?.phases) ? out.plan.phases : []) as PlanPhase[];
 
-    // Gather names already in the session (to avoid duplicates)
-    const sessionNames = new Set<string>();
-    for (const ph of phases) {
-      for (const it of ph.items ?? []) {
-        if (it?.name) sessionNames.add(norm(String(it.name)));
+      // Names already in session (avoid dupes)
+      const sessionNames = new Set<string>();
+      for (const ph of phases) {
+        for (const it of ph.items ?? []) {
+          if (it?.name) sessionNames.add(norm(it.name));
+        }
       }
+
+      const focusHints = focusFromSplit(out?.plan?.split);
+      const { rankedCandidates, allCandidates, recentNames } = await fetchCooldownContext({
+        focusHints,
+        sampleLimit: 150,
+        recentDays: 14,
+      });
+
+      // --- diagnostics (server logs) ---
+      const peek = (arr: { name: string }[], n = 8) => arr.slice(0, n).map((x) => x.name).join(', ');
+      console.log('[cooldown] focusHints=', focusHints);
+      console.log('[cooldown] rankedCandidates=', rankedCandidates.length, 'eg:', peek(rankedCandidates));
+      console.log('[cooldown] allCandidates=', allCandidates.length, 'eg:', peek(allCandidates));
+      console.log('[cooldown] recentNames size=', recentNames.size);
+
+      // Ask LLM (your helper) for suggestions
+      const sys =
+        'You are a strength coach. Propose varied, safe cooldown stretches/mobility matching today\'s focus. ' +
+        'Use the DB list as inspiration BUT you may also propose new items from your knowledge. ' +
+        'Avoid RECENT_COOLDOWNS and avoid duplicates with existing session items. Prefer 3–6 items. STRICT JSON only.';
+      const user =
+        `FOCUS_HINTS=${JSON.stringify(focusHints)}\n` +
+        `DB_CANDIDATES=${JSON.stringify(rankedCandidates)}\n` +
+        `RECENT_COOLDOWNS=${JSON.stringify(Array.from(recentNames))}\n\n` +
+        `Respond as:\n` +
+        `{"items":[{"name":"...", "duration":"30–60s", "reps":"optional", "instruction":"optional"}]}`;
+
+      // @ts-ignore replace with your real JSON chat helper
+      const raw = await claudeJSON(sys, user);
+
+      const parsed = ((): { items: { name: string; duration?: string; reps?: string; instruction?: string }[] } | null => {
+        if (!raw || typeof raw !== 'object') return null;
+        const r = raw as Record<string, unknown>;
+        const items = Array.isArray(r.items) ? r.items : null;
+        if (!items) return null;
+        const clean = items
+          .map((x) => (x && typeof x === 'object' ? x : null))
+          .filter(Boolean)
+          .map((x) => {
+            const it = x as Record<string, unknown>;
+            const name = typeof it.name === 'string' ? it.name.trim() : '';
+            if (!name) return null;
+            return {
+              name,
+              duration: typeof it.duration === 'string' ? it.duration : '30–60s',
+              reps: typeof it.reps === 'string' ? it.reps : undefined,
+              instruction: typeof it.instruction === 'string' ? it.instruction : '',
+            };
+          })
+          .filter(Boolean) as { name: string; duration?: string; reps?: string; instruction?: string }[];
+        return { items: clean };
+      })();
+
+      let picks = mapLLMToPlanItems(parsed?.items ?? []);
+
+      // --- guardrail: no repeats (session + recent), then top-up from ranked, then from all ---
+      const exclude = new Set<string>([...sessionNames, ...recentNames]);
+      const seen = new Set<string>();
+      const outItems: PlanItem[] = [];
+
+      const pushIfOk = (it: { name: string; duration?: string; reps?: string; instruction?: string }) => {
+        const k = norm(it.name);
+        if (!k || exclude.has(k) || seen.has(k)) return;
+        seen.add(k);
+        outItems.push({
+          name: it.name,
+          duration: it.duration ?? '30–60s',
+          reps: it.reps,
+          instruction: it.instruction ?? '',
+        });
+      };
+
+      // 1) keep valid LLM picks
+      for (const p of picks) pushIfOk(p);
+
+      // 2) top-up from ranked if needed
+      if (outItems.length < 3) {
+        const fillers = rankedCandidates.filter((c) => {
+          const k = norm(c.name);
+          return k && !exclude.has(k) && !seen.has(k);
+        });
+        shuffleInPlace(fillers);
+        for (const f of fillers) {
+          pushIfOk({ name: f.name, duration: '30–60s' });
+          if (outItems.length >= 3) break;
+        }
+      }
+
+      // 3) last-resort top-up from all candidates
+      if (outItems.length < 3) {
+        const any = allCandidates.filter((c) => {
+          const k = norm(c.name);
+          return k && !exclude.has(k) && !seen.has(k);
+        });
+        shuffleInPlace(any);
+        for (const f of any) {
+          pushIfOk({ name: f.name, duration: '30–60s' });
+          if (outItems.length >= 3) break;
+        }
+      }
+
+      // Trim to max 6
+      if (outItems.length > 6) outItems.length = 6;
+
+      console.log('[cooldown] final picks=', outItems.map((x) => x.name));
+
+      // Write into phases (place this near the END of your route so nothing overwrites it later)
+      const cdIdx = phases.findIndex((p) => (p.phase ?? '').toLowerCase() === 'cooldown');
+      if (cdIdx >= 0) phases[cdIdx].items = outItems;
+      else phases.push({ phase: 'cooldown', items: outItems });
+
+      out.plan.phases = phases;
     }
 
-    // Focus hints from plan.split (customize if you prefer main lift–based detection)
-    const focusHints = focusFromSplit(out?.plan?.split);
-
-    // DB context + recent cooldown avoidance set
-    const { dbCandidates, recentNames } = await fetchCooldownContext({ focusHints, sampleLimit: 100, recentDays: 14 });
-
-    // Ask LLM for candidates (JSON)
-    const llmItems = await getCooldownFromLLM(focusHints, dbCandidates, recentNames);
-
-    // Map + guardrail
-    const mapped = mapLLMToPlanItems(llmItems);
-    const guarded = guardrailCooldowns(
-      mapped.map((m) => ({ name: m.name, duration: typeof m.duration === 'string' ? m.duration : '30–60s', reps: typeof m.reps === 'string' ? m.reps : undefined, instruction: m.instruction || '' })),
-      sessionNames,
-      recentNames,
-      dbCandidates,
-      3,
-      6,
-    );
-
-    const cdIdx = phases.findIndex((p: PlanPhase) => (p.phase ?? '').toLowerCase() === 'cooldown');
-    if (cdIdx >= 0) phases[cdIdx].items = guarded as PlanItem[];
-    else phases.push({ phase: 'cooldown', items: guarded as PlanItem[] });
-
-    out.plan.phases = phases;
+    // --- In your main handler, AFTER you build the rest of the plan, call:
+    await buildCooldownPhase(out, req);
 
     // debug so you can confirm in DevTools
     debug.cooldown = {
       targets,
       focusHints: focusFromSplit(out?.plan?.split),
-      llmItems: llmItems?.map((i:any)=>i?.name).filter(Boolean) || [],
-      finalCooldown: guarded?.map((i:any)=>i?.name).filter(Boolean) || [],
+      finalCooldown: out?.plan?.phases?.find((p: any) => p?.phase?.toLowerCase() === 'cooldown')?.items?.map((i: any) => i?.name).filter(Boolean) || [],
     };
 
     // which split/minutes & main lift did we end up with?

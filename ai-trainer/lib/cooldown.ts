@@ -22,10 +22,10 @@ export async function fetchCooldownContext(opts: {
   sampleLimit?: number;
   recentDays?: number;
 }) {
-  const sampleLimit = opts.sampleLimit ?? 80;
+  const sampleLimit = opts.sampleLimit ?? 120;
   const recentDays = opts.recentDays ?? 14;
 
-  // 1) Candidate cooldown/mobility/stretch rows from DB
+  // 1) Grab all cooldown/warmup rows (we'll rank, not over-filter)
   const { data: exRows, error: exErr } = await supabase
     .from('exercises')
     .select('name, category, primary_muscle, target_muscles, exercise_phase')
@@ -34,37 +34,38 @@ export async function fetchCooldownContext(opts: {
 
   if (exErr) throw exErr;
 
-  const wanted: string[] = (opts.focusHints ?? []).map((v) =>
-    String(v ?? '').toLowerCase().trim()
-  );
-
-  const pool = (exRows ?? []).filter((r) => {
-    const cat = String(r.category ?? '').toLowerCase();
-    const pm = String(r.primary_muscle ?? '').toLowerCase();
-    const tms: string[] = (r.target_muscles ?? []).map((x: unknown) =>
-      String(x ?? '').toLowerCase()
-    );
-
-    const isMobilityish = /mobility|stretch|cooldown|yoga|flow|flex|release|breath/.test(cat);
-
-    const hitsTarget =
-      wanted.length === 0
-        ? true
-        : wanted.some((t: string) => pm.includes(t) || tms.some((m: string) => m.includes(t)));
-
-    return isMobilityish && hitsTarget;
-  });
+  const wanted: string[] = (opts.focusHints ?? []).map((v) => norm(v));
 
   // Dedup by name
   const seen = new Set<string>();
-  const dbCandidates = pool
-    .map((r) => ({ name: r.name as string }))
-    .filter((r) => {
-      const key = norm(r.name);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
+  const all = (exRows ?? []).reduce<{ name: string; primary?: string; targets?: string[] }[]>((acc, r) => {
+    const nm = String(r.name ?? '').trim();
+    if (!nm) return acc;
+    const key = norm(nm);
+    if (seen.has(key)) return acc;
+    seen.add(key);
+    acc.push({
+      name: nm,
+      primary: typeof r.primary_muscle === 'string' ? r.primary_muscle : undefined,
+      targets: Array.isArray(r.target_muscles) ? r.target_muscles.map((x) => String(x ?? '')) : [],
     });
+    return acc;
+  }, []);
+
+  // Score by focus hints (but keep all)
+  const ranked = all
+    .map((row) => {
+      const pm = norm(row.primary);
+      const tms = (row.targets ?? []).map((x) => norm(x));
+      let score = 0;
+      for (const h of wanted) {
+        if (!h) continue;
+        if (pm.includes(h)) score += 2;
+        if (tms.some((m) => m.includes(h))) score += 1;
+      }
+      return { ...row, _score: score };
+    })
+    .sort((a, b) => b._score - a._score);
 
   // 2) Recently used cooldown names (avoid repeats)
   const sinceISO = new Date(Date.now() - recentDays * 24 * 3600 * 1000).toISOString().slice(0, 10);
@@ -82,7 +83,12 @@ export async function fetchCooldownContext(opts: {
       .map((n) => norm(n as string)),
   );
 
-  return { dbCandidates, recentNames };
+  // Return both the ranked and the full pool for diagnostics/fallback
+  return {
+    rankedCandidates: ranked.map((r) => ({ name: r.name })), // score already applied via sort
+    allCandidates: all.map((r) => ({ name: r.name })),       // unranked backup pool
+    recentNames,
+  };
 }
 
 export function mapLLMToPlanItems(items: CoolItem[]) {
@@ -96,7 +102,6 @@ export function mapLLMToPlanItems(items: CoolItem[]) {
     .filter((i) => i.name && i.name.length > 1);
 }
 
-// Fisher-Yates shuffle (small, dependency-free)
 export function shuffleInPlace<T>(arr: T[]) {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
