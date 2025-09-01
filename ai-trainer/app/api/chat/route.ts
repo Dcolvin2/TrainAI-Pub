@@ -72,6 +72,22 @@ function norm(s: unknown) {
   return String(s ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+// Heuristic: decide if the last user message is a general Q&A (not a workout request)
+function isLikelyQA(msg: string, splitInput?: string | undefined): boolean {
+  const m = String(msg || '').toLowerCase().trim();
+  if (!m) return false;
+
+  // if a split was explicitly provided, it's a workout request
+  if (typeof splitInput === 'string' && splitInput) return false;
+
+  // keywords & shape that imply Q&A (gear, injuries, how/why/should/compare), often with a question mark
+  const qaHints = /\b(gear|equipment|attachment|worth|compare|difference|should i|how (do|to)|why|when|injur|pain|rest day|nutrition|cardio|form|technique)\b/;
+  const looksQuestion = m.includes('?');
+  const mentionsSplit = /\b(push|pull|legs|upper|full|hiit)\b/.test(m);
+
+  return !mentionsSplit && (looksQuestion || qaHints.test(m));
+}
+
 function mainLiftForSplit(split: string, equipment: string[]): string | null {
   const equipmentSet = new Set(equipment.map(e => e.toLowerCase()));
   
@@ -356,6 +372,10 @@ export async function POST(req: NextRequest) {
     // identify user once for the whole handler
     const userId = (body?.userId ?? req.headers.get('x-user-id') ?? '') as string;
 
+    const lastUserEarly = Array.isArray(body?.messages)
+      ? [...body.messages].reverse().find(m => m.role === 'user')?.content || ''
+      : '';
+
     const debug: DebugLog = {};
     const dbg = wantDebug(req, body);
     dpush(debug, 'incoming', {
@@ -367,6 +387,36 @@ export async function POST(req: NextRequest) {
     });
 
     const splitInput = typeof body?.split === 'string' ? body.split.trim().toLowerCase() : undefined;
+
+    // ---------- Q&A SHORT-CIRCUIT ----------
+    if (isLikelyQA(lastUserEarly, splitInput)) {
+      const qaSystem =
+        'You are a concise, evidence-informed strength coach. Answer the question directly, in <=120 words. ' +
+        'Give a clear recommendation with 1–2 pros/cons that matter most. Avoid hype. STRICT JSON only: {"answer":"..."}';
+      const qaUser = {
+        question: lastUserEarly,
+        known_equipment: Array.isArray(body?.equipment) ? body.equipment : undefined,
+      };
+      const qa = await claudeJSON(qaSystem, qaUser, { temperature: 0.3, max_tokens: 220 });
+      const answer = typeof qa?.answer === 'string'
+        ? qa.answer.trim()
+        : (typeof (qa as any)?.text === 'string' ? (qa as any).text.trim() : 'Here\'s my take, briefly: prioritize usefulness and versatility for your goals and space.');
+
+      if (dbg) dpush(debug, 'qa', { asked: lastUserEarly, answerLen: answer.length });
+
+      // Return a minimal, schema-safe payload so the UI doesn't crash expecting fields.
+      const payload = {
+        ok: true,
+        name: 'Coach Q&A',
+        message: answer,
+        coach: '',
+        plan: { split: 'qa', duration: 0, name: 'Coach Q&A', main_lift: '', phases: [] },
+        workout: { warmup: [], mainExercises: [], finisher: null as any },
+        ...(dbg ? { debug } : {}),
+      };
+      return NextResponse.json(payload, { status: 200 });
+    }
+    // ---------- end Q&A SHORT-CIRCUIT ----------
 
     // ---------- HYBRID SPLIT v2 (gated) ----------
     if (HYBRID_SPLIT_ENABLED && splitInput) {
