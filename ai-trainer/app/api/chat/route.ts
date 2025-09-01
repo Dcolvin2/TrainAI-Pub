@@ -577,36 +577,57 @@ export async function POST(req: NextRequest) {
     // 1a) Get user preferences and learn from messages
     const prefs = await getUserPrefs(userId);
 
-    // --- QA guard: equipment/gear question -> concise answer, early return ---
+    // --- QA guard: equipment/gear question -> concise TL;DR + bullets + verdict, early return ---
     const latestMsg = [...(body.messages||[])].reverse().find(m => m.role==='user')?.content || '';
     const looksLikeGearQA =
       /\?/.test(latestMsg) &&
-      /\b(attachment|worth|buy|purchase|recommend|upgrade|brand|model|equipment|barbell|dumbbell|kettlebell|rack|bench|machine|landmine|t[-\s]?bar|row\s*attachment|lat\s*pulldown|cable\s*attachment)\b/i.test(latestMsg);
+      /\b(attachment|worth|buy|purchase|recommend|upgrade|brand|model|equipment|barbell|dumbbell|kettlebell|rack|bench|machine|landmine|t[-\s]?bar|row\s*attachment|t[-\s]?bar\s*row|lat\s*pulldown|cable\s*attachment)\b/i.test(latestMsg);
     if (looksLikeGearQA) {
       const qaSys =
-        'You are a concise strength coach. Return STRICT JSON only: {"answer": string}.\n' +
-        'Answer the user gear/equipment question in 4–7 sentences with practical pros/cons and a clear recommendation.';
+        'You are a concise strength coach. Return STRICT JSON ONLY in this schema:\n' +
+        '{ "tldr": string, "bullets": [string, string], "verdict": string }\n' +
+        'Rules: tldr ≤ 140 chars. Each bullet ≤ 120 chars. verdict ≤ 120 chars and MUST start with "Verdict: ". No extra fields, no prose.';
       const qaUser = { question: latestMsg, equipment: Array.isArray(body?.equipment) ? body.equipment : [] };
       const qa = await claudeJSON(qaSys, qaUser);
-      const answer: string =
-        (qa && typeof (qa as any).answer === 'string' && (qa as any).answer.trim())
-          ? (qa as any).answer.trim()
-          : (typeof (qa as any)?.text === 'string' && (qa as any).text.trim())
-            ? (qa as any).text.trim()
-            : 'Short version: it depends on your goals and space. You can usually mimic T-bar rows with a landmine/barbell setup. If you row often and want the fixed arc/comfort, the attachment can be worth it; otherwise, your current setup likely covers the pattern.';
+
+      const clamp = (s: string, max = 140) => {
+        const t = (s || '').trim().replace(/\s+/g, ' ');
+        return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+      };
+
+      const tldr =
+        typeof (qa as any)?.tldr === 'string' && (qa as any).tldr.trim()
+          ? clamp((qa as any).tldr.trim(), 140)
+          : 'You can mimic T-bar rows with a landmine/barbell; the attachment mainly adds comfort and a fixed path.';
+
+      const rawBullets = Array.isArray((qa as any)?.bullets) ? (qa as any).bullets : [];
+      const b1 = typeof rawBullets[0] === 'string' && rawBullets[0].trim()
+        ? clamp(rawBullets[0].trim(), 120)
+        : 'Pros: stable arc for heavy rows; feels good on wrists/low back for many lifters.';
+      const b2 = typeof rawBullets[1] === 'string' && rawBullets[1].trim()
+        ? clamp(rawBullets[1].trim(), 120)
+        : 'Cons: single-purpose; similar stimulus with landmine/barbell you likely already own.';
+
+      const verdictRaw =
+        typeof (qa as any)?.verdict === 'string' && (qa as any).verdict.trim()
+          ? (qa as any).verdict.trim()
+          : 'Verdict: Buy if you row often and want the comfort; otherwise skip—your current setup covers it.';
+      const verdict = verdictRaw.startsWith('Verdict:') ? clamp(verdictRaw, 120) : clamp(`Verdict: ${verdictRaw}`, 120);
+
+      const answer = `TL;DR: ${tldr}\n• ${b1}\n• ${b2}\n${verdict}`;
 
       const payload: any = {
         ok: true,
         name: 'Coach Q&A',
-        message: answer,
-        coach: answer, // <- set coach too so UI won't synthesize a workout blurb
-        plan: { split: 'qa', duration: 0, name: 'Coach Q&A', main_lift: '', phases: [] },
-        workout: { warmup: [], mainExercises: [], finisher: null },
+        message: answer,           // keep UI text concise & formatted
+        coach: answer,             // mirror in coach so nothing overwrites it
+        plan: { split: 'qa', duration: 0, name: 'Coach Q&A', main_lift: '', phases: [] }, // no phases for QA
+        workout: { warmup: [], mainExercises: [], finisher: null },                        // empty workout
       };
       if (wantDebug(req, body)) {
         payload.debug = {
           ...(payload.debug || {}),
-          qa: { asked: latestMsg, answerLen: answer.length }
+          qa: { asked: latestMsg, tldrLen: tldr.length, bullets: [b1, b2], verdict, answerLen: answer.length }
         };
       }
       return NextResponse.json(payload, { status: 200 });
