@@ -79,11 +79,7 @@ function normalizeForUI(raw: any, split: string, minutes: number) {
   };
   const workout = { warmup, mainExercises: main, finisher, cooldown: [] };
   
-  // Optional client-side safety net for cooldown
-  const banHi = (name: string) => /(burpee|sprint|thruster|box\s*jump|mountain\s*climber|jumping\s*jacks)/i.test(name);
-  const isStretch = (name: string) => /(stretch|mobility|pose|pigeon|child'?s|hamstring|quad|lat|pec|hip\s*flexor|thoracic|breathing)/i.test(name);
-  const cd = (workout.cooldown || []).filter((x: any) => !banHi(x.name));
-  if (!cd.length) workout.cooldown = (workout.cooldown || []).filter((x: any) => isStretch(x.name));
+
   
   const coach =
     (raw?.coach && String(raw.coach).trim().length > 20 && !/^trainai$/i.test(raw.coach))
@@ -466,17 +462,14 @@ export default function TodaysWorkoutPage() {
       } else {
         // Use regular chat endpoint for other requests
         const equipment = await getUserEquipment(user?.id || '');
-        const response = await fetch('/api/chat', {
+        const response = await fetch('/api/chat-workout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           cache: 'no-store', // avoid stale
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             userId: user?.id,
             minutes: selectedTime,
-            equipment,
-            messages: [
-              { role: 'user', content: userMessage }
-            ]
+            message: userMessage   // ← pass the goal text
           })
         });
 
@@ -520,7 +513,7 @@ export default function TodaysWorkoutPage() {
             name: plan.name,
             warmup: workout.warmup,
             main: workout.mainExercises,
-            cooldown: normalizeCooldown(rawCooldown, plan.split), // ← pass split
+            cooldown: normalizeCooldown(rawCooldown), // ← no longer need split
             est_total_minutes: plan.duration,
           };
 
@@ -564,18 +557,15 @@ export default function TodaysWorkoutPage() {
     // before the fetch
     setChatMessages?.(prev => [...prev, { role:'assistant', content:'Planning your session…', meta:'planning' }]);
 
-    const res = await fetch('/api/chat', { 
-      method: 'POST', 
+    const res = await fetch('/api/chat-workout', {
+      method: 'POST',
       headers: { 'content-type': 'application/json' },
       cache: 'no-store', // avoid stale
-      body: JSON.stringify({ 
+      body: JSON.stringify({
         userId: user?.id,
-        split, 
-        minutes, 
-        equipment, 
-        messages: [
-          { role: 'user', content: `I'd like a ${minutes} minute ${split} workout.` }
-        ],
+        split,
+        minutes,
+        message: ''            // no special goal; just the selected split
       }),
     });
 
@@ -614,7 +604,7 @@ export default function TodaysWorkoutPage() {
       name: plan.name,
       warmup: workout.warmup,
       main: workout.mainExercises,
-      cooldown: normalizeCooldown(rawCooldown, plan.split), // ← pass split
+      cooldown: normalizeCooldown(rawCooldown), // ← no longer need split
       est_total_minutes: plan.duration,
     };
     const gw = llmToGeneratedWorkout(legacy);
@@ -660,35 +650,23 @@ export default function TodaysWorkoutPage() {
     hiit:  ["Child's Pose","Thread the Needle","Calf Wall Stretch","90/90 Breathing"],
   };
 
-  function normalizeCooldown(items: any[] = [], split?: string) {
-    const src = Array.isArray(items) ? items : [];
-    const out: { name: string; duration?: string }[] = [];
-
-    // filter mobility only
+  const IS_STRETCH = /(stretch|mobility|pose|pigeon|child'?s|hamstring|quad|quadriceps|calf|gastroc|soleus|lat|pec|chest|hip\s*flexor|psoas|thoracic|t-?spine|breath|diaphragm|thread\s*the\s*needle|world'?s\s*greatest|cat[-\s]*cow|wall\s*angel|openers?|glute|piriformis|adductor|groin)/i;
+  function normalizeCooldown(items: any[] = []) {
+    const cleaned = (Array.isArray(items) ? items : [])
+      .map((i:any) => ({
+        name: i?.name || i?.exercise || '',
+        duration: i?.duration || (i?.reps ? String(i.reps) : undefined) || '30–60s'
+      }))
+      .filter(i => i.name && IS_STRETCH.test(i.name));
+    // de-dup by name, but DO NOT backfill
     const seen = new Set<string>();
-    for (const it of src) {
-      const name = String(it?.name || it?.exercise || '').trim();
-      if (!name || !STRETCHY.test(name) || HIIT_OR_STRENGTHY.test(name)) continue;
-      const k = name.toLowerCase();
-      if (seen.has(k)) continue;
+    const dedup = cleaned.filter(i => {
+      const k = i.name.toLowerCase();
+      if (seen.has(k)) return false;
       seen.add(k);
-      out.push({ name, duration: it?.duration || (it?.reps && /^\d/.test(String(it.reps)) ? String(it.reps) : '45–60s') });
-    }
-
-    // split-aware top-up to ensure 2–4 items
-    const want = Math.min(4, Math.max(2, out.length || 3));
-    if (out.length < want) {
-      const fb = FALLBACK_BY_SPLIT[(split||'full').toLowerCase()] || FALLBACK_BY_SPLIT.full;
-      for (const name of fb) {
-        if (out.length >= want) break;
-        const k = name.toLowerCase();
-        if (!seen.has(k)) {
-          seen.add(k);
-          out.push({ name, duration: '45–60s' });
-        }
-      }
-    }
-    return out.slice(0,4);
+      return true;
+    });
+    return dedup.slice(0, 5); // allow up to 5 good stretches if the model sent them
   }
 
   // Use normalized data for rendering - single source of truth

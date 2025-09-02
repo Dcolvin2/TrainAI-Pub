@@ -5,6 +5,8 @@ import { supabase } from "@/lib/supabaseClient";
 import { devlog } from "@/lib/devlog";
 
 import { normalizePlan as normalizePlanLib, buildChatSummary } from "@/lib/normalizePlan";
+import { fetchCooldownContext, mapLLMToPlanItems, focusFromSplit } from '@/lib/cooldown';
+import { sanitizeCooldown } from '@/lib/cooldownPolicy';
 
 export const runtime = "nodejs";
 
@@ -103,43 +105,30 @@ function filterMobilityOnly(list: any[] = []) {
   return out;
 }
 
-async function ensureCooldownOn(plan: any, workout: any, split: string) {
-  const fromWorkout = filterMobilityOnly(workout?.cooldown);
-  const fromPlan = filterMobilityOnly(
-    (Array.isArray(plan?.phases) ? plan.phases : [])
-      .find((p:any)=>String(p?.phase).toLowerCase()==='cooldown')?.items
-  );
+async function ensureCooldownOn(plan: any, workout: any, split: string, userId?: string) {
+  // Build focus targets from split (or derive from goal if split is empty)
+  const focusTargets = focusFromSplit(split);
 
-  let cooldown = (fromWorkout.length ? fromWorkout : fromPlan);
+  // Pull what the model sent (either workout.cooldown or plan.cooldown phase)
+  const modelCooldown = Array.isArray(workout?.cooldown)
+    ? workout!.cooldown
+    : (plan?.phases?.find((p: any) => String(p.phase).toLowerCase()==='cooldown')?.items ?? []);
 
-  if (cooldown.length < 2) {
-    const sessionNames = [
-      ...(workout?.warmup||[]).map((x:any)=>x?.name).filter(Boolean),
-      ...(workout?.mainExercises||[]).map((x:any)=>x?.name).filter(Boolean)
-    ];
-    const topups = await buildCooldownForSplit((split||'full') as any, sessionNames);
-    const merged = [...cooldown, ...topups];
+  // Normalize → sanitize with DB-backed fills as needed
+  const holder = { cooldown: mapLLMToPlanItems(modelCooldown) };
+  await sanitizeCooldown(holder, userId || '', /* prefs */ {}, focusTargets);
 
-    // de-dupe
-    const seen = new Set<string>();
-    cooldown = merged.filter(x=>{
-      const k = x.name.toLowerCase();
-      if (!k || seen.has(k)) return false;
-      seen.add(k); return true;
-    }).slice(0,4);
-  }
-
-  // write back into both shapes
+  // Write back to outgoing workout
   if (!Array.isArray(workout.cooldown)) workout.cooldown = [];
-  workout.cooldown = cooldown;
+  workout.cooldown = holder.cooldown;
 
   // ensure plan has a cooldown phase
   if (!Array.isArray(plan.phases)) plan.phases = [];
   const idx = plan.phases.findIndex((p:any)=>String(p?.phase).toLowerCase()==='cooldown');
-  if (idx >= 0) plan.phases[idx].items = cooldown;
-  else plan.phases.push({ phase: 'cooldown', items: cooldown });
+  if (idx >= 0) plan.phases[idx].items = holder.cooldown;
+  else plan.phases.push({ phase: 'cooldown', items: holder.cooldown });
 
-  return cooldown;
+  return holder.cooldown;
 }
 
 // Catalog-based backup used ONLY if the LLM output is unusable.
@@ -1091,7 +1080,7 @@ export async function POST(req: Request) {
     }
 
     // guarantee cooldown before returning
-    await ensureCooldownOn(safePlan, finalWorkout, split || 'full');
+    await ensureCooldownOn(safePlan, finalWorkout, split || 'full', userId);
 
     // derive a clean, deterministic title (e.g., "Legs (~45 min)")
     const nice = titleFor(split, minutesNum);
