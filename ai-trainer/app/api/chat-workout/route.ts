@@ -912,6 +912,8 @@ export async function POST(req: Request) {
     const minutes = Number(search.get("minutes") || body.minutes) || 45;
     const split = S(search.get("split") || body.split); // push|pull|legs|upper|full|hiit (optional)
     const message = S(body.message);
+    const goal = message; // free-form user intent, e.g., "prep for ski season"
+    const wantSki = /(^|\b)ski(ing)?\b/i.test(goal);
 
     if (!userId) {
       return NextResponse.json({ ok: false, error: "Missing userId" }, { status: 400 });
@@ -953,8 +955,42 @@ export async function POST(req: Request) {
     }
 
     // 2) Build messages for the model (keep this exactly what you send)
-    const systemPrompt = 'You are a workout generator that returns STRICT JSON with keys: plan{...} and workout{...}.';
-    const userPrompt = JSON.stringify({ split, minutes, equipment: equipmentList });
+    const systemPrompt = [
+      'You are TrainAI, a strength & conditioning coach.',
+      'Read the "goal" and tailor the session accordingly.',
+      'Respect available equipment and the total minutes.',
+      'When goal implies a sport or season (e.g., ski season), include:',
+      '- Activation with isometrics for joint positions used in the sport (e.g., wall sits / split-squat holds for skiing).',
+      '- Eccentric-biased quad work (e.g., tempo squats, step-downs), posterior-chain support, and hip stability.',
+      '- Lateral / reactive plyometrics (e.g., skater hops, lateral bounds) with low volume but high quality.',
+      '- Anti-rotation core (Pallof press / chops).',
+      '- A short conditioning block (HIIT or incline work) appropriate to the equipment.',
+      'Warm-up must be 5–10 min; Cool-down must be 3 mobility stretches targeting likely tissues for the goal.',
+      'Output STRICT JSON ONLY with keys:',
+      '{',
+      '  "plan": { "name": string, "duration_min": number, "phases": [',
+      '     { "phase": "prep"|"activation"|"strength"|"conditioning"|"cooldown",',
+      '       "items": [ { "name": string, "sets"?: number|string, "reps"?: string|number, "duration"?: string|number, "instruction"?: string, "isAccessory"?: boolean } ]',
+      '     } ]',
+      '  },',
+      '  "workout": { "warmup": [], "main": [], "conditioning"?: [], "cooldown": [] }',
+      '}',
+    ].join('\n');
+
+    const userPrompt = JSON.stringify({
+      split: split || null,              // may be null for freeform goals
+      minutes,
+      equipment: equipmentList,
+      goal,                               // ← pass the free-text ask
+      // light hinting (safe defaults if not ski)
+      hints: wantSki ? {
+        priority: [
+          "eccentric quads", "isometric knee angles", "single-leg balance",
+          "lateral power/plyos", "anti-rotation core", "short intervals"
+        ],
+        cooldownTargets: ["quad", "calf", "hip flexor", "thoracic"]
+      } : {}
+    });
 
     // 3) Call your existing chat service (unchanged)
     console.log('LLM:claude.start', { split, minutes, hasKey: !!process.env.ANTHROPIC_API_KEY });
@@ -993,13 +1029,15 @@ export async function POST(req: Request) {
     // TODO: optionally check Supabase to detect history; for now:
     const hasHistory = false;
 
-    // derive a good title
-    const title =
-      respTitle || finalPlan?.name || 'Workout';
+    // Give the session a better name when there's a goal
+    const preferredTitle =
+      (extracted?.plan?.name && String(extracted.plan.name).trim()) ||
+      (goal ? `${wantSki ? 'Ski Prep' : 'Goal-Focused'} (~${minutesNum} min)` :
+              titleFor(split, minutesNum));
 
     // ensure plan.name isn't "Planned Session" when model gave a better title
     const safePlan: ChatPlan | null = finalPlan
-      ? { ...finalPlan, name: finalPlan.name || title }
+      ? { ...finalPlan, name: finalPlan.name || preferredTitle }
       : null;
 
     // Build descriptive chat summary using the new normalizer
@@ -1042,6 +1080,14 @@ export async function POST(req: Request) {
     } catch (e: any) {
       chatBuildError = e?.message ?? String(e);
       // keep chatMsg as the simple default; DO NOT throw
+    }
+
+    // Make a nicer narrative that mentions the goal
+    if (goal) {
+      const why = wantSki
+        ? "Emphasis: eccentric quads for deceleration, isometrics at ski angles, lateral plyos for edge changes, anti-rotation core, and short intervals."
+        : undefined;
+      chatMsg = `Goal: ${goal}${why ? `\n${why}` : ''}\n\n${chatMsg}`;
     }
 
     // guarantee cooldown before returning

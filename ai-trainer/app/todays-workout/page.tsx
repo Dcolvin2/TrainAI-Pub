@@ -937,6 +937,25 @@ export default function TodaysWorkoutPage() {
         </div>
                 )}
                 
+                {/* Conditioning Section (optional) */}
+                {Array.isArray(generatedWorkout.conditioning) && generatedWorkout.conditioning.length > 0 && (
+                  <div className="mb-6">
+                    <h4 className="text-md font-semibold text-gray-300 mb-3">Conditioning</h4>
+                    <div className="space-y-2">
+                      {generatedWorkout.conditioning.map((exercise, idx) => (
+                        <div key={idx} className="flex items-center">
+                          <span className="w-6 h-6 bg-gray-700 rounded-full flex items-center justify-center text-xs text-white mr-3">
+                            {idx + 1}
+                          </span>
+                          <span className="text-gray-200">
+                            {(typeof exercise === 'string' ? exercise : exercise.name || 'Exercise').replace(/^-\s*/, '')}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
                 {/* Cool-down Section */}
                 {generatedWorkout.cooldown?.length > 0 && (
                   <div className="mb-6">
