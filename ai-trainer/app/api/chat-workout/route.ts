@@ -372,6 +372,21 @@ async function callClaudeJson(system: string, user: unknown) {
 
 
 
+// near the top of the file or next to generatePullWorkoutLLM
+const sameKey = (a?: string, b?: string) => {
+  const norm = (x?: string) => (x || '')
+    .toLowerCase()
+    .replace(/^\s+|\s+$/g, '')
+    .replace(/^trap\s*bar\b(?!\s*deadlift)/, 'trap bar') // keep TB deadlift distinct
+    .replace(/^(barbell|bar|dumbbell|db|kettlebell|kb|smith(?:\s*machine)?|machine|cable|band(?:ed)?|bodyweight)\s+/g, '')
+    .replace(/^(?:barbell\s+)?bench\s+press\b/, 'bench press')
+    .replace(/^(?:barbell\s+)?back\s+squat\b/, 'back squat')
+    .replace(/^(?:barbell\s+)?front\s+squat\b/, 'front squat')
+    .replace(/\brdl\b/, 'romanian deadlift')
+    .replace(/[^a-z0-9]+/g, '');
+  return norm(a) === norm(b);
+};
+
 // Generate pull workout with anchored main lift and rotating accessories
 async function generatePullWorkoutLLM({
   split,
@@ -426,7 +441,9 @@ async function generatePullWorkoutLLM({
   const rest = Array.isArray(llm?.workout?.mainExercises) ? llm.workout.mainExercises : [];
   const mainExercises = [
     { name: selectedMainLift, sets: 4, reps: '5', instruction: 'Build to working sets @ RPE 7–8', isAccessory: false },
-    ...rest.map((x: any) => ({ ...x, isAccessory: true })),
+    ...rest
+      .filter((x: any) => !sameKey(x?.name, selectedMainLift)) // ← drop dupes like "Barbell Back Squat"
+      .map((x: any) => ({ ...x, isAccessory: true })),
   ];
 
   // guarantee cooldown

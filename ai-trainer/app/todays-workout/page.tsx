@@ -126,7 +126,26 @@ const cleanName = (raw?: string) => {
   s = s.replace(/\s*-\s*(?:\d+\s*(?:reps?|sets?|x\s*\d+)|\d+\s*(?:min|mins|minutes|s|sec|secs|seconds))\s*$/i, '').trim();
   return s;
 };
-const toKey = (name: string) => cleanName(name).toLowerCase().replace(/[^a-z0-9]+/g, '');
+// replace your current toKey + keep cleanName as-is for display
+const canonicalForKey = (raw?: string) => {
+  let s = cleanName(raw).toLowerCase().trim();
+
+  // keep Trap Bar distinct, normalize other implement prefixes
+  if (!/^trap\s*bar\b/.test(s)) {
+    s = s.replace(/^(barbell|bar|dumbbell|db|kettlebell|kb|smith(?:\s*machine)?|machine|cable|band(?:ed)?|bodyweight)\s+/i, '');
+  }
+
+  // common aliases
+  s = s.replace(/^(?:barbell\s+)?bench\s+press\b/i, 'bench press');
+  s = s.replace(/^(?:barbell\s+)?back\s+squat\b/i, 'back squat');
+  s = s.replace(/^(?:barbell\s+)?front\s+squat\b/i, 'front squat');
+  s = s.replace(/\brdl\b/i, 'romanian deadlift');
+  s = s.replace(/\s+/g, ' ').trim();
+  return s;
+};
+
+const toKey = (name: string) =>
+  canonicalForKey(name).replace(/[^a-z0-9]+/g, '');
 const isNoise = (name: string) => /\b(rounds?|perform|interval|emom|amrap|tabata|work\/rest|rest)\b/i.test(name);
 
 const toDisplayItem = (x: any): DisplayItem => {
