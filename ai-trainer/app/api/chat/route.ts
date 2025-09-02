@@ -939,10 +939,10 @@ Schema (strict):
     for (const ph of phases) {
       for (const it of ph.items ?? []) {
           if (it?.name) sessionNames.add(norm(it.name));
-        }
       }
+    }
 
-      const focusHints = focusFromSplit(out?.plan?.split);
+    const focusHints = focusFromSplit(out?.plan?.split);
       const { rankedCandidates, allCandidates, recentNames } = await fetchCooldownContext({
         focusHints,
         sampleLimit: 250,
@@ -1048,8 +1048,8 @@ Schema (strict):
       if (cdIdx >= 0) phases[cdIdx].items = outItems;
       else phases.push({ phase: 'cooldown', items: outItems });
 
-      out.plan.phases = phases;
-      
+    out.plan.phases = phases;
+
       // Also surface to workout for UI consumers that ignore plan.phases
       if (!out.workout) out.workout = {};
       (out.workout as any).cooldown = outItems;
@@ -1068,11 +1068,11 @@ Schema (strict):
     // debug so you can confirm in DevTools (read from plan, not out.plan)
     {
       const cd = plan.phases.find((p: any) => (p?.phase || '').toLowerCase() === 'cooldown');
-      debug.cooldown = {
-        targets,
+    debug.cooldown = {
+      targets,
         focusHints: focusFromSplit(plan?.split),
         finalCooldown: (cd?.items || []).map((i: any) => i?.name).filter(Boolean),
-      };
+    };
     }
 
     // which split/minutes & main lift did we end up with?
