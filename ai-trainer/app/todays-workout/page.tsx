@@ -123,7 +123,7 @@ const cleanName = (raw?: string) => {
        .replace(/\bKettlebells?\b/gi, 'Kettlebell')
        .replace(/\bBattle\s*Ropes?\b/gi, 'Battle Rope')
        .replace(/\bAir\s*Bike|Assault|Echo|Airdyne\b/gi, 'Exercise Bike');
-  s = s.replace(/\s*-\s*\d+.*$/, '').trim();
+  s = s.replace(/\s*-\s*(?:\d+\s*(?:reps?|sets?|x\s*\d+)|\d+\s*(?:min|mins|minutes|s|sec|secs|seconds))\s*$/i, '').trim();
   return s;
 };
 const toKey = (name: string) => cleanName(name).toLowerCase().replace(/[^a-z0-9]+/g, '');
@@ -507,6 +507,11 @@ export default function TodaysWorkoutPage() {
 
           const gw = llmToGeneratedWorkout(legacy);
           // do NOT overwrite gw.cooldown again; we already sanitized
+          
+          // Force consistent display title
+          const pretty = (s:string)=> s ? s[0].toUpperCase()+s.slice(1) : 'Session';
+          gw.name = `${pretty(plan.split)} (~${plan.duration} min)`;
+          
           setGeneratedWorkout(gw);
 
           // Handle modification responses
@@ -594,6 +599,11 @@ export default function TodaysWorkoutPage() {
       est_total_minutes: plan.duration,
     };
     const gw = llmToGeneratedWorkout(legacy);
+    
+    // Force consistent display title
+    const pretty = (s:string)=> s ? s[0].toUpperCase()+s.slice(1) : 'Session';
+    gw.name = `${pretty(plan.split)} (~${plan.duration} min)`;
+    
     setGeneratedWorkout(gw);
   }
 
@@ -620,7 +630,7 @@ export default function TodaysWorkoutPage() {
 
   // client — split-aware fallback (only mobility)
   const HIIT_OR_STRENGTHY = /(burpee|sprint|thruster|box\s*jump|mountain\s*climber|jump(ing)?\s*jacks?|press|row|curl|extension|raise|pull-?down|deadlift|squat|lunge|dip|carry|hang)/i;
-  const STRETCHY = /(stretch|mobility|pose|pigeon|child'?s|hamstring|quad|quadriceps|calf|gastroc|soleus|lat|pec|chest|hip\s*flexor|psoas|thoracic|t-?spine|breath|diaphragm|thread\s*the\s*needle|world'?s\s*greatest|cat[-\s]*cow|wall\s*angel|openers?)/i;
+  const STRETCHY = /(stretch|mobility|pose|pigeon|child'?s|hamstring|quad|quadriceps|calf|gastroc|soleus|lat|pec|chest|hip\s*flexor|psoas|thoracic|t-?spine|breath|diaphragm|thread\s*the\s*needle|world'?s\s*greatest|cat[-\s]*cow|wall\s*angel|openers?|glute|piriformis|adductor|groin)/i;
 
   const FALLBACK_BY_SPLIT: Record<string,string[]> = {
     pull:  ["Cross-Body Shoulder Stretch","Doorway Pec Stretch","Thread the Needle","Foam Roll Lats"],

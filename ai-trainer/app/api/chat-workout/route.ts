@@ -1030,13 +1030,16 @@ export async function POST(req: Request) {
     // guarantee cooldown before returning
     await ensureCooldownOn(safePlan, finalWorkout, split || 'full');
 
+    // derive a clean, deterministic title (e.g., "Legs (~45 min)")
+    const nice = titleFor(split, minutesNum);
+
     return NextResponse.json({
       ok: true,
-      name: normalized?.name ?? finalPlan?.name ?? `${(split ?? 'Session').slice(0,1).toUpperCase()}${(split ?? 'Session').slice(1)} (~${minutes} min)`,
-      message: normalized?.name ?? finalPlan?.name ?? `${(split ?? 'Session').slice(0,1).toUpperCase()}${(split ?? 'Session').slice(1)} (~${minutes} min)`,
+      name: nice,
+      message: nice,
       chatMsg,
       coach: chatMsg,         // keep for UI fallback
-      plan: safePlan,
+      plan: safePlan,      // keep full plan
       workout: finalWorkout,
       debug: { split, minutesRequested: minutes, mainLiftName, chatBuildError }
     }, { headers: { 'Content-Type': 'application/json' } });
