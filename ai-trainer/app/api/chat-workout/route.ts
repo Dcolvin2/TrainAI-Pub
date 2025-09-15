@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { supabase } from "@/lib/supabaseClient";
 import { devlog } from "@/lib/devlog";
-import OpenAI from "openai";
 import { validateWorkoutPlan, type WorkoutPlan } from "../../../lib/schemas/workout";
 import { mainLiftForSplit, focusMusclesForSplit, trimPlanToDuration } from "../../../lib/workout";
 
@@ -11,7 +10,7 @@ import { normalizePlan as normalizePlanLib, buildChatSummary } from "@/lib/norma
 import { fetchCooldownContext, mapLLMToPlanItems, focusFromSplit } from '@/lib/cooldown';
 import { sanitizeCooldown } from '@/lib/cooldownPolicy';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+export const runtime = "nodejs";
 
 type Ctx = {
   userId: string;
@@ -77,11 +76,9 @@ async function getProfile(userId: string) {
     .from("profiles")
     .select("preferred_workout_duration, equipment")
     .eq("user_id", userId)
-    .single();
+    .maybeSingle();
   return data;
 }
-
-export const runtime = "nodejs";
 
 function extractGoalHints(message: string) {
   const m = (message||'').toLowerCase();
@@ -1025,18 +1022,18 @@ export async function POST(req: Request) {
   if (maybeWorkout) {
     const { system, user } = buildSmartCoachPrompt(userMsg, ctx);
 
-    const completion = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+    const completion = await anthropic.messages.create({
+      model: "claude-3-5-sonnet-20241022",
       temperature: 0.4,
-      response_format: { type: "json_object" },
+      max_tokens: 1200,
       messages: [
-        { role: "system", content: system },
-        { role: "user", content: user }
+        { role: "user", content: `${system}\n\n${user}` }
       ]
     });
 
-    const raw = completion.choices?.[0]?.message?.content ?? "{}";
+    const raw = (completion.content?.[0] as any)?.text ?? "{}";
     let plan: WorkoutPlan;
+
     try {
       plan = JSON.parse(raw) as WorkoutPlan;
     } catch {
@@ -1049,6 +1046,7 @@ export async function POST(req: Request) {
     // Optionally trim to target duration and validate
     const trimmed = trimPlanToDuration(plan, ctx.duration);
     const valid = validateWorkoutPlan(trimmed);
+
     if (!valid.ok) {
       return new Response(JSON.stringify({ ok: false, error: valid.error }), {
         status: 400,
