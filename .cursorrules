@@ -1,0 +1,26 @@
+# Project Rules for Cursor
+
+Canonical specs (read first on each edit):
+- /docs/agent-prd.md
+- /docs/architecture.md
+
+Contracts
+- Honor the JSON contract in /lib/schemas/workout.ts (use validateWorkoutPlan before persisting).
+- Keep business rules in /lib/workout.ts (main-lift selection, cooldown matching, time trimming).
+
+Engineering constraints
+- TypeScript strict; no unused imports/vars; build must pass.
+- Enforce strict JSON from LLM; invalid → HTTP 400 (do not persist).
+- UI renders JSON; no free-text parsing for plans.
+- Read profile & equipment via profiles → user_equipment → equipment join.
+- strength starts with main/core lift (except HIIT). Accessories explicitly flagged.
+- Cooldowns must match focus muscles; never generic/mismatched.
+- Time-boxing: cut accessories first, then trim main-lift volume.
+- No equipment → bodyweight plan.
+- Save to workout_sessions & workout_sets only on Finish with workout_source tag when available.
+- Maintain one active chat_sessions row; archive overflow to workout_chat_log; rebuild request context from DB.
+- Coach message: motivational, max 2 sentences.
+
+When modifying code
+- Reference /docs/agent-prd.md + /docs/architecture.md in PRs/commits.
+- Prefer mini spec + unified patch; keep diffs surgical and self-contained.

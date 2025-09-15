@@ -5,10 +5,83 @@ import { supabase } from "@/lib/supabaseClient";
 import { devlog } from "@/lib/devlog";
 
 import { normalizePlan as normalizePlanLib, buildChatSummary } from "@/lib/normalizePlan";
-import { fetchCooldownContext, mapLLMToPlanItems, focusFromSplit } from '@/lib/cooldown';
-import { sanitizeCooldown } from '@/lib/cooldownPolicy';
 
 export const runtime = "nodejs";
+
+// Helper: choose a deterministic main lift for a given split
+function mainLiftForSplit(split: string, equipment: string[]): string | null {
+  const norm = (s: string) => s.toLowerCase();
+  const has = (s: string) => equipment.some(e => norm(e).includes(norm(s)));
+
+  switch ((split || '').toLowerCase()) {
+    case 'push': {
+      // Prefer barbell bench variants first
+      if (has('barbell')) return 'Barbell Bench Press';
+      if (has('barbell')) return 'Barbell Incline Bench Press';
+      if (has('dumbbell')) return 'Dumbbell Bench Press';
+      if (has('dumbbell')) return 'Dumbbell Incline Bench Press';
+      return 'Push-Up';
+    }
+    case 'pull': {
+      if (has('trap')) return 'Trap Bar Deadlift';
+      if (has('barbell')) return 'Barbell Deadlift';
+      return 'Romanian Deadlift (DB)';
+    }
+    case 'legs': {
+      if (has('belt')) return 'Belt Squat';
+      if (has('barbell')) return 'Back Squat';
+      if (has('barbell')) return 'Front Squat';
+      return 'Goblet Squat';
+    }
+    case 'upper': {
+      if (has('barbell')) return 'Overhead Press';
+      return 'Dumbbell Shoulder Press';
+    }
+    case 'hiit':
+      return null;
+    default:
+      return null;
+  }
+}
+
+// Helper: minimal accessory selector by split (equipment-aware but conservative)
+function accessoriesForSplit(split: string, equipment: string[]): Array<{ name: string; sets: string; reps: string }> {
+  const has = (s: string) => equipment.some(e => e.toLowerCase().includes(s));
+
+  switch ((split || '').toLowerCase()) {
+    case 'push':
+      return [
+        { name: 'Incline DB Press', sets: '3', reps: '8-12' },
+        { name: 'Lateral Raise', sets: '3', reps: '12-15' },
+        { name: has('cable') ? 'Cable Triceps Pressdown' : 'Dumbbell Triceps Extension', sets: '3', reps: '10-12' },
+      ];
+    case 'pull':
+      return [
+        { name: has('cable') ? 'Cable Row' : 'Dumbbell Row', sets: '3', reps: '8-12' },
+        { name: has('lat') || has('pulldown') ? 'Lat Pulldown' : 'Pull-Up or Assisted Pull-Up', sets: '3', reps: '6-10' },
+        { name: 'Face Pull', sets: '3', reps: '12-15' },
+        { name: 'DB Curl', sets: '3', reps: '10-12' },
+      ];
+    case 'legs':
+      return [
+        { name: has('machine') ? 'Leg Press' : 'DB Split Squat', sets: '3', reps: '8-12' },
+        { name: 'Romanian Deadlift', sets: '3', reps: '8-10' },
+        { name: has('hamstring') || has('leg curl') ? 'Leg Curl' : 'Glute Bridge', sets: '3', reps: '10-12' },
+      ];
+    case 'upper':
+      return [
+        { name: 'One-Arm DB Row', sets: '3', reps: '8-12' },
+        { name: 'Incline DB Press', sets: '3', reps: '8-12' },
+        { name: 'Lateral Raise', sets: '3', reps: '12-15' },
+        { name: 'Cable Rope Curl', sets: '3', reps: '10-12' },
+        { name: 'Cable Triceps Pressdown', sets: '3', reps: '10-12' },
+      ];
+    case 'hiit':
+      return []; // HIIT will be handled elsewhere in your pipeline
+    default:
+      return [];
+  }
+}
 
 function extractGoalHints(message: string) {
   const m = (message||'').toLowerCase();
@@ -698,6 +771,16 @@ function validatePlan(plan?: ChatPlan, workout?: ChatWorkout): { ok: boolean; wh
 const S = (v: any) => (v == null ? "" : String(v).trim());
 const uniq = <T,>(arr: T[]) => Array.from(new Set(arr));
 
+/** Get user profile data */
+async function getProfile(userId: string) {
+  const { data } = await supabase
+    .from("profiles")
+    .select("preferred_workout_duration, equipment")
+    .eq("user_id", userId)
+    .maybeSingle();
+  return data;
+}
+
 /** Exact user equipment names (no guessing) */
 async function getEquipmentNames(userId: string): Promise<string[]> {
   const { data } = await supabase
@@ -943,6 +1026,70 @@ export async function POST(req: Request) {
     if (!userId) {
       return NextResponse.json({ ok: false, error: "Missing userId" }, { status: 400 });
     }
+
+    // Derive split if provided by UI (push/pull/legs/upper/hiit).
+    const splitInput = typeof body?.split === 'string' ? body.split.trim().toLowerCase() : undefined;
+
+    const out: any = { ok: true };
+
+    // Ensure that when a split is explicitly provided, we do NOT label as "Ad Hoc".
+    if (splitInput) {
+      // Pull profile/equipment via your existing helper; fall back to request body if provided.
+      const profile = await getProfile(userId);
+      const equipmentCsv =
+        typeof body?.equipment === 'string'
+          ? body.equipment
+          : String(profile?.equipment ?? '');
+
+      const equipmentList = equipmentCsv
+        .split(',')
+        .map((s: string) => s.trim())
+        .filter(Boolean);
+
+      const duration = Number(
+        body?.minutes ?? profile?.preferred_workout_duration ?? 45
+      );
+
+      // Determine a main lift for the chosen split
+      const main = mainLiftForSplit(splitInput, equipmentList);
+
+      // Build a STRICT JSON plan (no chatty text). Keep coach brief.
+      const warmupItems =
+        splitInput === 'legs'
+          ? [
+              { name: 'Bike or Row', duration: '3-5 min', instruction: 'Easy pace to raise core temp' },
+              { name: 'Dynamic Hips & Ankles', duration: '2-3 min', instruction: 'Leg swings, ankle circles, Cossack squats' },
+            ]
+          : [
+              { name: 'Bike or Row', duration: '3-5 min', instruction: 'Easy pace to raise core temp' },
+              { name: 'Dynamic Shoulder + T-Spine', duration: '2-3 min', instruction: 'Arm circles, band pull-aparts' },
+            ];
+
+      const strengthItems = [
+        ...(main ? [{ name: main, sets: '4', reps: '5-8', instruction: 'Build to a moderate-heavy top set; 1–2 RIR' }] : []),
+      ];
+
+      const accessoryItems = accessoriesForSplit(splitInput, equipmentList);
+
+      const plan = {
+        split: splitInput,
+        duration,
+        phases: [
+          { phase: 'warmup', items: warmupItems },
+          { phase: 'strength', items: strengthItems },
+          { phase: 'accessory', items: accessoryItems },
+        ],
+      };
+
+      out.plan = plan;
+      out.message = `${splitInput.charAt(0).toUpperCase()}${splitInput.slice(1)} — Day`;
+      out.coach = 'Move with control, leave 1–2 reps in reserve on main sets, and prioritize quality over load.';
+
+      return new Response(JSON.stringify(out), { headers: { 'content-type': 'application/json' } });
+    }
+
+    // ...otherwise fall through to your existing (intent/program) behavior
+    // (no changes below this line)
 
     // Context
     const [equipmentList, prefs, recentLower] = await Promise.all([

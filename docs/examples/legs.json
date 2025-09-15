@@ -1,0 +1,33 @@
+{
+  "split": "legs",
+  "duration": 45,
+  "phases": [
+    {
+      "phase": "warmup",
+      "items": [
+        { "name": "Bike", "duration": "3-5 min" },
+        { "name": "Leg Swings (Front/Side)", "reps": "10 each" }
+      ]
+    },
+    {
+      "phase": "strength",
+      "items": [
+        { "name": "Back Squat", "sets": "4", "reps": "5-8", "last": "225×5", "suggested": "230×5", "isAccessory": false }
+      ]
+    },
+    {
+      "phase": "accessory",
+      "items": [
+        { "name": "Romanian Deadlift (DB)", "sets": "3", "reps": "8-12", "isAccessory": true },
+        { "name": "Walking Lunge", "sets": "3", "reps": "10/side", "isAccessory": true }
+      ]
+    },
+    {
+      "phase": "cooldown",
+      "items": [
+        { "name": "Hamstring Stretch", "duration": "1-2 min/side" },
+        { "name": "Quad Stretch", "duration": "1-2 min/side" }
+      ]
+    }
+  ]
+}

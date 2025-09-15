@@ -1,0 +1,10 @@
+{
+  "split": "push",
+  "duration": 45,
+  "phases": [
+    { "phase": "warmup", "items": [{ "name": "Bike or Row", "duration": "3-5 min" }] },
+    { "phase": "strength", "items": [{ "name": "Barbell Bench Press", "sets": "4", "reps": "5-8" }] },
+    { "phase": "accessory", "items": [{ "name": "Incline DB Press", "sets": "3", "reps": "8-12" }] },
+    { "phase": "cooldown", "items": [{ "name": "Chest Doorway Stretch", "duration": "2 min" }] }
+  ]
+}

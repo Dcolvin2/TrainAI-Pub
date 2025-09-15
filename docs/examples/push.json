@@ -1,0 +1,33 @@
+{
+  "split": "push",
+  "duration": 45,
+  "phases": [
+    {
+      "phase": "warmup",
+      "items": [
+        { "name": "Bike or Row", "duration": "3-5 min" },
+        { "name": "Band Pull-Aparts", "reps": "12-15" }
+      ]
+    },
+    {
+      "phase": "strength",
+      "items": [
+        { "name": "Barbell Bench Press", "sets": "4", "reps": "5-8", "last": "185×6", "suggested": "190×5", "isAccessory": false }
+      ]
+    },
+    {
+      "phase": "accessory",
+      "items": [
+        { "name": "Incline DB Press", "sets": "3", "reps": "8-12", "isAccessory": true },
+        { "name": "Cable Triceps Pressdown", "sets": "3", "reps": "10-12", "isAccessory": true }
+      ]
+    },
+    {
+      "phase": "cooldown",
+      "items": [
+        { "name": "Chest Doorway Stretch", "duration": "2 min" },
+        { "name": "Triceps Stretch", "duration": "1-2 min/side" }
+      ]
+    }
+  ]
+}
