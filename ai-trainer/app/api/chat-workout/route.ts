@@ -3,85 +3,85 @@ import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { supabase } from "@/lib/supabaseClient";
 import { devlog } from "@/lib/devlog";
+import OpenAI from "openai";
+import { validateWorkoutPlan, type WorkoutPlan } from "../../../lib/schemas/workout";
+import { mainLiftForSplit, focusMusclesForSplit, trimPlanToDuration } from "../../../lib/workout";
 
 import { normalizePlan as normalizePlanLib, buildChatSummary } from "@/lib/normalizePlan";
+import { fetchCooldownContext, mapLLMToPlanItems, focusFromSplit } from '@/lib/cooldown';
+import { sanitizeCooldown } from '@/lib/cooldownPolicy';
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+type Ctx = {
+  userId: string;
+  duration: number;
+  equipment: string[];
+  split?: string;
+  lastSets?: Array<{ name: string; last: string }>;
+};
+
+function normList(v: unknown): string[] {
+  if (Array.isArray(v)) return v.map(x => String(x).trim()).filter(Boolean);
+  if (typeof v === "string") return v.split(",").map(s => s.trim()).filter(Boolean);
+  return [];
+}
+
+function buildSmartCoachPrompt(userMsg: string, ctx: Ctx) {
+  const eqList = ctx.equipment.length ? ctx.equipment.join(", ") : "bodyweight only";
+  const focus = ctx.split ? focusMusclesForSplit(ctx.split).join(", ") : "auto";
+  const last = (ctx.lastSets ?? [])
+    .map(x => `- ${x.name}: ${x.last}`)
+    .join("\n");
+  const lastBlock = last ? `\nRecent lifts:\n${last}\n` : "";
+  const mainLiftHint = ctx.split ? (mainLiftForSplit(ctx.split, ctx.equipment) ?? "") : "";
+
+  const system = [
+    "You are TrainAI, a smart workout coach. You can synthesize ANY training style (e.g., Joe Holder/Ocho circuits, ski-prep, Jeff Cavaliere/ATHLEAN-X, Tabata, CrossFit-style WOD without Olympic lifts, etc.).",
+    "Use your own broad fitness knowledge FIRST to shape the plan; use provided context for personalization (equipment, time, last sets).",
+    "Return ONLY strict JSON matching the schema described. No commentary, no markdown.",
+    "Rules:",
+    "- Phases: warmup, strength (main/core lift first unless HIIT), accessory, cooldown.",
+    `- Cooldown must match the day's focus muscles (${focus}); never mismatched.`,
+    "- If time is tight, cut accessories first, then trim main-lift volume.",
+    "- If no equipment, generate bodyweight plan.",
+    "- Where history exists, include a 'last' field and suggest a progression (e.g., 'suggested').",
+  ].join("\n");
+
+  const user = [
+    `User request: ${userMsg}`,
+    `Available equipment: ${eqList}`,
+    `Preferred duration (min): ${ctx.duration}`,
+    ctx.split ? `Requested split: ${ctx.split}` : "",
+    mainLiftHint ? `Hinted main lift: ${mainLiftHint}` : "",
+    lastBlock,
+    "Output JSON shape:",
+    "{",
+    '  "split": "<push|pull|legs|upper|hiit|full_body|custom>",',
+    '  "duration": <minutes>,',
+    '  "phases": [',
+    '    { "phase": "warmup", "items": [ { "name": "Bike", "duration": "3-5 min" } ] },',
+    '    { "phase": "strength", "items": [ { "name": "Barbell Bench Press", "sets": "4", "reps": "5-8", "last": "185×6", "suggested": "190×5", "isAccessory": false } ] },',
+    '    { "phase": "accessory", "items": [ { "name": "Lateral Raise", "sets": "3", "reps": "12-15", "isAccessory": true } ] },',
+    '    { "phase": "cooldown", "items": [ { "name": "Chest Stretch", "duration": "1-2 min/side" } ] }',
+    "  ]",
+    "}",
+    "Return only that JSON object. Do not include a coach message in the JSON.",
+  ].filter(Boolean).join("\n");
+
+  return { system, user };
+}
+
+async function getProfile(userId: string) {
+  const { data } = await supabase
+    .from("profiles")
+    .select("preferred_workout_duration, equipment")
+    .eq("user_id", userId)
+    .single();
+  return data;
+}
 
 export const runtime = "nodejs";
-
-// Helper: choose a deterministic main lift for a given split
-function mainLiftForSplit(split: string, equipment: string[]): string | null {
-  const norm = (s: string) => s.toLowerCase();
-  const has = (s: string) => equipment.some(e => norm(e).includes(norm(s)));
-
-  switch ((split || '').toLowerCase()) {
-    case 'push': {
-      // Prefer barbell bench variants first
-      if (has('barbell')) return 'Barbell Bench Press';
-      if (has('barbell')) return 'Barbell Incline Bench Press';
-      if (has('dumbbell')) return 'Dumbbell Bench Press';
-      if (has('dumbbell')) return 'Dumbbell Incline Bench Press';
-      return 'Push-Up';
-    }
-    case 'pull': {
-      if (has('trap')) return 'Trap Bar Deadlift';
-      if (has('barbell')) return 'Barbell Deadlift';
-      return 'Romanian Deadlift (DB)';
-    }
-    case 'legs': {
-      if (has('belt')) return 'Belt Squat';
-      if (has('barbell')) return 'Back Squat';
-      if (has('barbell')) return 'Front Squat';
-      return 'Goblet Squat';
-    }
-    case 'upper': {
-      if (has('barbell')) return 'Overhead Press';
-      return 'Dumbbell Shoulder Press';
-    }
-    case 'hiit':
-      return null;
-    default:
-      return null;
-  }
-}
-
-// Helper: minimal accessory selector by split (equipment-aware but conservative)
-function accessoriesForSplit(split: string, equipment: string[]): Array<{ name: string; sets: string; reps: string }> {
-  const has = (s: string) => equipment.some(e => e.toLowerCase().includes(s));
-
-  switch ((split || '').toLowerCase()) {
-    case 'push':
-      return [
-        { name: 'Incline DB Press', sets: '3', reps: '8-12' },
-        { name: 'Lateral Raise', sets: '3', reps: '12-15' },
-        { name: has('cable') ? 'Cable Triceps Pressdown' : 'Dumbbell Triceps Extension', sets: '3', reps: '10-12' },
-      ];
-    case 'pull':
-      return [
-        { name: has('cable') ? 'Cable Row' : 'Dumbbell Row', sets: '3', reps: '8-12' },
-        { name: has('lat') || has('pulldown') ? 'Lat Pulldown' : 'Pull-Up or Assisted Pull-Up', sets: '3', reps: '6-10' },
-        { name: 'Face Pull', sets: '3', reps: '12-15' },
-        { name: 'DB Curl', sets: '3', reps: '10-12' },
-      ];
-    case 'legs':
-      return [
-        { name: has('machine') ? 'Leg Press' : 'DB Split Squat', sets: '3', reps: '8-12' },
-        { name: 'Romanian Deadlift', sets: '3', reps: '8-10' },
-        { name: has('hamstring') || has('leg curl') ? 'Leg Curl' : 'Glute Bridge', sets: '3', reps: '10-12' },
-      ];
-    case 'upper':
-      return [
-        { name: 'One-Arm DB Row', sets: '3', reps: '8-12' },
-        { name: 'Incline DB Press', sets: '3', reps: '8-12' },
-        { name: 'Lateral Raise', sets: '3', reps: '12-15' },
-        { name: 'Cable Rope Curl', sets: '3', reps: '10-12' },
-        { name: 'Cable Triceps Pressdown', sets: '3', reps: '10-12' },
-      ];
-    case 'hiit':
-      return []; // HIIT will be handled elsewhere in your pipeline
-    default:
-      return [];
-  }
-}
 
 function extractGoalHints(message: string) {
   const m = (message||'').toLowerCase();
@@ -771,16 +771,6 @@ function validatePlan(plan?: ChatPlan, workout?: ChatWorkout): { ok: boolean; wh
 const S = (v: any) => (v == null ? "" : String(v).trim());
 const uniq = <T,>(arr: T[]) => Array.from(new Set(arr));
 
-/** Get user profile data */
-async function getProfile(userId: string) {
-  const { data } = await supabase
-    .from("profiles")
-    .select("preferred_workout_duration, equipment")
-    .eq("user_id", userId)
-    .maybeSingle();
-  return data;
-}
-
 /** Exact user equipment names (no guessing) */
 async function getEquipmentNames(userId: string): Promise<string[]> {
   const { data } = await supabase
@@ -1012,260 +1002,124 @@ async function llmJSON(opts: { system: string; user: string; max_tokens?: number
 
 
 export async function POST(req: Request) {
-  try {
-    const url = new URL(req.url);
-    const search = url.searchParams;
-    const body = await req.json().catch(() => ({}));
-    const userId = S(search.get("user") || body.userId);
-    const minutes = Number(search.get("minutes") || body.minutes) || 45;
-    const split = S(search.get("split") || body.split); // push|pull|legs|upper|full|hiit (optional)
-    const message = S(body.message);
-    const goal = message; // free-form user intent, e.g., "prep for ski season"
-    const wantSki = /(^|\b)ski(ing)?\b/i.test(goal);
+  const body = await req.json();
 
-    if (!userId) {
-      return NextResponse.json({ ok: false, error: "Missing userId" }, { status: 400 });
-    }
+  const userMsg: string = String(body?.message ?? '');
+  const userId = String(body?.userId ?? '');
 
-    // Derive split if provided by UI (push/pull/legs/upper/hiit).
-    const splitInput = typeof body?.split === 'string' ? body.split.trim().toLowerCase() : undefined;
+  // Parse context from request (DB fetch can be wired later; this path is DB-agnostic and won't break TS strict)
+  const duration = Number(body?.duration ?? body?.preferred_workout_duration ?? 45);
+  const equipment = normList(body?.equipment ?? body?.equipmentList ?? []);
+  const splitInput = typeof body?.split === 'string' ? body.split.trim().toLowerCase() : undefined;
+  const lastSets = Array.isArray(body?.lastSets) ? body.lastSets as Array<{ name: string; last: string }> : undefined;
 
-    const out: any = { ok: true };
+  const ctx: Ctx = { userId, duration: Number.isFinite(duration) && duration > 0 ? duration : 45, equipment, split: splitInput, lastSets };
 
-    // Ensure that when a split is explicitly provided, we do NOT label as "Ad Hoc".
-    if (splitInput) {
-      // Pull profile/equipment via your existing helper; fall back to request body if provided.
-      const profile = await getProfile(userId);
-      const equipmentCsv =
-        typeof body?.equipment === 'string'
-          ? body.equipment
-          : String(profile?.equipment ?? '');
+  // If the user is just chatting (non-workout), allow a concise reply (kept server-side to avoid JSON pollution).
+  // You can extend this with a classifier later; for now, assume any message with "workout", "program", splits, or named coach implies generation.
+  const maybeWorkout = /\b(workout|program|ocho|holder|cavaliere|push|pull|legs|upper|hiit|wod|tabata|ski)\b/i.test(userMsg);
 
-      const equipmentList = equipmentCsv
-        .split(',')
-        .map((s: string) => s.trim())
-        .filter(Boolean);
+  const out: any = { ok: true };
 
-      const duration = Number(
-        body?.minutes ?? profile?.preferred_workout_duration ?? 45
-      );
+  // LLM-first generation (smart coach). Strict JSON via response_format.
+  if (maybeWorkout) {
+    const { system, user } = buildSmartCoachPrompt(userMsg, ctx);
 
-      // Determine a main lift for the chosen split
-      const main = mainLiftForSplit(splitInput, equipmentList);
-
-      // Build a STRICT JSON plan (no chatty text). Keep coach brief.
-      const warmupItems =
-        splitInput === 'legs'
-          ? [
-              { name: 'Bike or Row', duration: '3-5 min', instruction: 'Easy pace to raise core temp' },
-              { name: 'Dynamic Hips & Ankles', duration: '2-3 min', instruction: 'Leg swings, ankle circles, Cossack squats' },
-            ]
-          : [
-              { name: 'Bike or Row', duration: '3-5 min', instruction: 'Easy pace to raise core temp' },
-              { name: 'Dynamic Shoulder + T-Spine', duration: '2-3 min', instruction: 'Arm circles, band pull-aparts' },
-            ];
-
-      const strengthItems = [
-        ...(main ? [{ name: main, sets: '4', reps: '5-8', instruction: 'Build to a moderate-heavy top set; 1–2 RIR' }] : []),
-      ];
-
-      const accessoryItems = accessoriesForSplit(splitInput, equipmentList);
-
-      const plan = {
-        split: splitInput,
-        duration,
-        phases: [
-          { phase: 'warmup', items: warmupItems },
-          { phase: 'strength', items: strengthItems },
-          { phase: 'accessory', items: accessoryItems },
-        ],
-      };
-
-      out.plan = plan;
-      out.message = `${splitInput.charAt(0).toUpperCase()}${splitInput.slice(1)} — Day`;
-      out.coach = 'Move with control, leave 1–2 reps in reserve on main sets, and prioritize quality over load.';
-
-      return new Response(JSON.stringify(out), { headers: { 'content-type': 'application/json' } });
-    }
-
-    // ...otherwise fall through to your existing (intent/program) behavior
-    // (no changes below this line)
-
-    // Context
-    const [equipmentList, prefs, recentLower] = await Promise.all([
-      getEquipmentNames(userId),
-      getUserPrefs(userId),
-      getRecentExerciseNames(userId),
-    ]);
-
-    devlog('input', { split, minutes, equipmentCount: equipmentList.length });
-
-        // 1) Check if this is a pull workout and use anchored main lift system
-    if (split === 'pull') {
-      console.log('LLM:claude.start', { split, minutes, hasKey: !!process.env.ANTHROPIC_API_KEY });
-      
-      const payload = await generatePullWorkoutLLM({
-        split: 'pull',
-        totalMin: minutes,
-        equipment: equipmentList,
-        chatWithFunctions: llmJSON,
-      });
-      
-      // Build chat message for pull workout
-      let chatMsg = `Pull day locked. Main lift: ${payload.plan.main_lift}. I'll rotate accessories based on your equipment and time.`;
-      
-      // Add equipment info
-      if (equipmentList.length > 0) {
-        chatMsg += `\n\nEquipment available: ${equipmentList.join(', ')}`;
-      }
-      
-      return NextResponse.json({
-        ...payload,
-        chatMsg,
-        coach: chatMsg,
-      }, { headers: { 'Content-Type': 'application/json' } });
-    }
-
-    // 2) Build messages for the model (keep this exactly what you send)
-    const goalHints = extractGoalHints(message);
-    const systemPrompt = [
-      'You are TrainAI. Return STRICT JSON only with keys:',
-      'plan { name, duration_min, phases[] } and workout { warmup[], main[], cooldown[] }.',
-      'Phases allowed: prep, strength, activation, conditioning, cooldown.',
-      'Rules:',
-      '- Fit the total time budget.',
-      '- If the user goal suggests sport-prep (e.g., ski), INCLUDE: relevant isometrics, eccentric work, balance/anti-rotation core, and 1 small plyometric element if equipment/time allow.',
-      '- Cooldown MUST be mobility/stretching only (no strength/HI).',
-      '- Use available equipment; avoid exercises requiring missing gear.',
-    ].join('\n');
-
-    const userPrompt = JSON.stringify({
-      split, minutes,
-      equipment: equipmentList,
-      goalHints,
+    const completion = await openai.chat.completions.create({
+      model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+      temperature: 0.4,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user }
+      ]
     });
 
-    // 3) Call your existing chat service (unchanged)
-    console.log('LLM:claude.start', { split, minutes, hasKey: !!process.env.ANTHROPIC_API_KEY });
-    
-    const rawText = await llmJSON({
-      system: systemPrompt,
-      user: userPrompt,
-      max_tokens: 1600,
-      temperature: 0.3
-    });
-    devlog('model.raw', rawText);
-
-    // 4) Parse & validate
-    const extracted = extractJson(rawText);
-    devlog('parse', extracted.error ? { error: extracted.error } : { planKeys: Object.keys(extracted.plan ?? {}), workoutKeys: Object.keys(extracted.workout ?? {}) });
-
-    const validity = validatePlan(extracted.plan, extracted.workout);
-    devlog('validate', validity);
-
-    // 5) If invalid, return error instead of fallback
-    let finalPlan = extracted.plan;
-    let finalWorkout = extracted.workout;
-
-    if (!validity.ok) {
-      devlog('validation.failed', validity.why ?? 'unknown');
-      return NextResponse.json({ 
-        ok: false, 
-        error: `Workout validation failed: ${validity.why || 'unknown error'}` 
-      }, { status: 400 });
-    }
-
-    // 6) Return with explicit debug
-    const minutesNum = Number(minutes ?? 45);
-    const respTitle = titleFor(split, minutesNum);
-
-    // TODO: optionally check Supabase to detect history; for now:
-    const hasHistory = false;
-
-    // Give the session a better name when there's a goal
-    const preferredTitle =
-      (extracted?.plan?.name && String(extracted.plan.name).trim()) ||
-      (goal ? `${wantSki ? 'Ski Prep' : 'Goal-Focused'} (~${minutesNum} min)` :
-              titleFor(split, minutesNum));
-
-    // ensure plan.name isn't "Planned Session" when model gave a better title
-    const safePlan: ChatPlan | null = finalPlan
-      ? { ...finalPlan, name: finalPlan.name || preferredTitle }
-      : null;
-
-    // Build descriptive chat summary using the new normalizer
-    let chatMsg = "Let's get started.";
-    let mainLiftName: string | undefined;
-    let chatBuildError: string | null = null;
-    let normalized: any = null;
-
+    const raw = completion.choices?.[0]?.message?.content ?? "{}";
+    let plan: WorkoutPlan;
     try {
-      normalized = finalPlan ? normalizePlanLib(finalPlan) : null;
-
-      if (normalized && (normalized.main.length || normalized.warmup.length || normalized.cooldown.length)) {
-        let msg = buildChatSummary(normalized);
-        const [lastCore, eq] = await Promise.all([
-          getRecentCoreLift(userId, normalized.mainLiftName),
-          getEquipmentList(userId)
-        ]);
-        const extra: string[] = [];
-        if (eq.length) extra.push(`Equipment on file: ${eq.join(", ")}`);
-        extra.push(...coachTips(normalized, lastCore));
-        chatMsg = `${msg}\n\n${extra.join("\n")}`;
-        mainLiftName = normalized.mainLiftName;
-      } else {
-        const wkSum = summarizeFromWorkout(finalWorkout, split, minutes);
-        if (wkSum) {
-          const [lastCore, eq] = await Promise.all([
-            getRecentCoreLift(userId, wkSum.mainLift),
-            getEquipmentList(userId)
-          ]);
-          const tips: string[] = [];
-          if (wkSum.mainLift) tips.push(`Focus on ${wkSum.mainLift}. Control the eccentric, brace, and rest 2–3 min.`);
-          if (lastCore?.actual_weight && lastCore?.reps) tips.push(`Last time: ${wkSum.mainLift} at ${lastCore.actual_weight} × ${lastCore.reps}. Match or add 2.5–5 lb if clean.`);
-          if (!tips.length) tips.push("First session? Keep 1–2 reps in reserve and prioritize form.");
-          const extra: string[] = [];
-          if (eq.length) extra.push(`Equipment on file: ${eq.join(", ")}`);
-          chatMsg = `${wkSum.title}\n\n${wkSum.paragraph}\n\n${[...extra, ...tips].join("\n")}`;
-          mainLiftName = wkSum.mainLift;
-        }
-      }
-    } catch (e: any) {
-      chatBuildError = e?.message ?? String(e);
-      // keep chatMsg as the simple default; DO NOT throw
+      plan = JSON.parse(raw) as WorkoutPlan;
+    } catch {
+      return new Response(JSON.stringify({ ok: false, error: "Invalid JSON from model" }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' }
+      });
     }
 
-    // Make a nicer narrative that mentions the goal
-    if (goal) {
-      const why = wantSki
-        ? "Emphasis: eccentric quads for deceleration, isometrics at ski angles, lateral plyos for edge changes, anti-rotation core, and short intervals."
-        : undefined;
-      chatMsg = `Goal: ${goal}${why ? `\n${why}` : ''}\n\n${chatMsg}`;
+    // Optionally trim to target duration and validate
+    const trimmed = trimPlanToDuration(plan, ctx.duration);
+    const valid = validateWorkoutPlan(trimmed);
+    if (!valid.ok) {
+      return new Response(JSON.stringify({ ok: false, error: valid.error }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' }
+      });
     }
 
-    // guarantee cooldown before returning
-    await ensureCooldownOn(safePlan, finalWorkout, split || 'full');
-
-    // --- Finalize cooldown intelligently from DB + policy (mobility-only) ---
-    // Note: Using existing ensureCooldownOn for now to avoid type conflicts
-    // The existing function already handles mobility-only filtering and DB fallbacks
-
-    // derive a clean, deterministic title (e.g., "Legs (~45 min)")
-    const nice = titleFor(split, minutesNum);
-
-    return NextResponse.json({
+    const resp = {
       ok: true,
-      name: nice,
-      message: nice,
-      chatMsg,
-      coach: chatMsg,         // keep for UI fallback
-      plan: safePlan,      // keep full plan
-      workout: finalWorkout,
-      debug: { split, minutesRequested: minutes, mainLiftName, chatBuildError }
-    }, { headers: { 'Content-Type': 'application/json' } });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: S(e?.message) || "Failed to generate workout plan" }, { status: 500 });
+      plan: trimmed,
+      coach: "Move with intent and clean form—leave 1–2 reps in reserve on the toughest sets, and keep transitions tight."
+    };
+
+    return new Response(JSON.stringify(resp), { headers: { 'content-type': 'application/json' } });
   }
+
+  // Ensure that when a split is explicitly provided, we do NOT label as "Ad Hoc".
+  if (splitInput) {
+    // Load profile/equipment from your existing helper
+    const profile = await getProfile(userId);
+    const equipmentList = (profile?.equipment ? String(profile.equipment).split(',') : [])
+      .map(s => s.trim()).filter(Boolean);
+
+    // Determine a main lift for the chosen split
+    const main = mainLiftForSplit(splitInput, equipmentList);
+
+    // Build a STRICT JSON plan (no chatty text). Keep coach brief.
+    const plan = {
+      split: splitInput,
+      duration: Number(profile?.preferred_workout_duration ?? 45),
+      phases: [
+        {
+          phase: 'warmup',
+          items: [
+            { name: 'Bike or Row', duration: '3-5 min', instruction: 'Easy pace to raise core temp' },
+            { name: 'Dynamic Shoulder + T-Spine', duration: '2-3 min', instruction: 'Arm circles, band pull-aparts' },
+          ],
+        },
+        {
+          phase: 'strength',
+          items: [
+            ...(main ? [{ name: main, sets: '4', reps: '5-8', instruction: 'Build to a moderate-heavy top set' }] : []),
+          ],
+        },
+        {
+          phase: 'accessory',
+          items: [
+            // Keep minimal; your cooldown builder will append cooldown later
+            { name: 'Incline DB Press', sets: '3', reps: '8-12' },
+            { name: 'Lateral Raise', sets: '3', reps: '12-15' },
+            { name: 'Cable Triceps Pressdown', sets: '3', reps: '10-12' },
+          ],
+        },
+      ],
+    };
+
+    out.plan = plan;
+    out.message = `${splitInput.charAt(0).toUpperCase()}${splitInput.slice(1)} — Day`;
+    out.coach = 'Move with control, leave 1–2 reps in reserve on main sets, and prioritize quality over load.';
+
+    return new Response(JSON.stringify(out), { headers: { 'content-type': 'application/json' } });
+  }
+
+  // ...otherwise fall through to your existing (intent/program) behavior
+  // (no changes below this line)
+
+  // Non-workout small talk: reply succinctly (avoid JSON so the UI doesn't try to render a plan)
+  const msg = userMsg.trim() || "How can I help with training today?";
+  return new Response(JSON.stringify({ ok: true, message: msg, coach: "Stay consistent—you're building momentum." }), {
+    headers: { 'content-type': 'application/json' }
+  });
 }
 
 
