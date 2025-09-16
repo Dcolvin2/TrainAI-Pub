@@ -59,13 +59,11 @@ function buildSmartCoachPrompt(userMsg: string, ctx: Ctx) {
     "- If time is tight, cut accessories first, then trim main-lift volume.",
     "- If no equipment, generate bodyweight plan.",
     "- Where history exists, include a 'last' field and suggest a progression (e.g., 'suggested').",
-    "- PRIORITIZE equipment mentioned in the user request (e.g., 'functional trainer', 'cables', 'kettlebells').",
-    "- For equipment-specific requests, focus heavily on that equipment type while maintaining workout structure.",
+    "- CRITICAL: If user mentions specific equipment in their request, use that equipment extensively throughout the workout.",
+    "- For equipment-specific requests, make 70-80% of exercises use that equipment type.",
+    "- Examples: 'functional trainer' → use cable exercises, 'kettlebells' → use KB exercises, 'dumbbells' → use DB exercises.",
   ].join("\n");
 
-  // Extract equipment mentioned in user request
-  const mentionedEquipment = userMsg.toLowerCase().match(/\b(functional trainer|cables?|kettlebells?|dumbbells?|barbell|trap bar|sled|trx|bands?|resistance bands?|medicine ball|battle ropes?|sandbag|tire|box|step|bench|rack|machine|pulley|rope|chain|weighted vest|bodyweight|calisthenics)\b/g) || [];
-  
   const user = [
     `User request: ${userMsg}`,
     `Available equipment: ${eqList}`,
@@ -1053,8 +1051,11 @@ export async function POST(req: Request) {
     .map(r => String(r.name || '').trim())
     .filter(Boolean);
 
-  // Fetch user's equipment from database if not provided in request
-  let userEquipment = equipment;
+  // Extract equipment mentioned in user request (this takes priority)
+  const mentionedEquipment = userMsg.toLowerCase().match(/\b(functional trainer|cables?|kettlebells?|dumbbells?|barbell|trap bar|sled|trx|bands?|resistance bands?|medicine ball|battle ropes?|sandbag|tire|box|step|bench|rack|machine|pulley|rope|chain|weighted vest|bodyweight|calisthenics)\b/g) || [];
+  
+  // Use mentioned equipment first, then request equipment, then profile equipment as fallback
+  let userEquipment = mentionedEquipment.length > 0 ? mentionedEquipment : equipment;
   if (userEquipment.length === 0) {
     const profile = await getProfile(userId);
     const equipmentList = (profile?.equipment ? String(profile.equipment).split(',') : [])
