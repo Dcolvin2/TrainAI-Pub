@@ -324,7 +324,7 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
           // Apply the tracking data
           updateSet(
             { exerciseName: firstExercise, setNumber: trackingData.setNumber } as any,
-            { actualReps: trackingData.reps, actualWeight: trackingData.weight, completed: true }
+            { reps: trackingData.reps, actualWeight: trackingData.weight, done: true }
           );
           
           // Show feedback
