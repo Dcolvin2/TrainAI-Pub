@@ -1025,14 +1025,25 @@ export async function POST(req: Request) {
   const lastSets = Array.isArray(body?.lastSets) ? body.lastSets as Array<{ name: string; last: string }> : undefined;
 
   // Fetch allowed DB exercise names from database
-  const { data: exerciseData } = await supabase
+  const { data: exerciseData, error: exerciseError } = await supabase
     .from('exercises')
     .select('name')
     .limit(1000);
   
+  if (exerciseError) {
+    console.error('❌ Database error fetching exercises:', exerciseError);
+  }
+  
   const allowedExercises: string[] = (exerciseData ?? [])
     .map(r => String(r.name || '').trim())
     .filter(Boolean);
+    
+  console.log('📊 Database query results:', {
+    exerciseDataCount: exerciseData?.length || 0,
+    allowedExercisesCount: allowedExercises.length,
+    sampleExercises: allowedExercises.slice(0, 10),
+    hasToes: allowedExercises.some(name => name.toLowerCase().includes('toes'))
+  });
 
   const ctx: Ctx = { userId, duration: Number.isFinite(duration) && duration > 0 ? duration : 45, equipment, split: splitInput, lastSets };
 
