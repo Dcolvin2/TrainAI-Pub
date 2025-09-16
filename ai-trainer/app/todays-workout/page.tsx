@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import { normalizePlan, buildChatSummary, NormalizedPlan } from '@/lib/normalizePlan';
 import { getUserEquipment } from '@/lib/getUserEquipment';
+import VoiceInputParser from '@/app/components/VoiceInputParser';
 
 // --- response adapter (drop-in) ---
 function toStr(v: any) {
@@ -826,6 +827,20 @@ export default function TodaysWorkoutPage() {
             {generatedWorkout && (
               <div className="bg-gray-900 rounded-lg p-6">
                 <h3 className="text-lg font-semibold mb-4">{generatedWorkout.name}</h3>
+                
+                {/* Voice Input Parser */}
+                <div className="mb-6">
+                  <VoiceInputParser
+                    onQuickEntry={(exerciseName, entries) => {
+                      console.log('Voice input received:', exerciseName, entries);
+                      // TODO: Implement voice input handling for todays-workout page
+                    }}
+                    availableExercises={[
+                      ...(generatedWorkout.main?.map(ex => typeof ex === 'string' ? ex : ex.name) || []),
+                      ...(generatedWorkout.accessories?.map(ex => typeof ex === 'string' ? ex : ex.name) || [])
+                    ].filter(Boolean)}
+                  />
+                </div>
                 
                 {/* Warm-up Section */}
                 {generatedWorkout.warmup?.length > 0 && (

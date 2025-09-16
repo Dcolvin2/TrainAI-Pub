@@ -5,6 +5,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { useWorkoutStore } from '@/lib/workoutStore';
+import VoiceInputParser from './VoiceInputParser';
 
 interface GeneratedWorkout {
   warmup: string[];
@@ -655,8 +656,17 @@ export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer, el
     { key: 'cooldown', title: 'Cool-down', sets: Object.entries(groupedSets).filter(([key]) => key.startsWith('cooldown-')) }
   ];
 
+  // Get unique exercise names for voice input
+  const availableExercises = Array.from(new Set(sets.map(set => set.exerciseName)));
+
   return (
     <div className="space-y-6">
+      {/* Voice Input Parser */}
+      <VoiceInputParser
+        onQuickEntry={applyQuickEntrySets}
+        availableExercises={availableExercises}
+      />
+
       {error && (
         <div className="bg-red-900/20 border border-red-500 text-red-400 px-4 py-3 rounded-xl">
           {error}
