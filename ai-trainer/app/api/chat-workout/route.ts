@@ -59,6 +59,8 @@ function buildSmartCoachPrompt(userMsg: string, ctx: Ctx) {
     "- If time is tight, cut accessories first, then trim main-lift volume.",
     "- If no equipment, generate bodyweight plan.",
     "- Where history exists, include a 'last' field and suggest a progression (e.g., 'suggested').",
+    "- PRIORITIZE equipment mentioned in the user request (e.g., 'functional trainer', 'cables', 'kettlebells').",
+    "- For equipment-specific requests, focus heavily on that equipment type while maintaining workout structure.",
   ].join("\n");
 
   const user = [
@@ -1140,8 +1142,11 @@ export async function POST(req: Request) {
     );
   }
 
-  // Ensure that when a split is explicitly provided, we do NOT label as "Ad Hoc".
-  if (splitInput) {
+  // Only use hardcoded path for simple split requests (push/pull/legs/upper/hiit)
+  // Complex requests (like "ski prep with functional trainer") should always use LLM
+  const isSimpleSplit = splitInput && ['push', 'pull', 'legs', 'upper', 'hiit'].includes(splitInput);
+  
+  if (isSimpleSplit) {
     // Load profile/equipment from your existing helper
     const profile = await getProfile(userId);
     const equipmentList = (profile?.equipment ? String(profile.equipment).split(',') : [])
