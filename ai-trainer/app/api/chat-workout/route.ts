@@ -40,7 +40,7 @@ function normList(v: unknown): string[] {
   return [];
 }
 
-function buildSmartCoachPrompt(userMsg: string, ctx: Ctx) {
+function buildSmartCoachPrompt(userMsg: string, ctx: Ctx, mentionedEquipment: string[] = []) {
   const eqList = ctx.equipment.length ? ctx.equipment.join(", ") : "bodyweight only";
   const focus = ctx.split ? focusMusclesForSplit(ctx.split).join(", ") : "auto";
   const last = (ctx.lastSets ?? [])
@@ -1082,7 +1082,7 @@ export async function POST(req: Request) {
   // LLM-first generation (smart coach). Strict JSON via response_format.
   if (maybeWorkout) {
     console.log('✅ Using LLM path');
-    const { system, user } = buildSmartCoachPrompt(userMsg, ctx);
+    const { system, user } = buildSmartCoachPrompt(userMsg, ctx, mentionedEquipment);
 
     const completion = await anthropic.messages.create({
       model: "claude-3-5-sonnet-20241022",
