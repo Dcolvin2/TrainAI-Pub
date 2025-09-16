@@ -301,6 +301,13 @@ export function sanitizePlanExercises<T extends {
   const allowSet = new Set(allowedNames.map(normName));
   const out: T = JSON.parse(JSON.stringify(plan));
   
+  console.log('🧹 Sanitization called with:', {
+    allowedCount: allowedNames.length,
+    minScore,
+    drop,
+    planPhases: out.phases.map(p => ({ phase: p.phase, itemCount: p.items.length }))
+  });
+  
   for (const ph of out.phases) {
     const next: Array<{ name?: string; [k: string]: unknown }> = [];
     for (const it of ph.items) {
@@ -309,17 +316,23 @@ export function sanitizePlanExercises<T extends {
       
       const nn = normName(raw);
       if (allowSet.has(nn)) {
+        console.log(`✅ Exact match: "${raw}"`);
         next.push(it); // already exact
         continue;
       }
       
       const { hit, score } = bestMatch(raw, allowedNames);
+      console.log(`🔍 "${raw}" -> "${hit}" (score: ${score})`);
+      
       if (hit && score >= minScore) {
+        console.log(`✅ Mapped: "${raw}" -> "${hit}"`);
         next.push({ ...it, name: hit });
       } else if (!drop) {
+        console.log(`⚠️ Keeping: "${raw}" (drop=false)`);
         next.push(it);
+      } else {
+        console.log(`❌ Dropped: "${raw}" (score: ${score} < ${minScore})`);
       }
-      // else: dropped unknown
     }
     ph.items = next;
   }
