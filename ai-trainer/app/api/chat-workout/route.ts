@@ -1025,10 +1025,18 @@ export async function POST(req: Request) {
   const lastSets = Array.isArray(body?.lastSets) ? body.lastSets as Array<{ name: string; last: string }> : undefined;
 
   // Fetch allowed DB exercise names from database
+  console.log('🔍 About to query exercises table...');
   const { data: exerciseData, error: exerciseError } = await supabase
     .from('exercises')
     .select('name')
     .limit(1000);
+  
+  console.log('🔍 Database query completed:', { 
+    hasData: !!exerciseData, 
+    dataLength: exerciseData?.length,
+    hasError: !!exerciseError,
+    error: exerciseError 
+  });
   
   if (exerciseError) {
     console.error('❌ Database error fetching exercises:', exerciseError);
