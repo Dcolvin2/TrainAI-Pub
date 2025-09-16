@@ -1041,9 +1041,7 @@ export async function POST(req: Request) {
   console.log('📊 Database query results:', {
     exerciseDataCount: exerciseData?.length || 0,
     allowedExercisesCount: allowedExercises.length,
-    sampleExercises: allowedExercises.slice(0, 10),
-    hasToes: allowedExercises.some(name => name.toLowerCase().includes('toes')),
-    toesExercises: allowedExercises.filter(name => name.toLowerCase().includes('toes'))
+    sampleExercises: allowedExercises.slice(0, 10)
   });
 
   const ctx: Ctx = { userId, duration: Number.isFinite(duration) && duration > 0 ? duration : 45, equipment, split: splitInput, lastSets };
@@ -1098,16 +1096,7 @@ export async function POST(req: Request) {
     repaired = ensureDuration(repaired, ctx.duration, userMsg, ctx.equipment);
 
     // Sanitize item names to DB-approved list, then re-ensure duration in case drops occurred
-    console.log('🔍 Sanitization Debug:', {
-      allowedExercisesCount: allowedExercises.length,
-      sampleAllowed: allowedExercises.slice(0, 10),
-      planBeforeSanitization: JSON.stringify(repaired, null, 2)
-    });
-    
     repaired = sanitizePlanExercises(repaired, allowedExercises, { dropUnknown: true, minScore: 0.6 });
-    
-    console.log('✅ After Sanitization:', JSON.stringify(repaired, null, 2));
-    
     // If sanitization removed too much, pad again to hit time
     repaired = ensureDuration(repaired, ctx.duration, userMsg, ctx.equipment);
 
@@ -1197,7 +1186,10 @@ export async function POST(req: Request) {
       ],
     };
 
-    out.plan = plan;
+    // Sanitize the hardcoded plan as well
+    const sanitizedPlan = sanitizePlanExercises(plan, allowedExercises, { dropUnknown: true, minScore: 0.6 });
+    
+    out.plan = sanitizedPlan;
     out.message = `${splitInput.charAt(0).toUpperCase()}${splitInput.slice(1)} — Day`;
     out.coach = 'Move with control, leave 1–2 reps in reserve on main sets, and prioritize quality over load.';
 
