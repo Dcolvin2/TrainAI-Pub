@@ -54,11 +54,11 @@ function buildSmartCoachPrompt(userMsg: string, ctx: Ctx, mentionedEquipment: st
     "Use your own broad fitness knowledge FIRST to shape the plan; use provided context for personalization (equipment, time, last sets).",
     "Return ONLY strict JSON matching the schema described. No commentary, no markdown.",
     "Training Style Guidelines:",
-    "- JOE HOLDER/OCHO SYSTEM: Multi-dimensional workouts with mobility, coordination, strength circuits, metabolic conditioning, and flexibility. Focus on quality movement, multiplanar motion, and holistic wellness. Include biomotor skills, agility work, and mindfulness elements.",
-    "- ATHLEAN-X/JEFF CAVALIERE: Form-focused, tension-based training with strict technique, full ROM, and controlled tempo. Emphasize muscle-mind connection and progressive overload.",
-    "- TABATA: High-intensity intervals (20s work/10s rest) with explosive movements and maximum effort.",
-    "- CROSSFIT WOD: Functional movements, varied time domains, and high-intensity conditioning without Olympic lifts.",
-    "- SKI PREP: Unilateral strength, power development, lateral movements, and eccentric control for skiing performance.",
+    "- JOE HOLDER/OCHO SYSTEM: Multi-dimensional workouts with mobility, coordination, strength circuits, metabolic conditioning, and flexibility. Use specific exercises like: dynamic leg swings, alternating knee tucks, core activation holds, full-range squat jumps, pogos, multiplanar lunges, bear crawls, lateral bounds, metabolic circuits with high knees/burpees/mountain climbers, and mindfulness cooldowns with pigeon pose, child's pose, cat-cow stretches. Focus on quality movement, multiplanar motion, and holistic wellness.",
+    "- ATHLEAN-X/JEFF CAVALIERE: Form-focused, tension-based training with strict technique, full ROM, and controlled tempo. Use compound movements like barbell/dumbbell presses, rows, squats, deadlifts with perfect form, time-under-tension techniques, drop sets, rest-pause sets. Emphasize muscle-mind connection and progressive overload.",
+    "- TABATA: High-intensity intervals (20s work/10s rest) with explosive movements and maximum effort. Use exercises like burpees, squat jumps, mountain climbers, high knees, jumping jacks, push-ups, jumping lunges, plank jacks that can be performed at maximum intensity.",
+    "- CROSSFIT WOD: Functional movements, varied time domains, and high-intensity conditioning without Olympic lifts. Use movements like thrusters, wall balls, kettlebell swings, box jumps, rowing, running, pull-ups, push-ups in varied time domains.",
+    "- SKI PREP: Unilateral strength, power development, lateral movements, and eccentric control for skiing performance. Use exercises like single-leg squats, lateral lunges, single-leg deadlifts, lateral bounds, box jumps, lateral step-ups, lateral shuffles, balance work.",
     "General Rules:",
     "- Phases: warmup, strength (main/core lift first unless HIIT), accessory, cooldown.",
     `- Cooldown must match the day's focus muscles (${focus}); never mismatched.`,
@@ -75,13 +75,53 @@ function buildSmartCoachPrompt(userMsg: string, ctx: Ctx, mentionedEquipment: st
   let styleInstructions = "";
   
   if (trainingStyle.includes('ocho') || trainingStyle.includes('joe holder')) {
-    styleInstructions = "CRITICAL: Generate a JOE HOLDER OCHO SYSTEM workout with: 1) Dynamic warmup with mobility and coordination, 2) Multi-dimensional strength circuit with minimal rest, 3) Metabolic conditioning with high-intensity intervals, 4) Flexibility and mindfulness cooldown. Focus on quality movement, multiplanar motion, and holistic wellness. Include biomotor skills, agility work, and varied movement patterns.";
+    styleInstructions = `CRITICAL: Generate a JOE HOLDER OCHO SYSTEM workout with these SPECIFIC components:
+
+WARMUP (8-10 min): Dynamic leg swings, alternating knee tucks, core activation (iso hold pressing hand to raised knee), arm circles, hip openers, full-range squat jumps, pogos (quick jumps), multiplanar lunges (forward/side/reverse)
+
+STRENGTH CIRCUIT (15-20 min): Repeat 2-3 rounds with minimal rest between exercises, 1 min between rounds. Include: Push-ups, bodyweight/goblet squats, bent-over rows, plank with alternating shoulder taps, single-leg deadlifts, lateral lunges, bear crawls, mountain climbers
+
+METABOLIC CONDITIONING (8-10 min): High knees (30s), burpees (12 reps), mountain climbers (30s), jumping jacks (30s), squat jumps (30s). Repeat 2-3 rounds with 30s rest between rounds.
+
+COOLDOWN (5-7 min): Forward fold hamstring stretch, lunge with twist, pigeon pose (hips), child's pose with deep breathing, cat-cow stretch
+
+Focus on: Quality movement, multiplanar motion, holistic wellness, biomotor skills, agility work, varied movement patterns, mindfulness elements.`;
   } else if (trainingStyle.includes('athlean') || trainingStyle.includes('cavaliere')) {
-    styleInstructions = "CRITICAL: Generate an ATHLEAN-X style workout with: 1) Form-focused exercises with strict technique, 2) Full ROM movements with controlled tempo, 3) Muscle-mind connection emphasis, 4) Progressive overload principles. Focus on tension-based training and quality over quantity.";
+    styleInstructions = `CRITICAL: Generate an ATHLEAN-X style workout with these SPECIFIC components:
+
+WARMUP: Dynamic stretching, activation exercises, light cardio (5-7 min)
+
+STRENGTH: Form-focused compound movements with strict technique, full ROM, controlled tempo (3-4 second eccentrics), muscle-mind connection emphasis. Include: Barbell/dumbbell compound lifts, isolation exercises with perfect form, time-under-tension techniques, drop sets or rest-pause sets
+
+ACCESSORY: Targeted muscle group work with strict form, full range of motion, controlled tempo. Focus on muscle-mind connection and progressive overload.
+
+COOLDOWN: Static stretching, mobility work, foam rolling movements
+
+Focus on: Tension-based training, quality over quantity, strict technique, full ROM, controlled tempo, muscle-mind connection, progressive overload principles.`;
   } else if (trainingStyle.includes('tabata')) {
-    styleInstructions = "CRITICAL: Generate a TABATA workout with: 1) High-intensity intervals (20s work/10s rest), 2) Explosive movements with maximum effort, 3) Short rest periods, 4) Metabolic conditioning focus. Use exercises that can be performed at maximum intensity.";
+    styleInstructions = `CRITICAL: Generate a TABATA workout with these SPECIFIC components:
+
+WARMUP: Dynamic movements, light cardio (5 min)
+
+STRENGTH: High-intensity intervals (20s work/10s rest) for 4 minutes per exercise. Use explosive movements: Burpees, squat jumps, mountain climbers, high knees, jumping jacks, push-ups, jumping lunges, plank jacks
+
+ACCESSORY: Additional high-intensity intervals or strength exercises with short rest periods
+
+COOLDOWN: Light stretching and breathing (5 min)
+
+Focus on: Maximum effort during work periods, explosive movements, short rest periods, metabolic conditioning, exercises that can be performed at maximum intensity.`;
   } else if (trainingStyle.includes('ski') || trainingStyle.includes('skiing')) {
-    styleInstructions = "CRITICAL: Generate a SKI PREP workout with: 1) Unilateral strength exercises, 2) Power development movements, 3) Lateral and multiplanar movements, 4) Eccentric control emphasis. Focus on movements that translate to skiing performance.";
+    styleInstructions = `CRITICAL: Generate a SKI PREP workout with these SPECIFIC components:
+
+WARMUP: Dynamic leg swings, hip circles, ankle mobility, lateral movements (5-7 min)
+
+STRENGTH: Unilateral exercises, power development, lateral movements, eccentric control. Include: Single-leg squats, lateral lunges, single-leg deadlifts, lateral bounds, box jumps, lateral step-ups, single-leg glute bridges, lateral shuffles
+
+ACCESSORY: Additional unilateral and lateral movements, core stability exercises, balance work
+
+COOLDOWN: Hip flexor stretches, IT band stretches, glute stretches, ankle mobility
+
+Focus on: Unilateral strength, power development, lateral and multiplanar movements, eccentric control, movements that translate to skiing performance, balance and stability.`;
   }
 
   const user = [
