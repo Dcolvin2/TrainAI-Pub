@@ -1074,7 +1074,8 @@ export async function POST(req: Request) {
     splitInput,
     willUseLLM: maybeWorkout,
     userEquipment,
-    equipmentFromRequest: equipment
+    equipmentFromRequest: equipment,
+    mentionedEquipment
   });
 
   const out: any = { ok: true };
@@ -1083,6 +1084,12 @@ export async function POST(req: Request) {
   if (maybeWorkout) {
     console.log('✅ Using LLM path');
     const { system, user } = buildSmartCoachPrompt(userMsg, ctx, mentionedEquipment);
+    
+    console.log('🤖 LLM Prompt Debug:', {
+      system: system.substring(0, 200) + '...',
+      user: user.substring(0, 300) + '...',
+      mentionedEquipment
+    });
 
     const completion = await anthropic.messages.create({
       model: "claude-3-5-sonnet-20241022",
@@ -1094,11 +1101,15 @@ export async function POST(req: Request) {
     });
 
     const raw = (completion.content?.[0] as any)?.text ?? "{}";
+    console.log('🤖 LLM Response:', raw.substring(0, 500) + '...');
+    
     let plan: WorkoutPlan;
 
     try {
       plan = JSON.parse(raw) as WorkoutPlan;
+      console.log('✅ Parsed Plan:', JSON.stringify(plan, null, 2));
     } catch {
+      console.log('❌ JSON Parse Error:', raw);
       return new Response(JSON.stringify({ ok: false, error: "Invalid JSON from model" }), {
         status: 400,
         headers: { 'content-type': 'application/json' }
