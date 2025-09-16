@@ -1,26 +1,35 @@
 # Project Rules for Cursor
 
-Canonical specs (read first on each edit):
+## Canonical specs (read FIRST on every edit)
 - /docs/agent-prd.md
 - /docs/architecture.md
+- /lib/schemas/workout.ts
 
-Contracts
-- Honor the JSON contract in /lib/schemas/workout.ts (use validateWorkoutPlan before persisting).
-- Keep business rules in /lib/workout.ts (main-lift selection, cooldown matching, time trimming).
+## Required reply format (for any change)
+Cursor MUST produce:
+1) Doc-Anchor — list the exact bullets from the above docs that you are applying.
+2) Mini spec — 3–7 bullets describing the macro changes and why.
+3) Unified patch — one surgical diff only.
+4) Self-Check — explicitly confirm:
+   - Strict JSON contract enforced; invalid → 400 (no persist).
+   - Phases include warmup/strength/accessory/cooldown; strength begins with main/core (except HIIT).
+   - Cooldown matches focus muscles (no generic mismatches).
+   - Target duration respected (pad or trim as per PRD).
+   - No unused imports/vars; TS strict; build passes.
+   - Change does not contradict /docs/agent-prd.md or /docs/architecture.md.
+5) Files touched — exact list.
 
-Engineering constraints
-- TypeScript strict; no unused imports/vars; build must pass.
-- Enforce strict JSON from LLM; invalid → HTTP 400 (do not persist).
-- UI renders JSON; no free-text parsing for plans.
-- Read profile & equipment via profiles → user_equipment → equipment join.
-- strength starts with main/core lift (except HIIT). Accessories explicitly flagged.
-- Cooldowns must match focus muscles; never generic/mismatched.
-- Time-boxing: cut accessories first, then trim main-lift volume.
-- No equipment → bodyweight plan.
-- Save to workout_sessions & workout_sets only on Finish with workout_source tag when available.
-- Maintain one active chat_sessions row; archive overflow to workout_chat_log; rebuild request context from DB.
-- Coach message: motivational, max 2 sentences.
+## Contracts
+- Obey /lib/schemas/workout.ts types and validator in any plan generation or persistence.
+- Keep business rules centralized in /lib/workout.ts (main-lift selection, cooldown matching, duration heuristics).
 
-When modifying code
-- Reference /docs/agent-prd.md + /docs/architecture.md in PRs/commits.
-- Prefer mini spec + unified patch; keep diffs surgical and self-contained.
+## Engineering constraints
+- TypeScript strict; no unused imports/vars.
+- Strict JSON from LLM; invalid → HTTP 400.
+- UI renders JSON, not free text.
+- Equipment from profiles → user_equipment → equipment join.
+- Save only on Finish (workout_sessions/workout_sets), with workout_source when available.
+- Maintain one active chat_sessions; archive overflow to workout_chat_log.
+
+## Commit/PR messaging
+- Reference /docs/agent-prd.md + /docs/architecture.md and summarize the Self-Check in the commit message.

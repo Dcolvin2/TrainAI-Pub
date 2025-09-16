@@ -16,7 +16,8 @@ import {
   trimPlanToDuration,
   normalizeStrengthAccessories,
   ensureDuration,
-  coachFor
+  coachFor,
+  sanitizePlanExercises
 } from "../../../lib/workout";
 
 import { normalizePlan as normalizePlanLib, buildChatSummary } from "@/lib/normalizePlan";
@@ -1023,6 +1024,11 @@ export async function POST(req: Request) {
   const splitInput = typeof body?.split === 'string' ? body.split.trim().toLowerCase() : undefined;
   const lastSets = Array.isArray(body?.lastSets) ? body.lastSets as Array<{ name: string; last: string }> : undefined;
 
+  // Allowed DB exercise names (send from client using your exercises table)
+  const allowedExercises: string[] = normList(
+    body?.allowedExercises ?? body?.exerciseNames ?? body?.dbExerciseNames ?? []
+  );
+
   const ctx: Ctx = { userId, duration: Number.isFinite(duration) && duration > 0 ? duration : 45, equipment, split: splitInput, lastSets };
 
   // If the user is just chatting (non-workout), allow a concise reply (kept server-side to avoid JSON pollution).
@@ -1073,6 +1079,13 @@ export async function POST(req: Request) {
     
     // Ensure duration by padding or trimming to target with style-aware choices
     repaired = ensureDuration(repaired, ctx.duration, userMsg, ctx.equipment);
+
+    // Sanitize item names to DB-approved list, then re-ensure duration in case drops occurred
+    if (allowedExercises.length > 0) {
+      repaired = sanitizePlanExercises(repaired, allowedExercises, { dropUnknown: true, minScore: 0.6 });
+      // If sanitization removed too much, pad again to hit time
+      repaired = ensureDuration(repaired, ctx.duration, userMsg, ctx.equipment);
+    }
 
     const finalCheck = validateWorkoutPlanPhases(repaired);
     if (!finalCheck.ok) {

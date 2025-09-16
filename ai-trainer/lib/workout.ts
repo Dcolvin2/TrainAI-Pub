@@ -249,3 +249,80 @@ export function coachFor(plan: { split: string }, userText: string): string {
       return "Move with intent and clean form—prioritize quality reps and steady pacing to finish on time.";
   }
 }
+
+// ---------- DB Name Sanitizer ----------
+function normName(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function tokenSet(s: string): Set<string> {
+  return new Set(normName(s).split(" ").filter(Boolean));
+}
+
+function jaccard(a: string, b: string): number {
+  const A = tokenSet(a), B = tokenSet(b);
+  let inter = 0;
+  for (const t of A) if (B.has(t)) inter++;
+  const union = A.size + B.size - inter;
+  return union ? inter / union : 0;
+}
+
+function bestMatch(name: string, allowed: string[]): { hit: string | null; score: number } {
+  const n = normName(name);
+  
+  // Exact / startswith / includes fast paths
+  for (const a of allowed) {
+    const an = normName(a);
+    if (an === n) return { hit: a, score: 1 };
+  }
+  
+  for (const a of allowed) {
+    const an = normName(a);
+    if (an.startsWith(n) || n.startsWith(an)) return { hit: a, score: 0.92 };
+    if (an.includes(n) || n.includes(an)) return { hit: a, score: 0.9 };
+  }
+  
+  // Jaccard fallback
+  let best = { hit: null as string | null, score: 0 };
+  for (const a of allowed) {
+    const sc = jaccard(a, name);
+    if (sc > best.score) best = { hit: a, score: sc };
+  }
+  
+  return best;
+}
+
+/** Map every item.name to the closest allowed DB name; optionally drop if no match. */
+export function sanitizePlanExercises<T extends {
+  phases: Array<{ phase: string; items: Array<{ name?: string; [k: string]: unknown }> }>;
+}>(plan: T, allowedNames: string[], opts?: { dropUnknown?: boolean; minScore?: number }): T {
+  const drop = opts?.dropUnknown ?? true;
+  const minScore = opts?.minScore ?? 0.55;
+  const allowSet = new Set(allowedNames.map(normName));
+  const out: T = JSON.parse(JSON.stringify(plan));
+  
+  for (const ph of out.phases) {
+    const next: Array<{ name?: string; [k: string]: unknown }> = [];
+    for (const it of ph.items) {
+      const raw = String(it.name ?? "").trim();
+      if (!raw) continue;
+      
+      const nn = normName(raw);
+      if (allowSet.has(nn)) {
+        next.push(it); // already exact
+        continue;
+      }
+      
+      const { hit, score } = bestMatch(raw, allowedNames);
+      if (hit && score >= minScore) {
+        next.push({ ...it, name: hit });
+      } else if (!drop) {
+        next.push(it);
+      }
+      // else: dropped unknown
+    }
+    ph.items = next;
+  }
+  
+  return out;
+}
