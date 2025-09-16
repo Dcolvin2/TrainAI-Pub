@@ -61,7 +61,7 @@ function buildSmartCoachPrompt(userMsg: string, ctx: Ctx, mentionedEquipment: st
     "- Where history exists, include a 'last' field and suggest a progression (e.g., 'suggested').",
     "- CRITICAL: If user mentions specific equipment in their request, use that equipment extensively throughout the workout.",
     "- For equipment-specific requests, make 70-80% of exercises use that equipment type.",
-    "- Examples: 'functional trainer' → use cable exercises, 'kettlebells' → use KB exercises, 'dumbbells' → use DB exercises.",
+    "- Examples: 'functional trainer' → use cable exercises like Cable Chest Press, Cable Rows, Cable Tricep Pushdowns, Cable Bicep Curls, Cable Lateral Raises, Cable Woodchops, Cable Face Pulls, Cable Squats, Cable Deadlifts, Cable Pull-throughs, 'kettlebells' → use KB exercises, 'dumbbells' → use DB exercises.",
   ].join("\n");
 
   const user = [
@@ -70,7 +70,7 @@ function buildSmartCoachPrompt(userMsg: string, ctx: Ctx, mentionedEquipment: st
     `Preferred duration (min): ${ctx.duration}`,
     ctx.split ? `Requested split: ${ctx.split}` : "",
     mainLiftHint ? `Hinted main lift: ${mainLiftHint}` : "",
-    mentionedEquipment.length > 0 ? `IMPORTANT: User specifically mentioned these equipment: ${mentionedEquipment.join(', ')}. Prioritize these heavily in the workout.` : "",
+    mentionedEquipment.length > 0 ? `IMPORTANT: User specifically mentioned these equipment: ${mentionedEquipment.join(', ')}. Prioritize these heavily in the workout. For 'functional trainer', use cable-based exercises like Cable Chest Press, Cable Rows, Cable Tricep Pushdowns, Cable Bicep Curls, Cable Lateral Raises, Cable Woodchops, Cable Face Pulls, Cable Squats, Cable Deadlifts, Cable Pull-throughs.` : "",
     lastBlock,
     "Output JSON shape:",
     "{",
