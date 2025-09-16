@@ -10,7 +10,14 @@ import {
   type WorkoutItem,
   type PlanPhase as SchemaPlanPhase
 } from "../../../lib/schemas/workout";
-import { mainLiftForSplit, focusMusclesForSplit, trimPlanToDuration } from "../../../lib/workout";
+import {
+  mainLiftForSplit,
+  focusMusclesForSplit,
+  trimPlanToDuration,
+  normalizeStrengthAccessories,
+  ensureDuration,
+  coachFor
+} from "../../../lib/workout";
 
 import { normalizePlan as normalizePlanLib, buildChatSummary } from "@/lib/normalizePlan";
 import { fetchCooldownContext, mapLLMToPlanItems, focusFromSplit } from '@/lib/cooldown';
@@ -1049,10 +1056,11 @@ export async function POST(req: Request) {
       });
     }
 
-    // Optionally trim to target duration and validate
-    const trimmed = trimPlanToDuration(plan, ctx.duration);
-    const valid = validateWorkoutPlan(trimmed);
-
+    // Smart post-processing: repair, normalize, and ensure duration
+    let repaired = plan;
+    
+    // Basic validation first
+    const valid = validateWorkoutPlan(repaired);
     if (!valid.ok) {
       return new Response(JSON.stringify({ ok: false, error: valid.error }), {
         status: 400,
@@ -1060,8 +1068,13 @@ export async function POST(req: Request) {
       });
     }
 
-    // Additional phase validation
-    const finalCheck = validateWorkoutPlanPhases(trimmed);
+    // Normalize main vs accessory flags in strength
+    repaired = normalizeStrengthAccessories(repaired);
+    
+    // Ensure duration by padding or trimming to target with style-aware choices
+    repaired = ensureDuration(repaired, ctx.duration, userMsg, ctx.equipment);
+
+    const finalCheck = validateWorkoutPlanPhases(repaired);
     if (!finalCheck.ok) {
       // If still incomplete after repair, fail fast
       return new Response(JSON.stringify({ ok: false, error: finalCheck.error }), {
@@ -1072,7 +1085,7 @@ export async function POST(req: Request) {
 
     // ---- Response adapter: map phases[] to legacy shape the UI may still expect ----
     const byPhase = (name: string) =>
-      trimmed.phases.find((p: SchemaPlanPhase) => p.phase === name)?.items ?? [];
+      repaired.phases.find((p: SchemaPlanPhase) => p.phase === name)?.items ?? [];
 
     const legacy = {
       warmup: byPhase("warmup"),
@@ -1092,12 +1105,11 @@ export async function POST(req: Request) {
       JSON.stringify({
         ok: true,
         // New contract
-        plan: trimmed,
+        plan: repaired,
         // Legacy contract for existing UI render paths
         workout: legacy,
         phaseCounts,
-        coach:
-          "Move with intent and clean form—leave 1–2 reps in reserve on the toughest sets."
+        coach: coachFor(repaired, userMsg)
       }),
       {
         headers: {
