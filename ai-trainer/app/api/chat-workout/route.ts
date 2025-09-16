@@ -1028,7 +1028,7 @@ export async function POST(req: Request) {
   console.log('🔍 About to query exercises table...');
   const { data: exerciseData, error: exerciseError } = await supabase
     .from('exercises')
-    .select('name, primary_muscle')
+    .select('name, muscle_group')
     .limit(1000);
   
   console.log('🔍 Database query completed:', { 
