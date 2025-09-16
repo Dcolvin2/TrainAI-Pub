@@ -85,3 +85,16 @@ export function validateWorkoutPlan(input: unknown): ValidationResult {
 
   return { ok: true };
 }
+
+export function validateWorkoutPlanPhases(plan: WorkoutPlan): ValidationResult {
+  const requiredPhases: PhaseName[] = ["warmup", "strength", "accessory", "cooldown"];
+  const foundPhases = new Set(plan.phases.map(p => p.phase));
+  
+  for (const required of requiredPhases) {
+    if (!foundPhases.has(required)) {
+      return { ok: false, error: `Missing required phase: ${required}` };
+    }
+  }
+  
+  return { ok: true };
+}

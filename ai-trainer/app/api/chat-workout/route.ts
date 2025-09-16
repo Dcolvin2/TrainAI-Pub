@@ -3,7 +3,13 @@ import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { supabase } from "@/lib/supabaseClient";
 import { devlog } from "@/lib/devlog";
-import { validateWorkoutPlan, type WorkoutPlan } from "../../../lib/schemas/workout";
+import {
+  validateWorkoutPlan,
+  validateWorkoutPlanPhases,
+  type WorkoutPlan,
+  type WorkoutItem,
+  type PlanPhase as SchemaPlanPhase
+} from "../../../lib/schemas/workout";
 import { mainLiftForSplit, focusMusclesForSplit, trimPlanToDuration } from "../../../lib/workout";
 
 import { normalizePlan as normalizePlanLib, buildChatSummary } from "@/lib/normalizePlan";
@@ -1054,13 +1060,52 @@ export async function POST(req: Request) {
       });
     }
 
-    const resp = {
-      ok: true,
-      plan: trimmed,
-      coach: "Move with intent and clean form—leave 1–2 reps in reserve on the toughest sets, and keep transitions tight."
+    // Additional phase validation
+    const finalCheck = validateWorkoutPlanPhases(trimmed);
+    if (!finalCheck.ok) {
+      // If still incomplete after repair, fail fast
+      return new Response(JSON.stringify({ ok: false, error: finalCheck.error }), {
+        status: 400,
+        headers: { "content-type": "application/json" }
+      });
+    }
+
+    // ---- Response adapter: map phases[] to legacy shape the UI may still expect ----
+    const byPhase = (name: string) =>
+      trimmed.phases.find((p: SchemaPlanPhase) => p.phase === name)?.items ?? [];
+
+    const legacy = {
+      warmup: byPhase("warmup"),
+      main: byPhase("strength"),
+      accessory: byPhase("accessory"),
+      cooldown: byPhase("cooldown")
     };
 
-    return new Response(JSON.stringify(resp), { headers: { 'content-type': 'application/json' } });
+    const phaseCounts = {
+      warmup: legacy.warmup.length,
+      strength: legacy.main.length,
+      accessory: legacy.accessory.length,
+      cooldown: legacy.cooldown.length
+    };
+
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        // New contract
+        plan: trimmed,
+        // Legacy contract for existing UI render paths
+        workout: legacy,
+        phaseCounts,
+        coach:
+          "Move with intent and clean form—leave 1–2 reps in reserve on the toughest sets."
+      }),
+      {
+        headers: {
+          "content-type": "application/json",
+          "cache-control": "no-store"
+        }
+      }
+    );
   }
 
   // Ensure that when a split is explicitly provided, we do NOT label as "Ad Hoc".
