@@ -1067,7 +1067,7 @@ export async function POST(req: Request) {
 
   // If the user is just chatting (non-workout), allow a concise reply (kept server-side to avoid JSON pollution).
   // You can extend this with a classifier later; for now, assume any message with "workout", "program", splits, or named coach implies generation.
-  const maybeWorkout = /\b(workout|program|ocho|holder|cavaliere|push|pull|legs|upper|hiit|wod|tabata|ski)\b/i.test(userMsg);
+  const maybeWorkout = /\b(workout|program|ocho|holder|cavaliere|push|pull|legs|upper|hiit|wod|tabata|ski|training|exercise|functional|strength|cardio|conditioning|fitness|gym|train)\b/i.test(userMsg);
 
   console.log('🔍 Path Decision:', {
     maybeWorkout,
