@@ -1026,6 +1026,15 @@ export async function POST(req: Request) {
   const splitInput = typeof body?.split === 'string' ? body.split.trim().toLowerCase() : undefined;
   const lastSets = Array.isArray(body?.lastSets) ? body.lastSets as Array<{ name: string; last: string }> : undefined;
 
+  // Debug: Log what we're receiving
+  console.log('🔍 Request Debug:', {
+    userMsg,
+    splitInput,
+    equipment,
+    duration,
+    bodyKeys: Object.keys(body || {})
+  });
+
   // Fetch allowed DB exercise names from database
   const { data: exerciseData, error: exerciseError } = await supabase
     .from('exercises')
@@ -1046,10 +1055,17 @@ export async function POST(req: Request) {
   // You can extend this with a classifier later; for now, assume any message with "workout", "program", splits, or named coach implies generation.
   const maybeWorkout = /\b(workout|program|ocho|holder|cavaliere|push|pull|legs|upper|hiit|wod|tabata|ski)\b/i.test(userMsg);
 
+  console.log('🔍 Path Decision:', {
+    maybeWorkout,
+    splitInput,
+    willUseLLM: maybeWorkout
+  });
+
   const out: any = { ok: true };
 
   // LLM-first generation (smart coach). Strict JSON via response_format.
   if (maybeWorkout) {
+    console.log('✅ Using LLM path');
     const { system, user } = buildSmartCoachPrompt(userMsg, ctx);
 
     const completion = await anthropic.messages.create({
@@ -1146,7 +1162,14 @@ export async function POST(req: Request) {
   // Complex requests (like "ski prep with functional trainer") should always use LLM
   const isSimpleSplit = splitInput && ['push', 'pull', 'legs', 'upper', 'hiit'].includes(splitInput);
   
+  console.log('🔍 Hardcoded Path Check:', {
+    splitInput,
+    isSimpleSplit,
+    willUseHardcoded: isSimpleSplit
+  });
+  
   if (isSimpleSplit) {
+    console.log('✅ Using hardcoded path');
     // Load profile/equipment from your existing helper
     const profile = await getProfile(userId);
     const equipmentList = (profile?.equipment ? String(profile.equipment).split(',') : [])
