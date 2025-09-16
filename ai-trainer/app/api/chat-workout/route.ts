@@ -1028,7 +1028,7 @@ export async function POST(req: Request) {
   console.log('🔍 About to query exercises table...');
   const { data: exerciseData, error: exerciseError } = await supabase
     .from('exercises')
-    .select('name')
+    .select('name, primary_muscle')
     .limit(1000);
   
   console.log('🔍 Database query completed:', { 
@@ -1051,7 +1051,8 @@ export async function POST(req: Request) {
     allowedExercisesCount: allowedExercises.length,
     sampleExercises: allowedExercises.slice(0, 10),
     hasToes: allowedExercises.some(name => name.toLowerCase().includes('toes')),
-    toesExercises: allowedExercises.filter(name => name.toLowerCase().includes('toes'))
+    toesExercises: allowedExercises.filter(name => name.toLowerCase().includes('toes')),
+    sampleRawData: exerciseData?.slice(0, 5)
   });
 
   const ctx: Ctx = { userId, duration: Number.isFinite(duration) && duration > 0 ? duration : 45, equipment, split: splitInput, lastSets };
