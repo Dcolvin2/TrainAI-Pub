@@ -1086,7 +1086,16 @@ export async function POST(req: Request) {
     repaired = ensureDuration(repaired, ctx.duration, userMsg, ctx.equipment);
 
     // Sanitize item names to DB-approved list, then re-ensure duration in case drops occurred
+    console.log('🔍 Sanitization Debug:', {
+      allowedExercisesCount: allowedExercises.length,
+      sampleAllowed: allowedExercises.slice(0, 10),
+      planBeforeSanitization: JSON.stringify(repaired, null, 2)
+    });
+    
     repaired = sanitizePlanExercises(repaired, allowedExercises, { dropUnknown: true, minScore: 0.6 });
+    
+    console.log('✅ After Sanitization:', JSON.stringify(repaired, null, 2));
+    
     // If sanitization removed too much, pad again to hit time
     repaired = ensureDuration(repaired, ctx.duration, userMsg, ctx.equipment);
 
