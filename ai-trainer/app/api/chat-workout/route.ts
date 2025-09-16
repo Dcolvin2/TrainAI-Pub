@@ -1025,18 +1025,10 @@ export async function POST(req: Request) {
   const lastSets = Array.isArray(body?.lastSets) ? body.lastSets as Array<{ name: string; last: string }> : undefined;
 
   // Fetch allowed DB exercise names from database
-  console.log('🔍 About to query exercises table...');
   const { data: exerciseData, error: exerciseError } = await supabase
     .from('exercises')
-    .select('name, muscle_group')
+    .select('name')
     .limit(1000);
-  
-  console.log('🔍 Database query completed:', { 
-    hasData: !!exerciseData, 
-    dataLength: exerciseData?.length,
-    hasError: !!exerciseError,
-    error: exerciseError 
-  });
   
   if (exerciseError) {
     console.error('❌ Database error fetching exercises:', exerciseError);
@@ -1045,29 +1037,6 @@ export async function POST(req: Request) {
   const allowedExercises: string[] = (exerciseData ?? [])
     .map(r => String(r.name || '').trim())
     .filter(Boolean);
-    
-  // Fallback: if database query failed or returned no data, use a minimal set
-  if (allowedExercises.length === 0) {
-    console.log('⚠️ No exercises from database, using fallback list');
-    const fallbackExercises = [
-      'Barbell Bench Press', 'Dumbbell Bench Press', 'Push-Up',
-      'Barbell Squat', 'Dumbbell Squat', 'Goblet Squat',
-      'Barbell Deadlift', 'Romanian Deadlift', 'Hip Thrust',
-      'Pull-Up', 'Lat Pulldown', 'Cable Row', 'Face Pull',
-      'Overhead Press', 'Lateral Raise', 'Triceps Pressdown',
-      'Bicep Curl', 'Hammer Curl', 'Plank', 'Mountain Climbers'
-    ];
-    allowedExercises.push(...fallbackExercises);
-  }
-    
-  console.log('📊 Database query results:', {
-    exerciseDataCount: exerciseData?.length || 0,
-    allowedExercisesCount: allowedExercises.length,
-    sampleExercises: allowedExercises.slice(0, 10),
-    hasToes: allowedExercises.some(name => name.toLowerCase().includes('toes')),
-    toesExercises: allowedExercises.filter(name => name.toLowerCase().includes('toes')),
-    sampleRawData: exerciseData?.slice(0, 5)
-  });
 
   const ctx: Ctx = { userId, duration: Number.isFinite(duration) && duration > 0 ? duration : 45, equipment, split: splitInput, lastSets };
 
