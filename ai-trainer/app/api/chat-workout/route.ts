@@ -63,12 +63,16 @@ function buildSmartCoachPrompt(userMsg: string, ctx: Ctx) {
     "- For equipment-specific requests, focus heavily on that equipment type while maintaining workout structure.",
   ].join("\n");
 
+  // Extract equipment mentioned in user request
+  const mentionedEquipment = userMsg.toLowerCase().match(/\b(functional trainer|cables?|kettlebells?|dumbbells?|barbell|trap bar|sled|trx|bands?|resistance bands?|medicine ball|battle ropes?|sandbag|tire|box|step|bench|rack|machine|pulley|rope|chain|weighted vest|bodyweight|calisthenics)\b/g) || [];
+  
   const user = [
     `User request: ${userMsg}`,
     `Available equipment: ${eqList}`,
     `Preferred duration (min): ${ctx.duration}`,
     ctx.split ? `Requested split: ${ctx.split}` : "",
     mainLiftHint ? `Hinted main lift: ${mainLiftHint}` : "",
+    mentionedEquipment.length > 0 ? `IMPORTANT: User specifically mentioned these equipment: ${mentionedEquipment.join(', ')}. Prioritize these heavily in the workout.` : "",
     lastBlock,
     "Output JSON shape:",
     "{",
