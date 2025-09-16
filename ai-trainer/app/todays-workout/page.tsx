@@ -405,10 +405,72 @@ export default function TodaysWorkoutPage() {
     fetchPreviousWorkout();
   }, [user]);
 
+  // Check if input is workout tracking data (set, reps, weight format)
+  const parseWorkoutTracking = (input: string) => {
+    const cleanInput = input.trim().toLowerCase();
+    
+    // Parse patterns for set, reps, weight
+    const patterns = [
+      // "1,5,50" format
+      /^(\d+),(\d+),(\d+)$/,
+      // "1 5 50" format
+      /^(\d+)\s+(\d+)\s+(\d+)$/,
+      // "set 1, 5 reps, 50 pounds" format
+      /^set\s+(\d+),?\s+(\d+)\s+reps?,?\s+(\d+)\s+(pounds?|lbs?)$/i,
+      // "1, 5, 50" format with spaces
+      /^(\d+),\s*(\d+),\s*(\d+)$/,
+      // "1, 5, 50" with extra words
+      /^(\d+),?\s*(\d+),?\s*(\d+).*$/,
+      // "set 1, 5 reps, 50" format
+      /^set\s+(\d+),?\s+(\d+)\s+reps?,?\s+(\d+)$/i
+    ];
+
+    for (const pattern of patterns) {
+      const match = cleanInput.match(pattern);
+      if (match) {
+        const setNumber = parseInt(match[1]);
+        const reps = parseInt(match[2]);
+        const weight = parseInt(match[3]);
+
+        if (setNumber > 0 && reps > 0 && weight >= 0) {
+          return {
+            isWorkoutTracking: true,
+            setNumber,
+            reps,
+            weight
+          };
+        }
+      }
+    }
+
+    return { isWorkoutTracking: false };
+  };
+
   const handleSendMessage = async () => {
     if (!inputMessage.trim() || isLoading) return;
     
     const userMessage = inputMessage;
+    
+    // Check if this is workout tracking data
+    const trackingData = parseWorkoutTracking(userMessage);
+    if (trackingData.isWorkoutTracking) {
+      // Handle workout tracking
+      console.log('Workout tracking detected:', trackingData);
+      
+      // Add user message to chat
+      setChatMessages(prev => [...prev, { role: 'user', content: userMessage }]);
+      
+      // Show feedback message
+      const feedbackMsg = {
+        role: 'assistant' as const,
+        content: `✅ Logged: Set ${trackingData.setNumber}, ${trackingData.reps} reps, ${trackingData.weight} lbs`
+      };
+      setChatMessages(prev => [...prev, feedbackMsg]);
+      
+      setInputMessage('');
+      return;
+    }
+    
     setInputMessage('');
     setChatMessages(prev => [...prev, { role: 'user', content: userMessage }]);
     setIsLoading(true);
@@ -1092,7 +1154,7 @@ export default function TodaysWorkoutPage() {
                     value={inputMessage}
                     onChange={(e) => setInputMessage(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                    placeholder="Ask me anything..."
+                    placeholder="Ask me anything... (or say '1,5,50' to log sets)"
                     className="flex-1 bg-gray-800 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                   <button
