@@ -52,10 +52,11 @@ function buildSmartCoachPrompt(userMsg: string, ctx: Ctx, mentionedEquipment: st
   const system = [
     "You are TrainAI, a smart workout coach. You can synthesize ANY training style with deep understanding of their philosophy and methodology.",
     "Use your own broad fitness knowledge FIRST to shape the plan; use provided context for personalization (equipment, time, last sets).",
+    "IMPORTANT: You are being called because this is a sophisticated training style request (not a simple push/pull/legs/hiit). Generate a high-quality, intelligent workout that matches the specific training philosophy and methodology requested.",
     "Return ONLY strict JSON matching the schema described. No commentary, no markdown.",
     "Training Style Guidelines:",
-    "- JOE HOLDER/OCHO SYSTEM: Multi-dimensional workouts with mobility, coordination, strength circuits, metabolic conditioning, and flexibility. Use specific exercises like: dynamic leg swings, alternating knee tucks, core activation holds, full-range squat jumps, pogos, multiplanar lunges, bear crawls, lateral bounds, metabolic circuits with high knees/burpees/mountain climbers, and mindfulness cooldowns with pigeon pose, child's pose, cat-cow stretches. Focus on quality movement, multiplanar motion, and holistic wellness.",
-    "- ATHLEAN-X/JEFF CAVALIERE: Form-focused, tension-based training with strict technique, full ROM, and controlled tempo. Use compound movements like barbell/dumbbell presses, rows, squats, deadlifts with perfect form, time-under-tension techniques, drop sets, rest-pause sets. Emphasize muscle-mind connection and progressive overload.",
+    "- JOE HOLDER/OCHO SYSTEM: Multi-dimensional workouts with mobility, coordination, strength circuits, metabolic conditioning, and flexibility. Use DUMBBELLS extensively (70-80% of strength exercises): dumbbell goblet squats, dumbbell Romanian deadlifts, dumbbell bent-over rows, dumbbell overhead press, dumbbell lateral raises, dumbbell chest press, dumbbell single-arm rows, dumbbell Bulgarian split squats, dumbbell farmer's carries, dumbbell Turkish get-ups, dumbbell thrusters, dumbbell clean and press. Also include: dynamic leg swings, alternating knee tucks, core activation holds, full-range squat jumps, pogos, multiplanar lunges, bear crawls, lateral bounds, metabolic circuits with high knees/burpees/mountain climbers, and mindfulness cooldowns with pigeon pose, child's pose, cat-cow stretches. Focus on quality movement, multiplanar motion, and holistic wellness.",
+    "- ATHLEAN-X/JEFF CAVALIERE: Form-focused, tension-based training with strict technique, full ROM, and controlled tempo. Use compound movements like barbell/dumbbell presses, rows, squats, deadlifts with perfect form, time-under-tension techniques, drop sets, rest-pause sets. Include detailed form cues like 'keep chest up, core braced, slow 3-second eccentric, pause at bottom, explosive concentric', 'maintain neutral spine, engage lats, control the weight, feel the stretch', 'squeeze shoulder blades together, pull to lower chest, hold peak contraction', 'keep knees tracking over toes, descend slowly, drive through heels', 'maintain tension throughout, no momentum, controlled tempo', 'squeeze glutes at top, control descent, maintain hip hinge pattern'. Emphasize muscle-mind connection and progressive overload.",
     "- TABATA: High-intensity intervals (20s work/10s rest) with explosive movements and maximum effort. Use exercises like burpees, squat jumps, mountain climbers, high knees, jumping jacks, push-ups, jumping lunges, plank jacks that can be performed at maximum intensity.",
     "- CROSSFIT WOD: Functional movements, varied time domains, and high-intensity conditioning without Olympic lifts. Use movements like thrusters, wall balls, kettlebell swings, box jumps, rowing, running, pull-ups, push-ups in varied time domains.",
     "- SKI PREP: Unilateral strength, power development, lateral movements, and eccentric control for skiing performance. Use exercises like single-leg squats, lateral lunges, single-leg deadlifts, lateral bounds, box jumps, lateral step-ups, lateral shuffles, balance work.",
@@ -79,25 +80,33 @@ function buildSmartCoachPrompt(userMsg: string, ctx: Ctx, mentionedEquipment: st
 
 WARMUP (8-10 min): Dynamic leg swings, alternating knee tucks, core activation (iso hold pressing hand to raised knee), arm circles, hip openers, full-range squat jumps, pogos (quick jumps), multiplanar lunges (forward/side/reverse)
 
-STRENGTH CIRCUIT (15-20 min): Repeat 2-3 rounds with minimal rest between exercises, 1 min between rounds. Include: Push-ups, bodyweight/goblet squats, bent-over rows, plank with alternating shoulder taps, single-leg deadlifts, lateral lunges, bear crawls, mountain climbers
+STRENGTH CIRCUIT (15-20 min): Repeat 2-3 rounds with minimal rest between exercises, 1 min between rounds. Use DUMBBELLS extensively: Dumbbell goblet squats, dumbbell Romanian deadlifts, dumbbell bent-over rows, dumbbell overhead press, dumbbell lateral raises, dumbbell chest press, dumbbell single-arm rows, dumbbell Bulgarian split squats, dumbbell farmer's carries, dumbbell Turkish get-ups, dumbbell thrusters, dumbbell clean and press
 
-METABOLIC CONDITIONING (8-10 min): High knees (30s), burpees (12 reps), mountain climbers (30s), jumping jacks (30s), squat jumps (30s). Repeat 2-3 rounds with 30s rest between rounds.
+METABOLIC CONDITIONING (8-10 min): High knees (30s), burpees (12 reps), mountain climbers (30s), jumping jacks (30s), squat jumps (30s), dumbbell thrusters (30s), dumbbell swings (30s). Repeat 2-3 rounds with 30s rest between rounds.
 
 COOLDOWN (5-7 min): Forward fold hamstring stretch, lunge with twist, pigeon pose (hips), child's pose with deep breathing, cat-cow stretch
 
-Focus on: Quality movement, multiplanar motion, holistic wellness, biomotor skills, agility work, varied movement patterns, mindfulness elements.`;
+Focus on: Quality movement, multiplanar motion, holistic wellness, biomotor skills, agility work, varied movement patterns, mindfulness elements. Use dumbbells for 70-80% of strength exercises.`;
   } else if (trainingStyle.includes('athlean') || trainingStyle.includes('cavaliere')) {
     styleInstructions = `CRITICAL: Generate an ATHLEAN-X style workout with these SPECIFIC components:
 
 WARMUP: Dynamic stretching, activation exercises, light cardio (5-7 min)
 
-STRENGTH: Form-focused compound movements with strict technique, full ROM, controlled tempo (3-4 second eccentrics), muscle-mind connection emphasis. Include: Barbell/dumbbell compound lifts, isolation exercises with perfect form, time-under-tension techniques, drop sets or rest-pause sets
+STRENGTH: Form-focused compound movements with STRICT TECHNIQUE and detailed form cues. Include specific form instructions like:
+- "Keep chest up, core braced, slow 3-second eccentric, pause at bottom, explosive concentric"
+- "Maintain neutral spine, engage lats, control the weight, feel the stretch"
+- "Squeeze shoulder blades together, pull to lower chest, hold peak contraction"
+- "Keep knees tracking over toes, descend slowly, drive through heels"
+- "Maintain tension throughout, no momentum, controlled tempo"
+- "Squeeze glutes at top, control descent, maintain hip hinge pattern"
 
-ACCESSORY: Targeted muscle group work with strict form, full range of motion, controlled tempo. Focus on muscle-mind connection and progressive overload.
+Use: Barbell/dumbbell compound lifts, isolation exercises with perfect form, time-under-tension techniques (3-4 second eccentrics), drop sets, rest-pause sets, supersets with opposing muscle groups
+
+ACCESSORY: Targeted muscle group work with strict form, full range of motion, controlled tempo. Include form cues like "squeeze at peak contraction", "control the negative", "maintain tension throughout"
 
 COOLDOWN: Static stretching, mobility work, foam rolling movements
 
-Focus on: Tension-based training, quality over quantity, strict technique, full ROM, controlled tempo, muscle-mind connection, progressive overload principles.`;
+Focus on: Tension-based training, quality over quantity, strict technique, full ROM, controlled tempo, muscle-mind connection, progressive overload principles. Include specific form cues for each exercise.`;
   } else if (trainingStyle.includes('tabata')) {
     styleInstructions = `CRITICAL: Generate a TABATA workout with these SPECIFIC components:
 
