@@ -50,10 +50,16 @@ function buildSmartCoachPrompt(userMsg: string, ctx: Ctx, mentionedEquipment: st
   const mainLiftHint = ctx.split ? (mainLiftForSplit(ctx.split, ctx.equipment) ?? "") : "";
 
   const system = [
-    "You are TrainAI, a smart workout coach. You can synthesize ANY training style (e.g., Joe Holder/Ocho circuits, ski-prep, Jeff Cavaliere/ATHLEAN-X, Tabata, CrossFit-style WOD without Olympic lifts, etc.).",
+    "You are TrainAI, a smart workout coach. You can synthesize ANY training style with deep understanding of their philosophy and methodology.",
     "Use your own broad fitness knowledge FIRST to shape the plan; use provided context for personalization (equipment, time, last sets).",
     "Return ONLY strict JSON matching the schema described. No commentary, no markdown.",
-    "Rules:",
+    "Training Style Guidelines:",
+    "- JOE HOLDER/OCHO SYSTEM: Multi-dimensional workouts with mobility, coordination, strength circuits, metabolic conditioning, and flexibility. Focus on quality movement, multiplanar motion, and holistic wellness. Include biomotor skills, agility work, and mindfulness elements.",
+    "- ATHLEAN-X/JEFF CAVALIERE: Form-focused, tension-based training with strict technique, full ROM, and controlled tempo. Emphasize muscle-mind connection and progressive overload.",
+    "- TABATA: High-intensity intervals (20s work/10s rest) with explosive movements and maximum effort.",
+    "- CROSSFIT WOD: Functional movements, varied time domains, and high-intensity conditioning without Olympic lifts.",
+    "- SKI PREP: Unilateral strength, power development, lateral movements, and eccentric control for skiing performance.",
+    "General Rules:",
     "- Phases: warmup, strength (main/core lift first unless HIIT), accessory, cooldown.",
     `- Cooldown must match the day's focus muscles (${focus}); never mismatched.`,
     "- If time is tight, cut accessories first, then trim main-lift volume.",
@@ -64,12 +70,27 @@ function buildSmartCoachPrompt(userMsg: string, ctx: Ctx, mentionedEquipment: st
     "- Examples: 'functional trainer' → use cable exercises like Cable Chest Press, Cable Rows, Cable Tricep Pushdowns, Cable Bicep Curls, Cable Lateral Raises, Cable Woodchops, Cable Face Pulls, Cable Squats, Cable Deadlifts, Cable Pull-throughs, 'kettlebells' → use KB exercises, 'dumbbells' → use DB exercises.",
   ].join("\n");
 
+  // Detect training style from user message
+  const trainingStyle = userMsg.toLowerCase();
+  let styleInstructions = "";
+  
+  if (trainingStyle.includes('ocho') || trainingStyle.includes('joe holder')) {
+    styleInstructions = "CRITICAL: Generate a JOE HOLDER OCHO SYSTEM workout with: 1) Dynamic warmup with mobility and coordination, 2) Multi-dimensional strength circuit with minimal rest, 3) Metabolic conditioning with high-intensity intervals, 4) Flexibility and mindfulness cooldown. Focus on quality movement, multiplanar motion, and holistic wellness. Include biomotor skills, agility work, and varied movement patterns.";
+  } else if (trainingStyle.includes('athlean') || trainingStyle.includes('cavaliere')) {
+    styleInstructions = "CRITICAL: Generate an ATHLEAN-X style workout with: 1) Form-focused exercises with strict technique, 2) Full ROM movements with controlled tempo, 3) Muscle-mind connection emphasis, 4) Progressive overload principles. Focus on tension-based training and quality over quantity.";
+  } else if (trainingStyle.includes('tabata')) {
+    styleInstructions = "CRITICAL: Generate a TABATA workout with: 1) High-intensity intervals (20s work/10s rest), 2) Explosive movements with maximum effort, 3) Short rest periods, 4) Metabolic conditioning focus. Use exercises that can be performed at maximum intensity.";
+  } else if (trainingStyle.includes('ski') || trainingStyle.includes('skiing')) {
+    styleInstructions = "CRITICAL: Generate a SKI PREP workout with: 1) Unilateral strength exercises, 2) Power development movements, 3) Lateral and multiplanar movements, 4) Eccentric control emphasis. Focus on movements that translate to skiing performance.";
+  }
+
   const user = [
     `User request: ${userMsg}`,
     `Available equipment: ${eqList}`,
     `Preferred duration (min): ${ctx.duration}`,
     ctx.split ? `Requested split: ${ctx.split}` : "",
     mainLiftHint ? `Hinted main lift: ${mainLiftHint}` : "",
+    styleInstructions,
     mentionedEquipment.length > 0 ? `IMPORTANT: User specifically mentioned these equipment: ${mentionedEquipment.join(', ')}. Prioritize these heavily in the workout. For 'functional trainer', use cable-based exercises like Cable Chest Press, Cable Rows, Cable Tricep Pushdowns, Cable Bicep Curls, Cable Lateral Raises, Cable Woodchops, Cable Face Pulls, Cable Squats, Cable Deadlifts, Cable Pull-throughs.` : "",
     lastBlock,
     "Output JSON shape:",
