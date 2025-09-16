@@ -260,9 +260,95 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
     setInput('')
   }
 
+  // Check if input is workout tracking data (set, reps, weight format)
+  const parseWorkoutTracking = (input: string) => {
+    const cleanInput = input.trim().toLowerCase();
+    
+    // Parse patterns for set, reps, weight
+    const patterns = [
+      // "1,5,50" format
+      /^(\d+),(\d+),(\d+)$/,
+      // "1 5 50" format
+      /^(\d+)\s+(\d+)\s+(\d+)$/,
+      // "set 1, 5 reps, 50 pounds" format
+      /^set\s+(\d+),?\s+(\d+)\s+reps?,?\s+(\d+)\s+(pounds?|lbs?)$/i,
+      // "1, 5, 50" format with spaces
+      /^(\d+),\s*(\d+),\s*(\d+)$/,
+      // "1, 5, 50" with extra words
+      /^(\d+),?\s*(\d+),?\s*(\d+).*$/,
+      // "set 1, 5 reps, 50" format
+      /^set\s+(\d+),?\s+(\d+)\s+reps?,?\s+(\d+)$/i
+    ];
+
+    for (const pattern of patterns) {
+      const match = cleanInput.match(pattern);
+      if (match) {
+        const setNumber = parseInt(match[1]);
+        const reps = parseInt(match[2]);
+        const weight = parseInt(match[3]);
+
+        if (setNumber > 0 && reps > 0 && weight >= 0) {
+          return {
+            isWorkoutTracking: true,
+            setNumber,
+            reps,
+            weight
+          };
+        }
+      }
+    }
+
+    return { isWorkoutTracking: false };
+  };
+
   async function sendMessage(content: string) {
     if (!content.trim()) return
 
+    // Check if this is workout tracking data
+    const trackingData = parseWorkoutTracking(content);
+    if (trackingData.isWorkoutTracking) {
+      // Handle workout tracking
+      console.log('Workout tracking detected:', trackingData);
+      
+      // Find the first available exercise to apply this to
+      if (workoutSets.length > 0) {
+        const firstExercise = Object.keys(groupedSets)[0];
+        if (firstExercise) {
+          const entry = {
+            setNumber: trackingData.setNumber,
+            reps: trackingData.reps,
+            actualWeight: trackingData.weight,
+            completed: true
+          };
+          
+          // Apply the tracking data
+          updateSet(
+            { exerciseName: firstExercise, setNumber: trackingData.setNumber } as any,
+            { actualReps: trackingData.reps, actualWeight: trackingData.weight, completed: true }
+          );
+          
+          // Show feedback
+          const feedbackMsg: ChatMessage = {
+            role: 'assistant',
+            content: `✅ Logged: Set ${trackingData.setNumber}, ${trackingData.reps} reps, ${trackingData.weight} lbs for ${firstExercise}`
+          };
+          setMessages(prev => [...prev, feedbackMsg]);
+        }
+      } else {
+        // No workout active, show error
+        const errorMsg: ChatMessage = {
+          role: 'assistant',
+          content: '❌ No workout active. Please start a workout first before logging sets.'
+        };
+        setMessages(prev => [...prev, errorMsg]);
+      }
+      
+      setInput('');
+      resetTranscript();
+      return;
+    }
+
+    // Regular chat message
     const newMsg: ChatMessage = { role: 'user', content }
     const updated = [...messages, newMsg]
     setMessages(updated)
@@ -414,6 +500,32 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
         </div>
       </div>
 
+      {/* Workout Active - Show logging instructions */}
+      {isWorkoutActive && (
+        <div className="bg-[#1E293B] p-4">
+          <div className="text-center py-4">
+            <p className="text-white mb-2">🎯 Workout Active!</p>
+            <p className="text-gray-400 text-sm mb-4">
+              Type or say "1,5,50" to log: Set 1, 5 reps, 50 lbs
+            </p>
+            <div className="flex flex-wrap gap-2 justify-center">
+              <button
+                onClick={() => sendMessage('1,5,50')}
+                className="bg-[#22C55E] px-4 py-2 rounded-lg text-white hover:bg-[#16a34a] transition-colors text-sm"
+              >
+                📝 Log Set
+              </button>
+              <button
+                onClick={() => sendMessage('2,8,45')}
+                className="bg-[#22C55E] px-4 py-2 rounded-lg text-white hover:bg-[#16a34a] transition-colors text-sm"
+              >
+                📝 Log Set 2
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Chat Section - Collapsible */}
       {!isWorkoutActive && (
         <div className="bg-[#1E293B] p-4">
@@ -487,7 +599,7 @@ Have a natural conversation about workouts. Only generate a workout plan when sp
               onChange={e => setInput(e.target.value)}
               onKeyPress={e => e.key === 'Enter' && !e.shiftKey && sendMessage(input || transcript)}
               className="flex-1 bg-[#0F172A] border border-[#334155] p-3 rounded-lg text-white resize-none"
-              placeholder="Type or speak your workout needs..."
+              placeholder="Type or speak your workout needs... (or say '1,5,50' to log sets)"
               rows={2}
             />
             <div className="flex flex-col gap-2">

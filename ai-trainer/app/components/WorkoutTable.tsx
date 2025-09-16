@@ -5,7 +5,6 @@ import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { useWorkoutStore } from '@/lib/workoutStore';
-import VoiceInputParser from './VoiceInputParser';
 
 interface GeneratedWorkout {
   warmup: string[];
@@ -656,17 +655,8 @@ export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer, el
     { key: 'cooldown', title: 'Cool-down', sets: Object.entries(groupedSets).filter(([key]) => key.startsWith('cooldown-')) }
   ];
 
-  // Get unique exercise names for voice input
-  const availableExercises = Array.from(new Set(sets.map(set => set.exerciseName)));
-
   return (
     <div className="space-y-6">
-      {/* Voice Input Parser */}
-      <VoiceInputParser
-        onQuickEntry={applyQuickEntrySets}
-        availableExercises={availableExercises}
-      />
-
       {error && (
         <div className="bg-red-900/20 border border-red-500 text-red-400 px-4 py-3 rounded-xl">
           {error}
@@ -702,8 +692,8 @@ export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer, el
                         <tr className="border-b border-gray-600">
                           <th className="py-2 text-left text-sm">Set</th>
                           {showPrevious && <th className="py-2 text-left text-sm">Previous</th>}
-                          <th className="py-2 text-left text-sm">Lbs</th>
                           <th className="py-2 text-left text-sm">Reps</th>
+                          <th className="py-2 text-left text-sm">Lbs</th>
                           <th className="py-2 text-center text-sm">✓</th>
                         </tr>
                       </thead>
@@ -720,19 +710,19 @@ export default function WorkoutTable({ workout, onFinishWorkout, onStopTimer, el
                               <td className="py-2">
                                 <input
                                   type="number"
-                                  value={set.actualWeight ?? set.prescribedWeight}
-                                  onChange={(e) => updateSet(set.id, { actualWeight: Number(e.target.value) })}
+                                  value={set.actualReps ?? set.prescribedReps}
+                                  onChange={(e) => updateSet(set.id, { actualReps: Number(e.target.value) })}
                                   disabled={set.completed}
-                                  className="w-16 p-1 bg-transparent border border-gray-600 rounded text-white text-sm"
+                                  className="w-12 p-1 bg-transparent border border-gray-600 rounded text-white text-sm"
                                 />
                               </td>
                               <td className="py-2">
                                 <input
                                   type="number"
-                                  value={set.actualReps ?? set.prescribedReps}
-                                  onChange={(e) => updateSet(set.id, { actualReps: Number(e.target.value) })}
+                                  value={set.actualWeight ?? set.prescribedWeight}
+                                  onChange={(e) => updateSet(set.id, { actualWeight: Number(e.target.value) })}
                                   disabled={set.completed}
-                                  className="w-12 p-1 bg-transparent border border-gray-600 rounded text-white text-sm"
+                                  className="w-16 p-1 bg-transparent border border-gray-600 rounded text-white text-sm"
                                 />
                               </td>
                               <td className="py-2 text-center">

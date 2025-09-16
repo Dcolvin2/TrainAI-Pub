@@ -828,19 +828,6 @@ export default function TodaysWorkoutPage() {
               <div className="bg-gray-900 rounded-lg p-6">
                 <h3 className="text-lg font-semibold mb-4">{generatedWorkout.name}</h3>
                 
-                {/* Voice Input Parser */}
-                <div className="mb-6">
-                  <VoiceInputParser
-                    onQuickEntry={(exerciseName, entries) => {
-                      console.log('Voice input received:', exerciseName, entries);
-                      // TODO: Implement voice input handling for todays-workout page
-                    }}
-                    availableExercises={[
-                      ...(generatedWorkout.main?.map(ex => typeof ex === 'string' ? ex : ex.name) || []),
-                      ...(generatedWorkout.accessories?.map(ex => typeof ex === 'string' ? ex : ex.name) || [])
-                    ].filter(Boolean)}
-                  />
-                </div>
                 
                 {/* Warm-up Section */}
                 {generatedWorkout.warmup?.length > 0 && (
@@ -914,8 +901,8 @@ export default function TodaysWorkoutPage() {
                                 <div className="grid grid-cols-5 gap-4 text-sm text-gray-400 mb-2">
                                   <span>Set</span>
                                   <span>Previous</span>
-                                  <span>lbs</span>
                                   <span>Reps</span>
+                                  <span>lbs</span>
                                   <span>Complete</span>
                                 </div>
                                 
@@ -932,13 +919,13 @@ export default function TodaysWorkoutPage() {
                                     <input
                                       type="number"
                                       className="bg-gray-700 rounded px-2 py-1 text-white"
-                                      placeholder="0"
+                                      placeholder={targetReps.toString()}
+                                      defaultValue={targetReps}
                                     />
                                     <input
                                       type="number"
                                       className="bg-gray-700 rounded px-2 py-1 text-white"
-                                      placeholder={targetReps.toString()}
-                                      defaultValue={targetReps}
+                                      placeholder="0"
                                     />
                                     <input type="checkbox" className="w-5 h-5 cursor-pointer" />
                                   </div>
