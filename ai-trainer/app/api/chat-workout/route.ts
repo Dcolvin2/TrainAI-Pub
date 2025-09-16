@@ -1046,6 +1046,20 @@ export async function POST(req: Request) {
     .map(r => String(r.name || '').trim())
     .filter(Boolean);
     
+  // Fallback: if database query failed or returned no data, use a minimal set
+  if (allowedExercises.length === 0) {
+    console.log('⚠️ No exercises from database, using fallback list');
+    const fallbackExercises = [
+      'Barbell Bench Press', 'Dumbbell Bench Press', 'Push-Up',
+      'Barbell Squat', 'Dumbbell Squat', 'Goblet Squat',
+      'Barbell Deadlift', 'Romanian Deadlift', 'Hip Thrust',
+      'Pull-Up', 'Lat Pulldown', 'Cable Row', 'Face Pull',
+      'Overhead Press', 'Lateral Raise', 'Triceps Pressdown',
+      'Bicep Curl', 'Hammer Curl', 'Plank', 'Mountain Climbers'
+    ];
+    allowedExercises.push(...fallbackExercises);
+  }
+    
   console.log('📊 Database query results:', {
     exerciseDataCount: exerciseData?.length || 0,
     allowedExercisesCount: allowedExercises.length,
