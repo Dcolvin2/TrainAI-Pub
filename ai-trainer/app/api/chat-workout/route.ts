@@ -1049,7 +1049,16 @@ export async function POST(req: Request) {
     .map(r => String(r.name || '').trim())
     .filter(Boolean);
 
-  const ctx: Ctx = { userId, duration: Number.isFinite(duration) && duration > 0 ? duration : 45, equipment, split: splitInput, lastSets };
+  // Fetch user's equipment from database if not provided in request
+  let userEquipment = equipment;
+  if (userEquipment.length === 0) {
+    const profile = await getProfile(userId);
+    const equipmentList = (profile?.equipment ? String(profile.equipment).split(',') : [])
+      .map(s => s.trim()).filter(Boolean);
+    userEquipment = equipmentList;
+  }
+
+  const ctx: Ctx = { userId, duration: Number.isFinite(duration) && duration > 0 ? duration : 45, equipment: userEquipment, split: splitInput, lastSets };
 
   // If the user is just chatting (non-workout), allow a concise reply (kept server-side to avoid JSON pollution).
   // You can extend this with a classifier later; for now, assume any message with "workout", "program", splits, or named coach implies generation.
@@ -1058,7 +1067,9 @@ export async function POST(req: Request) {
   console.log('🔍 Path Decision:', {
     maybeWorkout,
     splitInput,
-    willUseLLM: maybeWorkout
+    willUseLLM: maybeWorkout,
+    userEquipment,
+    equipmentFromRequest: equipment
   });
 
   const out: any = { ok: true };
