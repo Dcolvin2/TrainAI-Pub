@@ -1101,80 +1101,12 @@ export default function TodaysWorkoutPage() {
                                 </div>
                                 
                                 {/* Sets */}
-                                {(workoutSets[exerciseName] || []).length > 0 ? (
-                                  (workoutSets[exerciseName] || []).map((setData, setIndex) => {
-                                    return (
-                                  <div key={setIndex} className="grid grid-cols-5 gap-4 items-center mb-2">
-                                    <span className="text-gray-300">
-                                      {setIndex + 1}
-                                    </span>
-                                    <span className="text-gray-500 text-sm">
-                                      {/* Previous weight x reps - from DB or default */}
-                                      {previous ? `${previous.weight} lbs × ${previous.reps}` : 'N/A'}
-                                    </span>
-                                        <input
-                                          type="number"
-                                          className="bg-gray-700 rounded px-2 py-1 text-white"
-                                          placeholder={targetReps.toString()}
-                                          value={setData?.reps || targetReps}
-                                          onChange={(e) => {
-                                            setWorkoutSets(prev => {
-                                              const updated = { ...prev };
-                                              if (!updated[exerciseName]) {
-                                                updated[exerciseName] = [];
-                                              }
-                                              if (!updated[exerciseName][setIndex]) {
-                                                updated[exerciseName][setIndex] = { setNumber: setIndex + 1 };
-                                              }
-                                              updated[exerciseName][setIndex].reps = parseInt(e.target.value) || 0;
-                                              return updated;
-                                            });
-                                          }}
-                                        />
-                                    <input
-                                      type="number"
-                                      className="bg-gray-700 rounded px-2 py-1 text-white"
-                                      placeholder="0"
-                                          value={setData?.weight || ''}
-                                          onChange={(e) => {
-                                            setWorkoutSets(prev => {
-                                              const updated = { ...prev };
-                                              if (!updated[exerciseName]) {
-                                                updated[exerciseName] = [];
-                                              }
-                                              if (!updated[exerciseName][setIndex]) {
-                                                updated[exerciseName][setIndex] = { setNumber: setIndex + 1 };
-                                              }
-                                              updated[exerciseName][setIndex].weight = parseInt(e.target.value) || 0;
-                                              return updated;
-                                            });
-                                          }}
-                                        />
-                                        <input 
-                                          type="checkbox" 
-                                          className="w-5 h-5 cursor-pointer"
-                                          checked={setData?.completed || false}
-                                          onChange={(e) => {
-                                            setWorkoutSets(prev => {
-                                              const updated = { ...prev };
-                                              if (!updated[exerciseName]) {
-                                                updated[exerciseName] = [];
-                                              }
-                                              if (!updated[exerciseName][setIndex]) {
-                                                updated[exerciseName][setIndex] = { setNumber: setIndex + 1 };
-                                              }
-                                              updated[exerciseName][setIndex].completed = e.target.checked;
-                                              return updated;
-                                            });
-                                          }}
-                                        />
-                                      </div>
-                                    );
-                                  })
-                                ) : (
-                                  // Show default 3 sets if no sets exist yet
-                                  [...Array(targetSets)].map((_, setIndex) => {
-                                    const setData = workoutSets[exerciseName]?.[setIndex];
+                                {(() => {
+                                  const existingSets = workoutSets[exerciseName] || [];
+                                  const totalSets = Math.max(targetSets, existingSets.length);
+                                  
+                                  return [...Array(totalSets)].map((_, setIndex) => {
+                                    const setData = existingSets[setIndex];
                                     return (
                                       <div key={setIndex} className="grid grid-cols-5 gap-4 items-center mb-2">
                                         <span className="text-gray-300">
@@ -1184,10 +1116,10 @@ export default function TodaysWorkoutPage() {
                                           {/* Previous weight x reps - from DB or default */}
                                           {previous ? `${previous.weight} lbs × ${previous.reps}` : 'N/A'}
                                         </span>
-                                    <input
-                                      type="number"
-                                      className="bg-gray-700 rounded px-2 py-1 text-white"
-                                      placeholder={targetReps.toString()}
+                                        <input
+                                          type="number"
+                                          className="bg-gray-700 rounded px-2 py-1 text-white"
+                                          placeholder={targetReps.toString()}
                                           value={setData?.reps || targetReps}
                                           onChange={(e) => {
                                             setWorkoutSets(prev => {
@@ -1240,10 +1172,10 @@ export default function TodaysWorkoutPage() {
                                             });
                                           }}
                                         />
-                                  </div>
+                                      </div>
                                     );
-                                  })
-                                )}
+                                  });
+                                })()}
                                 
                                 {/* Add Set Button */}
                                 <div className="mt-2">
@@ -1284,8 +1216,12 @@ export default function TodaysWorkoutPage() {
                             <span>lbs</span>
                             <span>Complete</span>
                           </div>
-                          {(workoutSets[exerciseName] || []).length > 0 ? (
-                            (workoutSets[exerciseName] || []).map((setData, setIndex) => {
+                          {(() => {
+                            const existingSets = workoutSets[exerciseName] || [];
+                            const totalSets = Math.max(3, existingSets.length); // Default 3 for accessories
+                            
+                            return [...Array(totalSets)].map((_, setIndex) => {
+                              const setData = existingSets[setIndex];
                               const setNum = setIndex + 1;
                               return (
                                 <div key={setIndex} className="grid grid-cols-5 gap-4 items-center mb-2">
@@ -1349,75 +1285,8 @@ export default function TodaysWorkoutPage() {
                                   />
                                 </div>
                               );
-                            })
-                          ) : (
-                            // Show default 3 sets if no sets exist yet
-                            [1, 2, 3].map((setNum) => {
-                              const setData = workoutSets[exerciseName]?.[setNum - 1];
-                              return (
-                            <div key={setNum} className="grid grid-cols-5 gap-4 items-center mb-2">
-                              <span className="text-gray-300">{setNum}</span>
-                              <span className="text-gray-500">N/A</span>
-                              <input
-                                type="number"
-                                className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-gray-200"
-                                placeholder="0"
-                                    value={setData?.reps || ''}
-                                    onChange={(e) => {
-                                      setWorkoutSets(prev => {
-                                        const updated = { ...prev };
-                                        if (!updated[exerciseName]) {
-                                          updated[exerciseName] = [];
-                                        }
-                                        if (!updated[exerciseName][setNum - 1]) {
-                                          updated[exerciseName][setNum - 1] = { setNumber: setNum };
-                                        }
-                                        updated[exerciseName][setNum - 1].reps = parseInt(e.target.value) || 0;
-                                        return updated;
-                                      });
-                                    }}
-                              />
-                              <input
-                                type="number"
-                                className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-gray-200"
-                                placeholder="0"
-                                    value={setData?.weight || ''}
-                                    onChange={(e) => {
-                                      setWorkoutSets(prev => {
-                                        const updated = { ...prev };
-                                        if (!updated[exerciseName]) {
-                                          updated[exerciseName] = [];
-                                        }
-                                        if (!updated[exerciseName][setNum - 1]) {
-                                          updated[exerciseName][setNum - 1] = { setNumber: setNum };
-                                        }
-                                        updated[exerciseName][setNum - 1].weight = parseInt(e.target.value) || 0;
-                                        return updated;
-                                      });
-                                    }}
-                                  />
-                                  <input 
-                                    type="checkbox" 
-                                    className="w-5 h-5 cursor-pointer"
-                                    checked={setData?.completed || false}
-                                    onChange={(e) => {
-                                      setWorkoutSets(prev => {
-                                        const updated = { ...prev };
-                                        if (!updated[exerciseName]) {
-                                          updated[exerciseName] = [];
-                                        }
-                                        if (!updated[exerciseName][setNum - 1]) {
-                                          updated[exerciseName][setNum - 1] = { setNumber: setNum };
-                                        }
-                                        updated[exerciseName][setNum - 1].completed = e.target.checked;
-                                        return updated;
-                                      });
-                                    }}
-                                  />
-                            </div>
-                              );
-                            })
-                          )}
+                            });
+                          })()}
                           
                           {/* Add Set Button */}
                           <div className="mt-2">
