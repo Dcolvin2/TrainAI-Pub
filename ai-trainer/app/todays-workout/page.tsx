@@ -484,6 +484,7 @@ export default function TodaysWorkoutPage() {
 
   // Helper function to add a new set for an exercise
   const addSetToExercise = (exerciseName: string) => {
+    console.log('Adding set for exercise:', exerciseName);
     setWorkoutSets(prev => {
       const updated = { ...prev };
       if (!updated[exerciseName]) {
@@ -492,12 +493,16 @@ export default function TodaysWorkoutPage() {
       
       // Add a new set with the next set number
       const nextSetNumber = updated[exerciseName].length + 1;
-      updated[exerciseName].push({
+      const newSet = {
         setNumber: nextSetNumber,
         reps: 0,
         weight: 0,
-        completed: false
-      });
+        completed: false,
+        duration: 0 // Add duration field
+      };
+      
+      updated[exerciseName].push(newSet);
+      console.log('Added set:', newSet, 'Total sets now:', updated[exerciseName].length);
       
       return updated;
     });
@@ -511,11 +516,69 @@ export default function TodaysWorkoutPage() {
   };
 
   // Helper function to complete workout
-  const completeWorkout = () => {
+  const completeWorkout = async () => {
     setWorkoutStarted(false);
     setWorkoutStartTime(null);
     setWorkoutElapsedTime(0);
-    // Here you could save the workout data to the database
+    
+    // Save workout data to Supabase
+    try {
+      if (user && generatedWorkout) {
+        // Create workout session
+        const { data: session, error: sessionError } = await supabase
+          .from('workout_sessions')
+          .insert({
+            user_id: user.id,
+            workout_data: generatedWorkout,
+            completed_at: new Date().toISOString(),
+            total_sets: Object.values(workoutSets).reduce((total, sets) => total + sets.length, 0),
+            completed_sets: Object.values(workoutSets).reduce((total, sets) => 
+              total + sets.filter(set => set.completed).length, 0)
+          })
+          .select()
+          .single();
+
+        if (sessionError) {
+          console.error('Error creating workout session:', sessionError);
+          return;
+        }
+
+        // Save individual sets
+        const setsToInsert = [];
+        for (const [exerciseName, sets] of Object.entries(workoutSets)) {
+          for (const set of sets) {
+            setsToInsert.push({
+              user_id: user.id,
+              session_id: session.id,
+              exercise_name: exerciseName,
+              set_number: set.setNumber,
+              prescribed_weight: set.weight || 0,
+              prescribed_reps: set.reps || 0,
+              actual_weight: set.weight || 0,
+              actual_reps: set.reps || 0,
+              completed: set.completed || false,
+              duration_seconds: set.duration || 0,
+              section: 'workout' // You might want to determine this based on exercise type
+            });
+          }
+        }
+
+        if (setsToInsert.length > 0) {
+          const { error: setsError } = await supabase
+            .from('workout_sets')
+            .insert(setsToInsert);
+
+          if (setsError) {
+            console.error('Error saving workout sets:', setsError);
+          } else {
+            console.log('Workout saved successfully!', { session: session.id, sets: setsToInsert.length });
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error completing workout:', error);
+    }
+    
     console.log('Workout completed!', workoutSets);
   };
 
@@ -544,22 +607,51 @@ export default function TodaysWorkoutPage() {
 
   // Helper function to stop set timer
   const stopSetTimer = (exerciseName: string, setNumber: number) => {
+    const timer = setTimers[exerciseName]?.[setNumber];
+    const finalDuration = timer ? Math.floor((Date.now() - timer.startTime.getTime()) / 1000) : 0;
+    
+    // Store the duration in the workout sets
+    setWorkoutSets(prev => {
+      const updated = { ...prev };
+      if (!updated[exerciseName]) {
+        updated[exerciseName] = [];
+      }
+      const setIndex = setNumber - 1;
+      if (!updated[exerciseName][setIndex]) {
+        updated[exerciseName][setIndex] = { setNumber: setNumber };
+      }
+      updated[exerciseName][setIndex].duration = finalDuration;
+      updated[exerciseName][setIndex].completed = true;
+      return updated;
+    });
+    
+    // Stop the timer
     setSetTimers(prev => ({
       ...prev,
       [exerciseName]: {
         ...prev[exerciseName],
         [setNumber]: {
           ...prev[exerciseName]?.[setNumber],
-          isRunning: false
+          isRunning: false,
+          elapsed: finalDuration
         }
       }
     }));
+    
+    console.log(`Set ${setNumber} of ${exerciseName} completed in ${finalDuration} seconds`);
   };
 
   // Helper function to get set timer elapsed time
   const getSetTimerElapsed = (exerciseName: string, setNumber: number) => {
     const timer = setTimers[exerciseName]?.[setNumber];
     if (!timer) return 0;
+    
+    // If timer is running, return live elapsed time
+    if (timer.isRunning) {
+      return Math.floor((Date.now() - timer.startTime.getTime()) / 1000);
+    }
+    
+    // If timer is stopped, return stored elapsed time
     return timer.elapsed;
   };
 
@@ -1299,14 +1391,21 @@ export default function TodaysWorkoutPage() {
                                           }}
                                         />
                                         <div className="flex items-center gap-2">
-                                          {isTimerRunning && (
+                                          {isTimerRunning ? (
                                             <div className="flex items-center gap-1">
                                               <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
                                               <span className="text-sm font-mono text-white">
                                                 {formatTime(timerElapsed)}
                                               </span>
                                             </div>
-                                          )}
+                                          ) : setData?.duration ? (
+                                            <div className="flex items-center gap-1">
+                                              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                                              <span className="text-sm font-mono text-green-400">
+                                                {formatTime(setData.duration)}
+                                              </span>
+                                            </div>
+                                          ) : null}
                                         </div>
                                         <div className="flex gap-2">
                                           {!isTimerRunning ? (
@@ -1423,14 +1522,21 @@ export default function TodaysWorkoutPage() {
                                     }}
                                   />
                                   <div className="flex items-center gap-2">
-                                    {isTimerRunning && (
+                                    {isTimerRunning ? (
                                       <div className="flex items-center gap-1">
                                         <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
                                         <span className="text-sm font-mono text-white">
                                           {formatTime(timerElapsed)}
                                         </span>
                                       </div>
-                                    )}
+                                    ) : setData?.duration ? (
+                                      <div className="flex items-center gap-1">
+                                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                                        <span className="text-sm font-mono text-green-400">
+                                          {formatTime(setData.duration)}
+                                        </span>
+                                      </div>
+                                    ) : null}
                                   </div>
                                   <div className="flex gap-2">
                                     {!isTimerRunning ? (
