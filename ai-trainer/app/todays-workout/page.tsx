@@ -407,7 +407,9 @@ export default function TodaysWorkoutPage() {
   }, [user]);
 
   // Check if input is workout tracking data (set, reps, weight format)
-  const parseWorkoutTracking = (input: string) => {
+  const parseWorkoutTracking = (input: string): 
+    | { isWorkoutTracking: true; setNumber: number; reps: number; weight: number }
+    | { isWorkoutTracking: false } => {
     const cleanInput = input.trim().toLowerCase();
     
     // Parse patterns for set, reps, weight
@@ -454,7 +456,7 @@ export default function TodaysWorkoutPage() {
     
     // Check if this is workout tracking data
     const trackingData = parseWorkoutTracking(userMessage);
-    if (trackingData.isWorkoutTracking) {
+    if (trackingData.isWorkoutTracking && trackingData.setNumber && trackingData.reps && trackingData.weight !== undefined) {
       // Handle workout tracking
       console.log('Workout tracking detected:', trackingData);
       
