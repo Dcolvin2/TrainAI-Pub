@@ -406,6 +406,28 @@ export default function TodaysWorkoutPage() {
     fetchPreviousWorkout();
   }, [user]);
 
+  // Helper function to find the next incomplete set across all exercises
+  const findNextIncompleteSet = (currentSets: Record<string, any[]>, allExercises: any[]) => {
+    // Priority order: main exercises first, then accessories
+    for (const exercise of allExercises) {
+      const exerciseName = typeof exercise === 'string' ? exercise : exercise.name;
+      const exerciseSets = currentSets[exerciseName] || [];
+      
+      // Check each set (1, 2, 3) to find the first incomplete one
+      for (let setNum = 1; setNum <= 3; setNum++) {
+        const setData = exerciseSets[setNum - 1];
+        if (!setData || !setData.completed) {
+          return {
+            exercise,
+            exerciseName,
+            setNumber: setNum
+          };
+        }
+      }
+    }
+    return null;
+  };
+
   // Check if input is workout tracking data (set, reps, weight format)
   const parseWorkoutTracking = (input: string): 
     | { isWorkoutTracking: true; setNumber: number; reps: number; weight: number }
@@ -465,9 +487,10 @@ export default function TodaysWorkoutPage() {
       
       // Update workout sets state
       if (generatedWorkout && (generatedWorkout.main?.length > 0 || generatedWorkout.accessories?.length > 0)) {
-        // Try to find exercise name in the input first, otherwise use the first available exercise
+        // Smart exercise and set detection
         let targetExercise = null;
         let exerciseName = '';
+        let targetSetNumber = trackingData.setNumber;
         
         // Check if user mentioned an exercise name in their input
         const allExercises = [
@@ -484,14 +507,23 @@ export default function TodaysWorkoutPage() {
           }
         }
         
-        // If no exercise mentioned, use the first main exercise, then first accessory
+        // If no exercise mentioned, find the smart next incomplete set
         if (!targetExercise) {
-          if (generatedWorkout.main && generatedWorkout.main.length > 0) {
-            targetExercise = generatedWorkout.main[0];
-            exerciseName = typeof targetExercise === 'string' ? targetExercise : targetExercise.name;
-          } else if (generatedWorkout.accessories && generatedWorkout.accessories.length > 0) {
-            targetExercise = generatedWorkout.accessories[0];
-            exerciseName = typeof targetExercise === 'string' ? targetExercise : targetExercise.name;
+          // Find the next incomplete set across all exercises
+          const nextIncomplete = findNextIncompleteSet(workoutSets, allExercises);
+          if (nextIncomplete) {
+            targetExercise = nextIncomplete.exercise;
+            exerciseName = nextIncomplete.exerciseName;
+            targetSetNumber = nextIncomplete.setNumber;
+          } else {
+            // Fallback to first exercise if all are complete
+            if (generatedWorkout.main && generatedWorkout.main.length > 0) {
+              targetExercise = generatedWorkout.main[0];
+              exerciseName = typeof targetExercise === 'string' ? targetExercise : targetExercise.name;
+            } else if (generatedWorkout.accessories && generatedWorkout.accessories.length > 0) {
+              targetExercise = generatedWorkout.accessories[0];
+              exerciseName = typeof targetExercise === 'string' ? targetExercise : targetExercise.name;
+            }
           }
         }
         
@@ -501,11 +533,11 @@ export default function TodaysWorkoutPage() {
             updated[exerciseName] = [];
           }
           
-          // Find or create the set
-          const setIndex = trackingData.setNumber - 1;
+          // Find or create the set using the smart target set number
+          const setIndex = targetSetNumber - 1;
           if (!updated[exerciseName][setIndex]) {
             updated[exerciseName][setIndex] = {
-              setNumber: trackingData.setNumber,
+              setNumber: targetSetNumber,
               reps: trackingData.reps,
               weight: trackingData.weight,
               completed: true
@@ -522,10 +554,10 @@ export default function TodaysWorkoutPage() {
           return updated;
         });
         
-        // Show feedback message
+        // Show feedback message with smart targeting info
         const feedbackMsg = {
           role: 'assistant' as const,
-          content: `✅ Logged: Set ${trackingData.setNumber}, ${trackingData.reps} reps, ${trackingData.weight} lbs for ${exerciseName}`
+          content: `✅ Logged: Set ${targetSetNumber}, ${trackingData.reps} reps, ${trackingData.weight} lbs for ${exerciseName}`
         };
         setChatMessages(prev => [...prev, feedbackMsg]);
       } else {
@@ -1322,7 +1354,7 @@ export default function TodaysWorkoutPage() {
                     value={inputMessage}
                     onChange={(e) => setInputMessage(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                    placeholder="Ask me anything... (or say '1,5,50' or 'barbell deadlift 1,5,50' to log sets)"
+                    placeholder="Ask me anything... (or say '1,5,50' to log next incomplete set)"
                     className="flex-1 bg-gray-800 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                   <button
