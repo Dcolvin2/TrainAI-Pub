@@ -365,12 +365,29 @@ export default function TodaysWorkoutPage() {
   const [previousWorkoutData, setPreviousWorkoutData] = useState<any>({});
   const [resp, setResp] = useState<ApiResp | null>(null);
   const [workoutSets, setWorkoutSets] = useState<Record<string, any[]>>({});
+  const [workoutStarted, setWorkoutStarted] = useState(false);
+  const [workoutStartTime, setWorkoutStartTime] = useState<Date | null>(null);
+  const [workoutElapsedTime, setWorkoutElapsedTime] = useState(0);
+  const [setTimers, setSetTimers] = useState<Record<string, Record<number, { startTime: Date; elapsed: number }>>>({});
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new messages are added
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
+
+  // Workout timer effect
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (workoutStarted && workoutStartTime) {
+      interval = setInterval(() => {
+        setWorkoutElapsedTime(Math.floor((Date.now() - workoutStartTime.getTime()) / 1000));
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [workoutStarted, workoutStartTime]);
 
   // Debug: log assistant payload
   useEffect(() => { 
@@ -456,6 +473,44 @@ export default function TodaysWorkoutPage() {
       
       return updated;
     });
+  };
+
+  // Helper function to start workout
+  const startWorkout = () => {
+    setWorkoutStarted(true);
+    setWorkoutStartTime(new Date());
+    setWorkoutElapsedTime(0);
+  };
+
+  // Helper function to complete workout
+  const completeWorkout = () => {
+    setWorkoutStarted(false);
+    setWorkoutStartTime(null);
+    setWorkoutElapsedTime(0);
+    // Here you could save the workout data to the database
+    console.log('Workout completed!', workoutSets);
+  };
+
+  // Helper function to format time
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Helper function to start set timer
+  const startSetTimer = (exerciseName: string, setNumber: number) => {
+    const now = new Date();
+    setSetTimers(prev => ({
+      ...prev,
+      [exerciseName]: {
+        ...prev[exerciseName],
+        [setNumber]: {
+          startTime: now,
+          elapsed: 0
+        }
+      }
+    }));
   };
 
   // Check if input is workout tracking data (set, reps, weight format)
@@ -1045,6 +1100,34 @@ export default function TodaysWorkoutPage() {
                 {/* Main Exercises Section */}
                 {generatedWorkout.main?.length > 0 && (
                   <div className="mb-6">
+                    {/* Workout Timer and Start Button */}
+                    <div className="mb-4 p-4 bg-gray-800 rounded-lg">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          {workoutStarted ? (
+                            <div className="flex items-center gap-2">
+                              <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+                              <span className="text-lg font-mono text-white">
+                                {formatTime(workoutElapsedTime)}
+                              </span>
+                              <span className="text-gray-400">Workout in progress</span>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={startWorkout}
+                              className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold transition-colors"
+                            >
+                              Start Workout
+                            </button>
+                          )}
+                        </div>
+                        {workoutStarted && (
+                          <div className="text-sm text-gray-400">
+                            Started at {workoutStartTime?.toLocaleTimeString()}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                     {Array.isArray(generatedWorkout.main) && 
                       generatedWorkout.main
                         .filter(exercise => {
@@ -1168,6 +1251,12 @@ export default function TodaysWorkoutPage() {
                                                 updated[exerciseName][setIndex] = { setNumber: setIndex + 1 };
                                               }
                                               updated[exerciseName][setIndex].completed = e.target.checked;
+                                              
+                                              // Start set timer when completed
+                                              if (e.target.checked) {
+                                                startSetTimer(exerciseName, setIndex + 1);
+                                              }
+                                              
                                               return updated;
                                             });
                                           }}
@@ -1279,6 +1368,12 @@ export default function TodaysWorkoutPage() {
                                           updated[exerciseName][setIndex] = { setNumber: setNum };
                                         }
                                         updated[exerciseName][setIndex].completed = e.target.checked;
+                                        
+                                        // Start set timer when completed
+                                        if (e.target.checked) {
+                                          startSetTimer(exerciseName, setNum);
+                                        }
+                                        
                                         return updated;
                                       });
                                     }}
@@ -1343,23 +1438,26 @@ export default function TodaysWorkoutPage() {
                   </div>
                 )}
                 
+                {/* Complete Workout Button */}
+                {hasAny && workoutStarted && (
+                  <div className="mt-6 p-4 bg-gray-800 rounded-lg">
+                    <button
+                      onClick={completeWorkout}
+                      className="w-full bg-red-600 hover:bg-red-700 py-3 rounded-lg font-semibold text-white transition-colors"
+                    >
+                      Complete Workout
+                    </button>
+                  </div>
+                )}
+                
                 {(isLoading || isPlanning) && !hasAny && (
                   <div className="text-gray-400 text-sm mt-4">Building your workout…</div>
                 )}
                 
-                {hasAny ? (
-                  <button
-                    onClick={() => console.log('Starting workout:', generatedWorkout)}
-                    className="mt-4 w-full bg-green-600 hover:bg-green-700 py-3 rounded-lg font-semibold"
-                  >
-                    Start Workout
-                  </button>
-                ) : (
-                  !isLoading && !isPlanning && (
-                    <div className="text-red-400 text-sm mt-4">
-                      No items generated. Check the debug drawer and try again.
-                    </div>
-                  )
+                {!isLoading && !isPlanning && !hasAny && (
+                  <div className="text-red-400 text-sm mt-4">
+                    No items generated. Check the debug drawer and try again.
+                  </div>
                 )}
               </div>
             )}
