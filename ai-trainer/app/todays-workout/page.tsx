@@ -464,9 +464,36 @@ export default function TodaysWorkoutPage() {
       setChatMessages(prev => [...prev, { role: 'user', content: userMessage }]);
       
       // Update workout sets state
-      if (generatedWorkout && generatedWorkout.main && generatedWorkout.main.length > 0) {
-        const firstExercise = generatedWorkout.main[0];
-        const exerciseName = typeof firstExercise === 'string' ? firstExercise : firstExercise.name;
+      if (generatedWorkout && (generatedWorkout.main?.length > 0 || generatedWorkout.accessories?.length > 0)) {
+        // Try to find exercise name in the input first, otherwise use the first available exercise
+        let targetExercise = null;
+        let exerciseName = '';
+        
+        // Check if user mentioned an exercise name in their input
+        const allExercises = [
+          ...(generatedWorkout.main || []),
+          ...(generatedWorkout.accessories || [])
+        ];
+        
+        for (const exercise of allExercises) {
+          const name = typeof exercise === 'string' ? exercise : exercise.name;
+          if (userMessage.toLowerCase().includes(name.toLowerCase())) {
+            targetExercise = exercise;
+            exerciseName = name;
+            break;
+          }
+        }
+        
+        // If no exercise mentioned, use the first main exercise, then first accessory
+        if (!targetExercise) {
+          if (generatedWorkout.main && generatedWorkout.main.length > 0) {
+            targetExercise = generatedWorkout.main[0];
+            exerciseName = typeof targetExercise === 'string' ? targetExercise : targetExercise.name;
+          } else if (generatedWorkout.accessories && generatedWorkout.accessories.length > 0) {
+            targetExercise = generatedWorkout.accessories[0];
+            exerciseName = typeof targetExercise === 'string' ? targetExercise : targetExercise.name;
+          }
+        }
         
         setWorkoutSets(prev => {
           const updated = { ...prev };
@@ -1105,27 +1132,75 @@ export default function TodaysWorkoutPage() {
                           <div className="grid grid-cols-5 gap-4 text-sm text-gray-400 mb-2">
                             <span>Set</span>
                             <span>Previous</span>
-                            <span>lbs</span>
                             <span>Reps</span>
+                            <span>lbs</span>
                             <span>Complete</span>
                           </div>
-                          {[1, 2, 3].map((setNum) => (
-                            <div key={setNum} className="grid grid-cols-5 gap-4 items-center mb-2">
-                              <span className="text-gray-300">{setNum}</span>
-                              <span className="text-gray-500">N/A</span>
-                              <input
-                                type="number"
-                                className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-gray-200"
-                                placeholder="0"
-                              />
-                              <input
-                                type="number"
-                                className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-gray-200"
-                                placeholder="0"
-                              />
-                              <input type="checkbox" className="w-5 h-5 cursor-pointer" />
-                            </div>
-                          ))}
+                          {[1, 2, 3].map((setNum) => {
+                            const setData = workoutSets[exerciseName]?.[setNum - 1];
+                            return (
+                              <div key={setNum} className="grid grid-cols-5 gap-4 items-center mb-2">
+                                <span className="text-gray-300">{setNum}</span>
+                                <span className="text-gray-500">N/A</span>
+                                <input
+                                  type="number"
+                                  className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-gray-200"
+                                  placeholder="0"
+                                  value={setData?.reps || ''}
+                                  onChange={(e) => {
+                                    setWorkoutSets(prev => {
+                                      const updated = { ...prev };
+                                      if (!updated[exerciseName]) {
+                                        updated[exerciseName] = [];
+                                      }
+                                      if (!updated[exerciseName][setNum - 1]) {
+                                        updated[exerciseName][setNum - 1] = { setNumber: setNum };
+                                      }
+                                      updated[exerciseName][setNum - 1].reps = parseInt(e.target.value) || 0;
+                                      return updated;
+                                    });
+                                  }}
+                                />
+                                <input
+                                  type="number"
+                                  className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-gray-200"
+                                  placeholder="0"
+                                  value={setData?.weight || ''}
+                                  onChange={(e) => {
+                                    setWorkoutSets(prev => {
+                                      const updated = { ...prev };
+                                      if (!updated[exerciseName]) {
+                                        updated[exerciseName] = [];
+                                      }
+                                      if (!updated[exerciseName][setNum - 1]) {
+                                        updated[exerciseName][setNum - 1] = { setNumber: setNum };
+                                      }
+                                      updated[exerciseName][setNum - 1].weight = parseInt(e.target.value) || 0;
+                                      return updated;
+                                    });
+                                  }}
+                                />
+                                <input 
+                                  type="checkbox" 
+                                  className="w-5 h-5 cursor-pointer"
+                                  checked={setData?.completed || false}
+                                  onChange={(e) => {
+                                    setWorkoutSets(prev => {
+                                      const updated = { ...prev };
+                                      if (!updated[exerciseName]) {
+                                        updated[exerciseName] = [];
+                                      }
+                                      if (!updated[exerciseName][setNum - 1]) {
+                                        updated[exerciseName][setNum - 1] = { setNumber: setNum };
+                                      }
+                                      updated[exerciseName][setNum - 1].completed = e.target.checked;
+                                      return updated;
+                                    });
+                                  }}
+                                />
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     ))}
@@ -1244,7 +1319,7 @@ export default function TodaysWorkoutPage() {
                     value={inputMessage}
                     onChange={(e) => setInputMessage(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                    placeholder="Ask me anything... (or say '1,5,50' to log sets)"
+                    placeholder="Ask me anything... (or say '1,5,50' or 'barbell deadlift 1,5,50' to log sets)"
                     className="flex-1 bg-gray-800 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                   <button
