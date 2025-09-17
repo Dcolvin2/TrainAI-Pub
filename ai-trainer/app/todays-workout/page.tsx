@@ -364,6 +364,7 @@ export default function TodaysWorkoutPage() {
   const [generatedWorkout, setGeneratedWorkout] = useState<GeneratedWorkout | null>(null);
   const [previousWorkoutData, setPreviousWorkoutData] = useState<any>({});
   const [resp, setResp] = useState<ApiResp | null>(null);
+  const [workoutSets, setWorkoutSets] = useState<Record<string, any[]>>({});
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new messages are added
@@ -460,12 +461,52 @@ export default function TodaysWorkoutPage() {
       // Add user message to chat
       setChatMessages(prev => [...prev, { role: 'user', content: userMessage }]);
       
-      // Show feedback message
-      const feedbackMsg = {
-        role: 'assistant' as const,
-        content: `✅ Logged: Set ${trackingData.setNumber}, ${trackingData.reps} reps, ${trackingData.weight} lbs`
-      };
-      setChatMessages(prev => [...prev, feedbackMsg]);
+      // Update workout sets state
+      if (generatedWorkout && generatedWorkout.main && generatedWorkout.main.length > 0) {
+        const firstExercise = generatedWorkout.main[0];
+        const exerciseName = typeof firstExercise === 'string' ? firstExercise : firstExercise.name;
+        
+        setWorkoutSets(prev => {
+          const updated = { ...prev };
+          if (!updated[exerciseName]) {
+            updated[exerciseName] = [];
+          }
+          
+          // Find or create the set
+          const setIndex = trackingData.setNumber - 1;
+          if (!updated[exerciseName][setIndex]) {
+            updated[exerciseName][setIndex] = {
+              setNumber: trackingData.setNumber,
+              reps: trackingData.reps,
+              weight: trackingData.weight,
+              completed: true
+            };
+          } else {
+            updated[exerciseName][setIndex] = {
+              ...updated[exerciseName][setIndex],
+              reps: trackingData.reps,
+              weight: trackingData.weight,
+              completed: true
+            };
+          }
+          
+          return updated;
+        });
+        
+        // Show feedback message
+        const feedbackMsg = {
+          role: 'assistant' as const,
+          content: `✅ Logged: Set ${trackingData.setNumber}, ${trackingData.reps} reps, ${trackingData.weight} lbs for ${exerciseName}`
+        };
+        setChatMessages(prev => [...prev, feedbackMsg]);
+      } else {
+        // No workout active
+        const errorMsg = {
+          role: 'assistant' as const,
+          content: '❌ No workout active. Please generate a workout first.'
+        };
+        setChatMessages(prev => [...prev, errorMsg]);
+      }
       
       setInputMessage('');
       return;
@@ -969,29 +1010,76 @@ export default function TodaysWorkoutPage() {
                                 </div>
                                 
                                 {/* Sets */}
-                                {[...Array(targetSets)].map((_, setIndex) => (
-                                  <div key={setIndex} className="grid grid-cols-5 gap-4 items-center mb-2">
-                                    <span className="text-gray-300">
-                                      {setIndex + 1}
-                                    </span>
-                                    <span className="text-gray-500 text-sm">
-                                      {/* Previous weight x reps - from DB or default */}
-                                      {previous ? `${previous.weight} lbs × ${previous.reps}` : 'N/A'}
-                                    </span>
-                                    <input
-                                      type="number"
-                                      className="bg-gray-700 rounded px-2 py-1 text-white"
-                                      placeholder={targetReps.toString()}
-                                      defaultValue={targetReps}
-                                    />
-                                    <input
-                                      type="number"
-                                      className="bg-gray-700 rounded px-2 py-1 text-white"
-                                      placeholder="0"
-                                    />
-                                    <input type="checkbox" className="w-5 h-5 cursor-pointer" />
-                                  </div>
-                                ))}
+                                {[...Array(targetSets)].map((_, setIndex) => {
+                                  const setData = workoutSets[exerciseName]?.[setIndex];
+                                  return (
+                                    <div key={setIndex} className="grid grid-cols-5 gap-4 items-center mb-2">
+                                      <span className="text-gray-300">
+                                        {setIndex + 1}
+                                      </span>
+                                      <span className="text-gray-500 text-sm">
+                                        {/* Previous weight x reps - from DB or default */}
+                                        {previous ? `${previous.weight} lbs × ${previous.reps}` : 'N/A'}
+                                      </span>
+                                      <input
+                                        type="number"
+                                        className="bg-gray-700 rounded px-2 py-1 text-white"
+                                        placeholder={targetReps.toString()}
+                                        value={setData?.reps || targetReps}
+                                        onChange={(e) => {
+                                          setWorkoutSets(prev => {
+                                            const updated = { ...prev };
+                                            if (!updated[exerciseName]) {
+                                              updated[exerciseName] = [];
+                                            }
+                                            if (!updated[exerciseName][setIndex]) {
+                                              updated[exerciseName][setIndex] = { setNumber: setIndex + 1 };
+                                            }
+                                            updated[exerciseName][setIndex].reps = parseInt(e.target.value) || 0;
+                                            return updated;
+                                          });
+                                        }}
+                                      />
+                                      <input
+                                        type="number"
+                                        className="bg-gray-700 rounded px-2 py-1 text-white"
+                                        placeholder="0"
+                                        value={setData?.weight || ''}
+                                        onChange={(e) => {
+                                          setWorkoutSets(prev => {
+                                            const updated = { ...prev };
+                                            if (!updated[exerciseName]) {
+                                              updated[exerciseName] = [];
+                                            }
+                                            if (!updated[exerciseName][setIndex]) {
+                                              updated[exerciseName][setIndex] = { setNumber: setIndex + 1 };
+                                            }
+                                            updated[exerciseName][setIndex].weight = parseInt(e.target.value) || 0;
+                                            return updated;
+                                          });
+                                        }}
+                                      />
+                                      <input 
+                                        type="checkbox" 
+                                        className="w-5 h-5 cursor-pointer"
+                                        checked={setData?.completed || false}
+                                        onChange={(e) => {
+                                          setWorkoutSets(prev => {
+                                            const updated = { ...prev };
+                                            if (!updated[exerciseName]) {
+                                              updated[exerciseName] = [];
+                                            }
+                                            if (!updated[exerciseName][setIndex]) {
+                                              updated[exerciseName][setIndex] = { setNumber: setIndex + 1 };
+                                            }
+                                            updated[exerciseName][setIndex].completed = e.target.checked;
+                                            return updated;
+                                          });
+                                        }}
+                                      />
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </div>
                           );
