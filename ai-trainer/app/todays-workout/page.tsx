@@ -1120,11 +1120,13 @@ export default function TodaysWorkoutPage() {
                 {/* Accessories Section */}
                 {generatedWorkout.accessories?.length > 0 && (
                   <div className="mb-6">
-                    {generatedWorkout.accessories.map((exercise, idx) => (
+                    {generatedWorkout.accessories.map((exercise, idx) => {
+                      const exerciseName = typeof exercise === 'string' ? exercise : exercise.name || 'Exercise';
+                      return (
                       <div key={idx} className="mb-4">
                         <div className="flex items-center mb-3">
                           <h4 className="text-md font-semibold text-gray-300">
-                            {typeof exercise === 'string' ? exercise : exercise.name || 'Exercise'}
+                            {exerciseName}
                           </h4>
                           <span className="ml-2 px-2 py-1 bg-blue-600 text-xs text-white rounded">Accessory</span>
                         </div>
@@ -1203,7 +1205,8 @@ export default function TodaysWorkoutPage() {
                           })}
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
         </div>
                 )}
                 
