@@ -368,7 +368,7 @@ export default function TodaysWorkoutPage() {
   const [workoutStarted, setWorkoutStarted] = useState(false);
   const [workoutStartTime, setWorkoutStartTime] = useState<Date | null>(null);
   const [workoutElapsedTime, setWorkoutElapsedTime] = useState(0);
-  const [setTimers, setSetTimers] = useState<Record<string, Record<number, { startTime: Date; elapsed: number }>>>({});
+  const [setTimers, setSetTimers] = useState<Record<string, Record<number, { startTime: Date; elapsed: number; isRunning: boolean }>>>({});
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new messages are added
@@ -388,6 +388,34 @@ export default function TodaysWorkoutPage() {
       if (interval) clearInterval(interval);
     };
   }, [workoutStarted, workoutStartTime]);
+
+  // Individual set timers effect
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    const hasRunningTimers = Object.values(setTimers).some(exerciseTimers => 
+      Object.values(exerciseTimers).some(timer => timer.isRunning)
+    );
+    
+    if (hasRunningTimers) {
+      interval = setInterval(() => {
+        setSetTimers(prev => {
+          const updated = { ...prev };
+          Object.keys(updated).forEach(exerciseName => {
+            Object.keys(updated[exerciseName]).forEach(setNumber => {
+              const timer = updated[exerciseName][parseInt(setNumber)];
+              if (timer.isRunning) {
+                timer.elapsed = Math.floor((Date.now() - timer.startTime.getTime()) / 1000);
+              }
+            });
+          });
+          return updated;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [setTimers]);
 
   // Debug: log assistant payload
   useEffect(() => { 
@@ -507,10 +535,38 @@ export default function TodaysWorkoutPage() {
         ...prev[exerciseName],
         [setNumber]: {
           startTime: now,
-          elapsed: 0
+          elapsed: 0,
+          isRunning: true
         }
       }
     }));
+  };
+
+  // Helper function to stop set timer
+  const stopSetTimer = (exerciseName: string, setNumber: number) => {
+    setSetTimers(prev => ({
+      ...prev,
+      [exerciseName]: {
+        ...prev[exerciseName],
+        [setNumber]: {
+          ...prev[exerciseName]?.[setNumber],
+          isRunning: false
+        }
+      }
+    }));
+  };
+
+  // Helper function to get set timer elapsed time
+  const getSetTimerElapsed = (exerciseName: string, setNumber: number) => {
+    const timer = setTimers[exerciseName]?.[setNumber];
+    if (!timer) return 0;
+    return timer.elapsed;
+  };
+
+  // Helper function to check if set timer is running
+  const isSetTimerRunning = (exerciseName: string, setNumber: number) => {
+    const timer = setTimers[exerciseName]?.[setNumber];
+    return timer?.isRunning || false;
   };
 
   // Check if input is workout tracking data (set, reps, weight format)
@@ -1175,12 +1231,13 @@ export default function TodaysWorkoutPage() {
                               </div>
                               <div className="bg-gray-800 rounded-lg p-4">
                                 {/* Column headers */}
-                                <div className="grid grid-cols-5 gap-4 text-sm text-gray-400 mb-2">
+                                <div className="grid grid-cols-6 gap-4 text-sm text-gray-400 mb-2">
                                   <span>Set</span>
                                   <span>Previous</span>
                                   <span>Reps</span>
                                   <span>lbs</span>
-                                  <span>Complete</span>
+                                  <span>Timer</span>
+                                  <span>Actions</span>
                                 </div>
                                 
                                 {/* Sets */}
@@ -1190,10 +1247,14 @@ export default function TodaysWorkoutPage() {
                                   
                                   return [...Array(totalSets)].map((_, setIndex) => {
                                     const setData = existingSets[setIndex];
+                                    const setNumber = setIndex + 1;
+                                    const isTimerRunning = isSetTimerRunning(exerciseName, setNumber);
+                                    const timerElapsed = getSetTimerElapsed(exerciseName, setNumber);
+                                    
                                     return (
-                                      <div key={setIndex} className="grid grid-cols-5 gap-4 items-center mb-2">
+                                      <div key={setIndex} className="grid grid-cols-6 gap-4 items-center mb-2">
                                         <span className="text-gray-300">
-                                          {setIndex + 1}
+                                          {setNumber}
                                         </span>
                                         <span className="text-gray-500 text-sm">
                                           {/* Previous weight x reps - from DB or default */}
@@ -1211,7 +1272,7 @@ export default function TodaysWorkoutPage() {
                                                 updated[exerciseName] = [];
                                               }
                                               if (!updated[exerciseName][setIndex]) {
-                                                updated[exerciseName][setIndex] = { setNumber: setIndex + 1 };
+                                                updated[exerciseName][setIndex] = { setNumber: setNumber };
                                               }
                                               updated[exerciseName][setIndex].reps = parseInt(e.target.value) || 0;
                                               return updated;
@@ -1230,37 +1291,40 @@ export default function TodaysWorkoutPage() {
                                                 updated[exerciseName] = [];
                                               }
                                               if (!updated[exerciseName][setIndex]) {
-                                                updated[exerciseName][setIndex] = { setNumber: setIndex + 1 };
+                                                updated[exerciseName][setIndex] = { setNumber: setNumber };
                                               }
                                               updated[exerciseName][setIndex].weight = parseInt(e.target.value) || 0;
                                               return updated;
                                             });
                                           }}
                                         />
-                                        <input 
-                                          type="checkbox" 
-                                          className="w-5 h-5 cursor-pointer"
-                                          checked={setData?.completed || false}
-                                          onChange={(e) => {
-                                            setWorkoutSets(prev => {
-                                              const updated = { ...prev };
-                                              if (!updated[exerciseName]) {
-                                                updated[exerciseName] = [];
-                                              }
-                                              if (!updated[exerciseName][setIndex]) {
-                                                updated[exerciseName][setIndex] = { setNumber: setIndex + 1 };
-                                              }
-                                              updated[exerciseName][setIndex].completed = e.target.checked;
-                                              
-                                              // Start set timer when completed
-                                              if (e.target.checked) {
-                                                startSetTimer(exerciseName, setIndex + 1);
-                                              }
-                                              
-                                              return updated;
-                                            });
-                                          }}
-                                        />
+                                        <div className="flex items-center gap-2">
+                                          {isTimerRunning && (
+                                            <div className="flex items-center gap-1">
+                                              <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                                              <span className="text-sm font-mono text-white">
+                                                {formatTime(timerElapsed)}
+                                              </span>
+                                            </div>
+                                          )}
+                                        </div>
+                                        <div className="flex gap-2">
+                                          {!isTimerRunning ? (
+                                            <button
+                                              onClick={() => startSetTimer(exerciseName, setNumber)}
+                                              className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded transition-colors"
+                                            >
+                                              Start
+                                            </button>
+                                          ) : (
+                                            <button
+                                              onClick={() => stopSetTimer(exerciseName, setNumber)}
+                                              className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors"
+                                            >
+                                              Complete
+                                            </button>
+                                          )}
+                                        </div>
                                       </div>
                                     );
                                   });
@@ -1298,12 +1362,13 @@ export default function TodaysWorkoutPage() {
                           <span className="ml-2 px-2 py-1 bg-blue-600 text-xs text-white rounded">Accessory</span>
                         </div>
                         <div className="bg-gray-800 rounded-lg p-4">
-                          <div className="grid grid-cols-5 gap-4 text-sm text-gray-400 mb-2">
+                          <div className="grid grid-cols-6 gap-4 text-sm text-gray-400 mb-2">
                             <span>Set</span>
                             <span>Previous</span>
                             <span>Reps</span>
                             <span>lbs</span>
-                            <span>Complete</span>
+                            <span>Timer</span>
+                            <span>Actions</span>
                           </div>
                           {(() => {
                             const existingSets = workoutSets[exerciseName] || [];
@@ -1312,8 +1377,11 @@ export default function TodaysWorkoutPage() {
                             return [...Array(totalSets)].map((_, setIndex) => {
                               const setData = existingSets[setIndex];
                               const setNum = setIndex + 1;
+                              const isTimerRunning = isSetTimerRunning(exerciseName, setNum);
+                              const timerElapsed = getSetTimerElapsed(exerciseName, setNum);
+                              
                               return (
-                                <div key={setIndex} className="grid grid-cols-5 gap-4 items-center mb-2">
+                                <div key={setIndex} className="grid grid-cols-6 gap-4 items-center mb-2">
                                   <span className="text-gray-300">{setNum}</span>
                                   <span className="text-gray-500">N/A</span>
                                   <input
@@ -1354,30 +1422,33 @@ export default function TodaysWorkoutPage() {
                                       });
                                     }}
                                   />
-                                  <input 
-                                    type="checkbox" 
-                                    className="w-5 h-5 cursor-pointer"
-                                    checked={setData?.completed || false}
-                                    onChange={(e) => {
-                                      setWorkoutSets(prev => {
-                                        const updated = { ...prev };
-                                        if (!updated[exerciseName]) {
-                                          updated[exerciseName] = [];
-                                        }
-                                        if (!updated[exerciseName][setIndex]) {
-                                          updated[exerciseName][setIndex] = { setNumber: setNum };
-                                        }
-                                        updated[exerciseName][setIndex].completed = e.target.checked;
-                                        
-                                        // Start set timer when completed
-                                        if (e.target.checked) {
-                                          startSetTimer(exerciseName, setNum);
-                                        }
-                                        
-                                        return updated;
-                                      });
-                                    }}
-                                  />
+                                  <div className="flex items-center gap-2">
+                                    {isTimerRunning && (
+                                      <div className="flex items-center gap-1">
+                                        <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                                        <span className="text-sm font-mono text-white">
+                                          {formatTime(timerElapsed)}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="flex gap-2">
+                                    {!isTimerRunning ? (
+                                      <button
+                                        onClick={() => startSetTimer(exerciseName, setNum)}
+                                        className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded transition-colors"
+                                      >
+                                        Start
+                                      </button>
+                                    ) : (
+                                      <button
+                                        onClick={() => stopSetTimer(exerciseName, setNum)}
+                                        className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors"
+                                      >
+                                        Complete
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
                               );
                             });
