@@ -357,6 +357,29 @@ async function fetchRecentCooldownNamesFromWorkouts(userId: string, days = 28): 
 
 export async function POST(req: NextRequest) {
   try {
+    // Debug: check if OPENAI_API_KEY is injected
+    const hasOpenAI = !!process.env.OPENAI_API_KEY;
+    const safeEnvKeys = Object.keys(process.env).filter(
+      k => !k.toLowerCase().includes("key") && !k.toLowerCase().includes("secret")
+    );
+    
+    console.log("OPENAI_API_KEY present?", hasOpenAI);
+    console.log("Env keys (safe):", safeEnvKeys);
+    
+    if (!hasOpenAI) {
+      return new NextResponse(
+        JSON.stringify({
+          ok: false,
+          error: "OPENAI_API_KEY is missing at runtime",
+          availableEnvKeys: safeEnvKeys,
+        }),
+        { headers: { "content-type": "application/json" }, status: 500 }
+      );
+    }
+    
+    const apiKey = process.env.OPENAI_API_KEY as string;
+    console.log("API key loaded successfully, length:", apiKey.length);
+    
     if (!((req.headers.get('content-type')||'').includes('application/json'))) {
       return J(200, { ok:false, error:'content-type must be application/json' });
     }
@@ -1114,6 +1137,14 @@ Schema (strict):
       workout,
     };
     if (dbg) (payload as any).debug = debug;
+    
+    // Add API key status to response for debugging
+    (payload as any).apiKeyStatus = {
+      loaded: true,
+      length: apiKey.length,
+      availableEnvKeys: safeEnvKeys
+    };
+    
     return NextResponse.json(payload, { status: 200 });
     }
   } catch (err:any) {
