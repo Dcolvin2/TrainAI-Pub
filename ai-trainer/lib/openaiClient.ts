@@ -5,8 +5,9 @@ let openaiInstance: OpenAI | null = null;
 
 function getOpenAI(): OpenAI {
   if (!openaiInstance) {
-    // Get the OpenAI API key from environment
-    const apiKey = process.env.OPENAI_API_KEY;
+    // Get the OpenAI API key from environment (try multiple names)
+    const apiKey = process.env.OPENAI_API_KEY || 
+                   process.env.OPENAI_KEY;
     
     console.log('🔍 Environment check:', {
       hasApiKey: !!apiKey,
