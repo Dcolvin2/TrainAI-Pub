@@ -1,8 +1,27 @@
 import OpenAI from 'openai';
 
-export const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY!,
-});
+// Lazy initialization to avoid build-time errors
+let openaiInstance: OpenAI | null = null;
+
+function getOpenAI(): OpenAI {
+  if (!openaiInstance) {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      throw new Error('OPENAI_API_KEY environment variable is not set');
+    }
+    openaiInstance = new OpenAI({ apiKey });
+  }
+  return openaiInstance;
+}
+
+export const openai = {
+  get chat() {
+    return getOpenAI().chat;
+  },
+  get completions() {
+    return getOpenAI().completions;
+  }
+};
 
 export async function chatOpenAI(prompt: string, options?: {
   model?: string;
@@ -10,7 +29,7 @@ export async function chatOpenAI(prompt: string, options?: {
   temperature?: number;
   system?: string;
 }) {
-  const response = await openai.chat.completions.create({
+  const response = await getOpenAI().chat.completions.create({
     model: options?.model || 'gpt-4o',
     max_tokens: options?.max_tokens || 500,
     temperature: options?.temperature || 0.7,
@@ -32,7 +51,7 @@ export async function openaiJSON(
   const max_tokens = typeof opts?.max_tokens === 'number' ? opts.max_tokens : 1400;
   const model = opts?.model || 'gpt-4o';
   
-  const response = await openai.chat.completions.create({
+  const response = await getOpenAI().chat.completions.create({
     model,
     max_tokens,
     temperature,
