@@ -5,9 +5,26 @@ let openaiInstance: OpenAI | null = null;
 
 function getOpenAI(): OpenAI {
   if (!openaiInstance) {
+    // Get the OpenAI API key from environment
     const apiKey = process.env.OPENAI_API_KEY;
+    
+    console.log('🔍 Environment check:', {
+      hasApiKey: !!apiKey,
+      keyLength: apiKey ? apiKey.length : 0,
+      keyPrefix: apiKey ? apiKey.substring(0, 10) + '...' : 'none',
+      allEnvKeys: Object.keys(process.env).filter(k => k.includes('OPENAI') || k.includes('API')),
+      nodeEnv: process.env.NODE_ENV,
+      vercelEnv: process.env.VERCEL_ENV
+    });
+    
     if (!apiKey) {
-      throw new Error('OPENAI_API_KEY environment variable is not set');
+      const availableKeys = Object.keys(process.env).filter(k => 
+        k.includes('OPENAI') || k.includes('API') || k.includes('KEY')
+      );
+      throw new Error(`OPENAI_API_KEY environment variable is not set. 
+        Available env vars: ${availableKeys.join(', ')}
+        NODE_ENV: ${process.env.NODE_ENV}
+        VERCEL_ENV: ${process.env.VERCEL_ENV}`);
     }
     openaiInstance = new OpenAI({ apiKey });
   }
