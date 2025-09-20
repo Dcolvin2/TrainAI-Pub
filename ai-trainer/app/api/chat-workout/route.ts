@@ -1,6 +1,6 @@
 // app/api/chat-workout/route.ts
 import { NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { openaiJSON } from "@/lib/openaiClient";
 import { supabase } from "@/lib/supabaseClient";
 import { devlog } from "@/lib/devlog";
 import {
@@ -372,7 +372,7 @@ const buildRuleBasedBackup = (input: any) => {
 };
 
 // ---- Clients ----
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+// OpenAI client is imported from openaiClient.ts
 
 // MAIN LIFT ANCHORS — only this repeats. Everything else can vary.
 const MAIN_LIFTS: Record<string, string[]> = {
@@ -517,40 +517,9 @@ function buildSystemPrompt(split: string, mainLift: string, budget: ReturnType<t
   ].join('\n');
 }
 
-// Hook your generator route to Claude (minimal, safe)
+// Hook your generator route to OpenAI (minimal, safe)
 async function callClaudeJson(system: string, user: unknown) {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) throw new Error('Missing ANTHROPIC_API_KEY');
-
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'claude-3-5-sonnet-20240620',
-      max_tokens: 1200,
-      system,
-      messages: [{ role: 'user', content: JSON.stringify(user) }],
-    }),
-  });
-
-  const ct = resp.headers.get('content-type') || '';
-  if (!ct.includes('application/json')) {
-    const text = await resp.text();
-    throw new Error(`Claude returned non-JSON (${resp.status}): ${text.slice(0, 200)}`);
-  }
-
-  const data = await resp.json();
-  const text: string = data?.content?.[0]?.text || '';
-  try {
-    return JSON.parse(text);
-  } catch {
-    // If the model returned plain text instead of JSON, wrap it
-    return { text };
-  }
+  return openaiJSON(system, user, { max_tokens: 1200 });
 }
 
 
@@ -1074,14 +1043,12 @@ function tryParseWorkout(raw: string) {
 
 /** LLM JSON helper - handles two-pass workflow for optimal workout generation */
 async function llmJSON(opts: { system: string; user: string; max_tokens?: number; temperature?: number }) {
-  const resp = await anthropic.messages.create({
-    model: "claude-3-5-sonnet-20241022",
+  const resp = await openaiJSON(opts.system, opts.user, {
     temperature: opts.temperature ?? 0.3,
     max_tokens: opts.max_tokens ?? 1600,
-    messages: [{ role: "user", content: `${opts.system}\n\n${opts.user}` }]
+    model: "gpt-4o"
   });
-  const raw = (resp?.content ?? []).map((b: any) => ("text" in b ? b.text : "")).join("\n");
-  return raw; // Return raw text instead of trying to parse
+  return JSON.stringify(resp); // Return JSON string
 }
 
 
@@ -1161,25 +1128,21 @@ export async function POST(req: Request) {
       mentionedEquipment
     });
 
-    const completion = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20241022",
+    const completion = await openaiJSON(system, user, {
       temperature: 0.4,
       max_tokens: 1200,
-      messages: [
-        { role: "user", content: `${system}\n\n${user}` }
-      ]
+      model: "gpt-4o"
     });
 
-    const raw = (completion.content?.[0] as any)?.text ?? "{}";
-    console.log('🤖 LLM Response:', raw.substring(0, 500) + '...');
+    console.log('🤖 LLM Response:', JSON.stringify(completion, null, 2).substring(0, 500) + '...');
     
     let plan: WorkoutPlan;
 
     try {
-      plan = JSON.parse(raw) as WorkoutPlan;
+      plan = completion as WorkoutPlan;
       console.log('✅ Parsed Plan:', JSON.stringify(plan, null, 2));
     } catch {
-      console.log('❌ JSON Parse Error:', raw);
+      console.log('❌ JSON Parse Error:', completion);
       return new Response(JSON.stringify({ ok: false, error: "Invalid JSON from model" }), {
         status: 400,
         headers: { 'content-type': 'application/json' }

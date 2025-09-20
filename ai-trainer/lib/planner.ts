@@ -1,7 +1,5 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { openaiJSON } from './openaiClient';
 import { PlanSchema, type Plan } from './schemas';
-
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
 const PLANNER_SYSTEM = `
 You are a strength coach. Output ONLY valid JSON matching the provided schema.
@@ -39,17 +37,13 @@ Context:
 - User message: "${params.userMsg}"
 `;
 
-  const resp = await client.messages.create({
-    model: 'claude-3-5-sonnet-20241022',
+  const json = await openaiJSON(sys, user, {
+    model: 'gpt-4o',
     max_tokens: 1000,
-    temperature: 0.4,
-    system: sys,
-    messages: [{ role: 'user', content: user }],
+    temperature: 0.4
   });
 
-  const raw = (resp.content[0] as any)?.text ?? '';
-  let json: any;
-  try { json = JSON.parse(raw); } catch { throw new Error('Planner returned non-JSON'); }
+  const raw = JSON.stringify(json);
 
   const parsed = PlanSchema.safeParse(json);
   if (!parsed.success) throw new Error('Planner JSON failed validation');

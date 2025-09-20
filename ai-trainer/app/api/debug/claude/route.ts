@@ -1,26 +1,19 @@
 export const runtime = 'nodejs';
 
 import { NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+import { chatOpenAI } from '@/lib/openaiClient';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const q = searchParams.get('q') ?? 'Say "pong".';
   try {
-    const msg = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-latest',
+    const text = await chatOpenAI(q, {
+      model: 'gpt-4o',
       max_tokens: 64,
-      temperature: 0,
-      messages: [{ role: 'user', content: q }],
+      temperature: 0
     });
-    const text = (msg.content || [])
-      .map((b: any) => (typeof b?.text === 'string' ? b.text : (b?.type === 'text' ? b.text : '')))
-      .join('')
-      .trim();
 
-    return NextResponse.json({ ok: true, q, text, model: msg.model });
+    return NextResponse.json({ ok: true, q, text, model: 'gpt-4o' });
   } catch (err: any) {
     return NextResponse.json(
       { ok: false, q, error: String(err?.message ?? err) },

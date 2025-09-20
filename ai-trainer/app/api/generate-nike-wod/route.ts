@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
-import { claude } from '@/lib/claudeClient';
+import { chatOpenAI } from '@/lib/openaiClient';
 
 export async function POST(request: Request) {
   try {
@@ -100,16 +100,14 @@ Return JSON:
   }
 }`;
 
-    // Call Claude to adapt the workout
-    const response = await claude.messages.create({
-      model: "claude-3-5-sonnet-20241022",
+    // Call OpenAI to adapt the workout
+    const response = await chatOpenAI(prompt, {
+      model: "gpt-4o",
       max_tokens: 2000,
-      temperature: 0.7,
-      messages: [{ role: "user", content: prompt }]
+      temperature: 0.7
     });
 
-    const content = response.content[0];
-    const adaptedWorkout = JSON.parse(content.type === 'text' ? content.text : '{}');
+    const adaptedWorkout = JSON.parse(response || '{}');
 
     // Create workout session
     const { data: session } = await supabase

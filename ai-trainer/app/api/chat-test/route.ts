@@ -1,13 +1,11 @@
 import { NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
+import { chatOpenAI } from '@/lib/openaiClient';
 
 export async function POST(request: Request) {
   try {
     const { message } = await request.json();
     
-    const anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY!,
-    });
+    // OpenAI client is imported from openaiClient.ts
     
     // Check if user is asking for a workout
     const isWorkoutRequest = message.toLowerCase().includes('workout') || 
@@ -40,17 +38,12 @@ export async function POST(request: Request) {
 Keep responses concise but complete. Format for easy reading.`;
     }
     
-    const completion = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
+    const responseText = await chatOpenAI(message, {
+      model: 'gpt-4o',
       max_tokens: 800,
-      system: systemPrompt,
-      messages: [{
-        role: 'user',
-        content: message
-      }]
+      temperature: 0.7,
+      system: systemPrompt
     });
-    
-    const responseText = completion.content[0].type === 'text' ? completion.content[0].text : 'No text response received';
     
     // If it's a workout, also return structured data
     let workoutData = null;

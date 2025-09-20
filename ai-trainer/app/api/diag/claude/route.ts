@@ -5,25 +5,24 @@ import { NextResponse } from 'next/server';
 export const runtime = 'nodejs';
 
 export async function GET() {
-  const key = process.env.ANTHROPIC_API_KEY;
+  const key = process.env.OPENAI_API_KEY;
   if (!key) {
     return NextResponse.json(
-      { ok: false, error: 'ANTHROPIC_API_KEY missing in server env' },
+      { ok: false, error: 'OPENAI_API_KEY missing in server env' },
       { status: 200 }
     );
   }
 
   const t0 = Date.now();
   // Small, cheap sanity call
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+  const resp = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
+      'Authorization': `Bearer ${key}`,
       'content-type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'claude-3-5-sonnet-20240620',
+      model: 'gpt-4o',
       max_tokens: 16,
       messages: [{ role: 'user', content: 'Reply with the single word: ready' }],
     }),
@@ -35,13 +34,13 @@ export async function GET() {
   if (!ct.includes('application/json')) {
     const text = await resp.text();
     return NextResponse.json(
-      { ok: false, error: 'Non-JSON from Anthropic', status: resp.status, preview: text.slice(0, 200) },
+      { ok: false, error: 'Non-JSON from OpenAI', status: resp.status, preview: text.slice(0, 200) },
       { status: 200 }
     );
   }
 
   const data = await resp.json();
-  const msg = data?.content?.[0]?.text || null;
+  const msg = data?.choices?.[0]?.message?.content || null;
 
   return NextResponse.json(
     { ok: true, status: resp.status, model: data?.model, ms: took, reply: msg },

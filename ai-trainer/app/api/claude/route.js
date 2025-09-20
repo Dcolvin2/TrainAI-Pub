@@ -1,10 +1,8 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { chatOpenAI } from '@/lib/openaiClient';
 
 export async function POST(request) {
   try {
-    const anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    });
+    // OpenAI client is imported from openaiClient.ts
 
     const { message, detailLevel = 'concise' } = await request.json();
 
@@ -17,22 +15,21 @@ export async function POST(request) {
 
     const systemPrompt = systemPrompts[detailLevel] || systemPrompts.concise;
 
-    const response = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
+    const response = await chatOpenAI(message, {
+      model: 'gpt-4o',
       max_tokens: detailLevel === 'concise' ? 500 : detailLevel === 'standard' ? 800 : 1000,
-      messages: [
-        { role: 'user', content: `${systemPrompt}\n\n${message}` }
-      ]
+      temperature: 0.7,
+      system: systemPrompt
     });
 
     return Response.json({ 
-      content: response.content[0].text,
-      model: 'claude-3-5-sonnet-20241022',
+      content: response,
+      model: 'gpt-4o',
       timestamp: new Date().toISOString(),
       detailLevel
     });
   } catch (error) {
-    console.error('Claude API error:', error);
-    return Response.json({ error: 'Claude error' }, { status: 500 });
+    console.error('OpenAI API error:', error);
+    return Response.json({ error: 'OpenAI error' }, { status: 500 });
   }
 } 

@@ -1,10 +1,8 @@
 // app/api/debug/llm/route.ts
 import { NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { openaiJSON } from "@/lib/openaiClient";
 
 export const runtime = "nodejs";
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
 export async function GET() {
   // Quick sanity check so you can visit /api/debug/llm in the browser
@@ -33,17 +31,11 @@ Return ONLY JSON (no markdown or fences) that matches:
 User request: "${message}"
 `;
 
-  const resp = await anthropic.messages.create({
-    model: "claude-3-5-sonnet-20241022",
+  const resp = await openaiJSON("", prompt, {
     temperature: 0.3,
     max_tokens: 1600,
-    messages: [{ role: "user", content: prompt }],
+    model: "gpt-4o"
   });
 
-  // Gather all text blocks from Anthropic response
-  const raw = (resp?.content ?? [])
-    .map((b: any) => (b && typeof b === "object" && "text" in b ? b.text : ""))
-    .join("\n");
-
-  return NextResponse.json({ ok: true, raw });
+  return NextResponse.json({ ok: true, raw: JSON.stringify(resp) });
 }

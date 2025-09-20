@@ -1,11 +1,9 @@
 import { NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
+import { chatOpenAI } from '@/lib/openaiClient';
 
 export async function POST(request: Request) {
   try {
-    const anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    });
+    // OpenAI client is imported from openaiClient.ts
 
     const { userId, messages, detailLevel = 'concise' } = await request.json();
 
@@ -20,20 +18,15 @@ export async function POST(request: Request) {
 
     const systemPrompt = systemPrompts[detailLevel as keyof typeof systemPrompts] || systemPrompts.concise;
 
-    const response = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
+    const text = await chatOpenAI(`${systemPrompt}\n\nHelp with this workout question: ${userMessage}`, {
+      model: 'gpt-4o',
       max_tokens: detailLevel === 'concise' ? 400 : detailLevel === 'standard' ? 600 : 800,
-      messages: [
-        { role: 'user', content: `${systemPrompt}\n\nHelp with this workout question: ${userMessage}` }
-      ]
+      temperature: 0.7
     });
-
-    const content = response.content[0];
-    const text = content.type === 'text' ? content.text : 'No response';
 
     return NextResponse.json({ 
       assistantMessage: text,
-      model: 'claude-3-5-sonnet-20241022',
+      model: 'gpt-4o',
       timestamp: new Date().toISOString(),
       detailLevel
     });
