@@ -35,7 +35,11 @@ export function useSpeechRecognition(options?: UseSpeechOptions) {
     rec.lang = options?.lang ?? "en-US";
 
     rec.onresult = (e: any) => {
-      const text = Array.from(e.results).map(r => r[0]?.transcript ?? "").join(" ").trim();
+      const results = Array.from(e?.results as ArrayLike<any>);
+      const text = results
+        .map((r: any) => (r?.[0]?.transcript ?? ""))
+        .join(" ")
+        .trim();
       setTranscript(text);
     };
 
