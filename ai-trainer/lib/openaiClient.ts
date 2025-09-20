@@ -13,6 +13,8 @@ function getOpenAI(): OpenAI {
       hasApiKey: !!apiKey,
       keyLength: apiKey ? apiKey.length : 0,
       keyPrefix: apiKey ? apiKey.substring(0, 10) + '...' : 'none',
+      keySource: process.env.OPENAI_API_KEY ? 'OPENAI_API_KEY' : 
+                 process.env.OPENAI_KEY ? 'OPENAI_KEY' : 'HARDCODED_FALLBACK',
       allEnvKeys: Object.keys(process.env).filter(k => k.includes('OPENAI') || k.includes('API')),
       nodeEnv: process.env.NODE_ENV,
       vercelEnv: process.env.VERCEL_ENV
