@@ -7,20 +7,34 @@ export function useSpeechRecognition(options?: UseSpeechOptions) {
   const [listening, setListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [continuous, setContinuous] = useState(false);
-  const recRef = useRef<SpeechRecognition | null>(null);
+
+  // Avoid relying on lib.dom types that may not include Web Speech API
+  type RecLike = {
+    start: () => void;
+    stop: () => void;
+    continuous: boolean;
+    interimResults: boolean;
+    lang: string;
+    onresult: ((e: any) => void) | null;
+    onend: (() => void) | null;
+  };
+
+  const recRef = useRef<RecLike | null>(null);
 
   useEffect(() => {
-    const SR: typeof window.SpeechRecognition | undefined =
-      (typeof window !== "undefined" ? ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition) : undefined);
+    const SR: any =
+      typeof window !== "undefined"
+        ? ( (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition )
+        : undefined;
 
     if (!SR) return;
 
-    const rec: SpeechRecognition = new (SR as any)();
+    const rec: any = new SR();
     rec.continuous = continuous;
     rec.interimResults = !!options?.interim;
     rec.lang = options?.lang ?? "en-US";
 
-    rec.onresult = (e: SpeechRecognitionEvent) => {
+    rec.onresult = (e: any) => {
       const text = Array.from(e.results).map(r => r[0]?.transcript ?? "").join(" ").trim();
       setTranscript(text);
     };
@@ -33,10 +47,10 @@ export function useSpeechRecognition(options?: UseSpeechOptions) {
     if (!recRef.current) return;
     setTranscript("");
     setListening(true);
-    recRef.current.start();
+    (recRef.current as any).start();
   };
 
-  const stop = () => recRef.current?.stop();
+  const stop = () => (recRef.current as any)?.stop?.();
 
   return { listening, transcript, start, stop, continuous, setContinuous };
 }
