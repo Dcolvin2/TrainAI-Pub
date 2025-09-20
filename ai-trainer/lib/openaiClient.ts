@@ -7,14 +7,18 @@ function getOpenAI(): OpenAI {
   if (!openaiInstance) {
     // Get the OpenAI API key from environment (try multiple names)
     const apiKey = process.env.OPENAI_API_KEY || 
-                   process.env.OPENAI_KEY;
+                   process.env.OPENAI_KEY ||
+                   process.env.OPENAI_SECRET ||
+                   process.env.OPENAI_TOKEN;
     
     console.log('🔍 Environment check:', {
       hasApiKey: !!apiKey,
       keyLength: apiKey ? apiKey.length : 0,
       keyPrefix: apiKey ? apiKey.substring(0, 10) + '...' : 'none',
       keySource: process.env.OPENAI_API_KEY ? 'OPENAI_API_KEY' : 
-                 process.env.OPENAI_KEY ? 'OPENAI_KEY' : 'HARDCODED_FALLBACK',
+                 process.env.OPENAI_KEY ? 'OPENAI_KEY' :
+                 process.env.OPENAI_SECRET ? 'OPENAI_SECRET' :
+                 process.env.OPENAI_TOKEN ? 'OPENAI_TOKEN' : 'NOT_FOUND',
       allEnvKeys: Object.keys(process.env).filter(k => k.includes('OPENAI') || k.includes('API')),
       nodeEnv: process.env.NODE_ENV,
       vercelEnv: process.env.VERCEL_ENV
