@@ -24,9 +24,11 @@ export async function POST(req: NextRequest) {
       if (Array.isArray(ueRows) && ueRows.length) equipment = ueRows.map(r => String((r as any).custom_name)).filter(Boolean);
     }
 
-    const footSafe = msgLower.includes("foot");
-    const isBack = msgLower.includes("back") || msgLower.includes("pull") || msgLower.includes("lat");
-    const useFunctional = hasEquip(equipment, "functional") || msgLower.includes("functional");
+    // very light intent parsing
+    const footSafe = /\b(foot|ankle|plantar)\b/.test(msgLower);
+    const isBack = /\b(back|pull|lat|posterior)\b/.test(msgLower);
+    const cableOnly = /\b(cable|functional trainer)\b/.test(msgLower) || hasEquip(equipment, "cable");
+    const useFunctional = hasEquip(equipment, "functional") || /\bfunctional\b/.test(msgLower);
 
     const warmup: PlanItem[] = [
       { name: "Straight-Arm Lat Pulldown (Cable)", sets: 2, reps: "12–15", restSeconds: REST_BY_PHASE.warmup },
@@ -34,17 +36,17 @@ export async function POST(req: NextRequest) {
     ];
 
     const strength: PlanItem[] = filterBlacklisted(
-      useFunctional || footSafe || isBack
+      cableOnly || useFunctional || footSafe || isBack
         ? [{ name: "Lat Pulldown (Neutral/Supinated)", sets: 4, reps: "8–12", restSeconds: REST_BY_PHASE.strength }]
         : [{ name: "Barbell Row", sets: 4, reps: "6–8", restSeconds: REST_BY_PHASE.strength }],
     );
 
     const accessory: PlanItem[] = filterBlacklisted([
-      ...(useFunctional
+      ...(cableOnly || useFunctional
         ? [{ name: "Seated Cable Row (Neutral/Wide)", sets: 3, reps: "10–12", restSeconds: REST_BY_PHASE.accessory, isAccessory: true }]
         : [{ name: "Chest-Supported DB Row", sets: 3, reps: "10–12", restSeconds: REST_BY_PHASE.accessory, isAccessory: true }]),
       ...(footSafe ? [{ name: "Reverse Hypers", sets: 3, reps: "15–20", restSeconds: REST_BY_PHASE.accessory, isAccessory: true }] : []),
-      { name: "Rear Delt Fly (Cable/DB)", sets: 3, reps: "12–15", restSeconds: REST_BY_PHASE.accessory, isAccessory: true },
+      { name: (cableOnly || useFunctional) ? "Rear Delt Cable Fly" : "Rear Delt DB Fly", sets: 3, reps: "12–15", restSeconds: REST_BY_PHASE.accessory, isAccessory: true },
     ]);
 
     const finisher: PlanItem[] = [{ name: "Band Pull-Aparts", sets: 2, reps: "20", restSeconds: REST_BY_PHASE.finisher, isAccessory: true }];
@@ -59,8 +61,13 @@ export async function POST(req: NextRequest) {
     ];
 
     const counts = computeCounts(phases);
+    const label =
+      cableOnly ? "Cable Back Day (~45m)" :
+      isBack ? (footSafe ? "Back Day (Foot-Safe) (~45m)" : "Back Day (~45m)") :
+      "Session (~45m)";
+
     let plan: WorkoutPlan = {
-      name: isBack ? (footSafe ? "Foot-Safe Back Day (~45m)" : "Back Day (~45m)") : "Session (~45m)",
+      name: label,
       durationMinutes: duration,
       exercisesCount: counts.exercisesCount,
       totalSets: counts.totalSets,
@@ -68,19 +75,19 @@ export async function POST(req: NextRequest) {
       coach: "Move clean; leave 1–2 reps in reserve on main sets.",
       summaryMarkdown:
         "Fitness Coach said:\n\n" +
-        "Perfect — let's craft a back day that's aggressive on gains but gentle on your healing foot. We'll skip heavy ground loading and lean on your functional trainer and reverse hyper.\n\n" +
-        "🔥 Foot-Safe Back Day — ~45–50 Minutes\n" +
-        "• All exercises avoid painful forefoot loading while hitting lats, traps, rhomboids, erectors, and rear delts.\n\n" +
+        (cableOnly
+          ? "Cable-focused back session—minimal ground loading, big lat and upper-back stimulus.\n\n"
+          : isBack
+          ? "Let's hit a strong back session with controlled pulls and rear-delt focus.\n\n"
+          : "Here's a solid session balancing warm-up, strength, accessories, and a short finisher.\n\n") +
         "Warm-up\n" +
         "• Straight-Arm Lat Pulldown — 2 × 12–15\n" +
         "• Face Pulls — 2 × 12–15\n\n" +
         "Strength\n" +
-        "• Lat Pulldown (Neutral/Supinated) — 4 × 8–12\n\n" +
+        `• ${strength[0].name} — 4 × 8–12\n\n` +
         "Accessories\n" +
-        "• Seated Cable Row — 3 × 10–12\n" +
-        "• Reverse Hypers — 3 × 15–20\n" +
-        "• Rear Delt Fly — 3 × 12–15\n\n" +
-        "Finisher\n" +
+        accessory.map(a => `• ${a.name} — ${a.sets} × ${a.reps}`).join("\n") +
+        "\n\nFinisher\n" +
         "• Band Pull-Apart — 2 × 20\n\n" +
         "Cooldown\n" +
         "• Lat-focused Child's Pose · Cat-Cow (light)\n",

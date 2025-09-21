@@ -227,6 +227,11 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
     if (data?.ok && data?.plan) {
       setPlan(data.plan as WorkoutPlan);
       setUtterances(u => u.concat({ from: "coach", text: data.plan.summaryMarkdown, at: Date.now() }));
+      setPointer(null);
+      setRestSeconds(0);
+      setLog([]);
+      setTimeline([]);
+      setStarted(false);
     }
   }, [userId]);
 
@@ -242,7 +247,13 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
     if (!text) return;
     setUtterances(u => u.concat({ from: "user", text, at: Date.now() }));
     setInput("");
-    if (!plan) { await requestPlan(text); return; }
+
+    // If the message looks like a new request ("workout", "plan", "instead", equipment words), regenerate.
+    const wantsNew =
+      /\b(workout|program|plan|instead|change|different)\b/i.test(text) ||
+      /\b(cable|functional|dumbbell|barbell|machine|bodyweight)\b/i.test(text);
+
+    if (!plan || wantsNew) { await requestPlan(text); return; }
     handleCommand(text);
   };
 
@@ -313,6 +324,12 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
           onChange={e => setInput(e.target.value)}
           placeholder="Type here…"
           className="flex-1 rounded-xl px-3 py-2 bg-[#121826] text-slate-100 placeholder:text-slate-400 border border-slate-700"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              void onSend();
+            }
+          }}
         />
         <button onClick={onSend} className="px-3 py-2 rounded-xl bg-indigo-600 text-white shadow">
           Send

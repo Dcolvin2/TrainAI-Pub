@@ -35,6 +35,7 @@ export function useSpeechRecognition(options?: UseSpeechOptions) {
     rec.onresult = (e: any) => {
       const results = Array.from(e?.results as ArrayLike<any>);
       const text = results.map((r: any) => (r?.[0]?.transcript ?? "")).join(" ").trim();
+      if (process.env.NODE_ENV !== "production") console.debug("[speech] onresult:", text);
       setTranscript(text);
     };
 
@@ -46,10 +47,14 @@ export function useSpeechRecognition(options?: UseSpeechOptions) {
     if (!recRef.current) return;
     setTranscript("");
     setListening(true);
+    if (process.env.NODE_ENV !== "production") console.debug("[speech] start (continuous:", continuous, ")");
     (recRef.current as any).start();
   };
 
-  const stop = () => (recRef.current as any)?.stop?.();
+  const stop = () => {
+    if (process.env.NODE_ENV !== "production") console.debug("[speech] stop");
+    (recRef.current as any)?.stop?.();
+  };
 
   return { listening, transcript, start, stop, continuous, setContinuous };
 }
