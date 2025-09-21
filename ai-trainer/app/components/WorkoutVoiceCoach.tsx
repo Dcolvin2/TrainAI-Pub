@@ -4,6 +4,7 @@ import { useSpeechRecognition, speak } from "@/app/components/useSpeech";
 import type { WorkoutPlan, PlanItem, ChatUtterance, TimelineEvent, SaveWorkoutRequest } from "@/app/lib/types";
 
 type StepPointer = { phaseIndex: number; itemIndex: number; setIndex: number };
+type SetEntry = { set: number; reps: number; weight: number };
 
 function useVoices() {
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -56,11 +57,19 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
   const startedAtRef = useRef<number | null>(null);
   const lastTranscript = useRef("");
 
+  // per-exercise set entries keyed by "phaseIndex:itemIndex"
+  const [setBook, setSetBook] = useState<Record<string, SetEntry[]>>({});
+
   const currentItem: PlanItem | null = useMemo(() => {
     if (!plan || !pointer) return null;
     const p = plan.phases[pointer.phaseIndex];
     return p?.items[pointer.itemIndex] ?? null;
   }, [plan, pointer]);
+
+  const currentKey = useMemo(
+    () => (pointer ? `${pointer.phaseIndex}:${pointer.itemIndex}` : null),
+    [pointer],
+  );
 
   const resetTimer = () => {
     if (timerRef.current) {
@@ -86,14 +95,12 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
   }, []);
 
   const beginExecution = useCallback((p: WorkoutPlan) => {
-    // Optional Spotify deep link (no OAuth required). Configure at build time if desired.
-    const spotifyUrl =
-      process.env.NEXT_PUBLIC_SPOTIFY_URL ??
-      "https://open.spotify.com/search/workout%20pump";
-    
     setPointer({ phaseIndex: 0, itemIndex: 0, setIndex: 0 });
     setLog(l => l.concat(`Plan: ${p.name} · ${p.exercisesCount} exercises · ${p.totalSets} sets`));
-    addCoachLog(`First up: ${p.phases[0]?.items[0]?.name ?? "Warm-up"}. Say "done" when you complete a set.`, setUtterances);
+    addCoachLog(
+      `First up: ${p.phases[0]?.items[0]?.name ?? "Warm-up"}. You can type or say "done" or give details like "1,8,50" for set 1, 8 reps, 50 lbs.`,
+      setUtterances,
+    );
     startedAtRef.current = Date.now();
     setTimeline([{ t: startedAtRef.current, type: "start" }]);
     setStarted(true);
@@ -111,10 +118,33 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
     return null;
   }, []);
 
-  const handleDone = useCallback(() => {
+  const handleDone = useCallback((entry?: SetEntry) => {
     if (!plan || !pointer || !currentItem) return;
-    setLog(l => l.concat(`Done: ${currentItem.name} (set ${pointer.setIndex + 1})`));
-    setTimeline(t => t.concat({ t: Date.now(), type: "done", detail: currentItem.name }));
+    const setNum = pointer.setIndex + 1;
+
+    // record set details if supplied
+    if (entry) {
+      setSetBook(prev => {
+        const key = `${pointer.phaseIndex}:${pointer.itemIndex}`;
+        const next = { ...prev };
+        const arr = next[key] ? [...next[key]] : [];
+        arr[entry.set - 1] = entry; // store by set index
+        next[key] = arr;
+        return next;
+      });
+      setLog(l => l.concat(`Done: ${currentItem.name} — Set ${entry.set}: ${entry.reps} reps @ ${entry.weight} lbs`));
+      setTimeline(t =>
+        t.concat({
+          t: Date.now(),
+          type: "done",
+          detail: `${currentItem.name} s${entry.set} ${entry.reps}r @ ${entry.weight}lb`,
+        }),
+      );
+    } else {
+      setLog(l => l.concat(`Done: ${currentItem.name} (set ${setNum})`));
+      setTimeline(t => t.concat({ t: Date.now(), type: "done", detail: currentItem.name }));
+    }
+
     const rest = currentItem.restSeconds ?? defaultRestForPhase(plan, pointer.phaseIndex);
     const next = nextPointer(plan, pointer);
     if (next && next.phaseIndex === pointer.phaseIndex && next.itemIndex === pointer.itemIndex) {
@@ -125,17 +155,36 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
       tickRest();
       setPointer(next);
     } else {
-      resetTimer();
-      setPointer(next);
-      const ni = next ? plan.phases[next.phaseIndex]?.items[next.itemIndex] : null;
-      if (ni) addCoachLog(`Next: ${ni.name}. Say "done" when finished.`, setUtterances);
-      else addCoachLog("Workout complete. Tap Finish to save.", setUtterances);
+      // gentle prompt for next set with suggestion
+      const nextSet = (entry?.set ?? setNum) + 1;
+      const tip =
+        entry && typeof entry.weight === "number"
+          ? `Great. For set ${nextSet}, keep ${entry.weight} lbs or adjust as needed.`
+          : `Great. For set ${nextSet}, keep or adjust weight as needed.`;
+      addCoachLog(tip, setUtterances);
     }
   }, [plan, pointer, currentItem, nextPointer, tickRest]);
+
+  // Parse "1,8,50" or "1 x 8 x 50" etc.
+  function parseSetTuple(text: string): SetEntry | null {
+    const m = text.trim().match(/^(\d+)\s*(?:,|x|\s)\s*(\d+)\s*(?:,|x|\s)\s*(\d+(?:\.\d+)?)$/i);
+    if (!m) return null;
+    const set = Number(m[1]), reps = Number(m[2]), weight = Number(m[3]);
+    if (!Number.isFinite(set) || !Number.isFinite(reps) || !Number.isFinite(weight)) return null;
+    return { set, reps, weight };
+  }
 
   const handleCommand = useCallback((text: string) => {
     const t = text.toLowerCase();
     if (!t) return;
+
+    // tuple entry "1,8,50"
+    const tuple = parseSetTuple(text);
+    if (tuple) {
+      handleDone(tuple);
+      return;
+    }
+
     if (t.includes("done")) { handleDone(); return; }
     if (t.includes("skip")) {
       if (plan && pointer) {
@@ -269,6 +318,21 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
           Send
         </button>
       </div>
+
+      {/* Chat stream */}
+      <div className="space-y-3">
+        {utterances.map((u, i) => (
+          <div
+            key={i}
+            className={`max-w-[720px] rounded-2xl border ${
+              u.from === "coach" ? "bg-[#121826] border-slate-800 text-slate-100" : "bg-transparent border-transparent text-slate-300"
+            } p-3`}
+          >
+            <div className="text-xs opacity-60 mb-1">{u.from === "coach" ? "Coach" : "You"}</div>
+            <div className="whitespace-pre-wrap text-sm">{u.text}</div>
+          </div>
+        ))}
+      </div>
       {plan && !started && (
         <div className="p-4 rounded-2xl bg-[#121826] border border-slate-800 shadow">
           <div className="text-sm font-semibold text-slate-100">{plan.name}</div>
@@ -292,9 +356,22 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
             {currentItem.reps ? ` · ${currentItem.reps}` : ""}
             {currentItem.weightHint ? ` · ${currentItem.weightHint}` : ""}
           </div>
+
+          {currentKey && setBook[currentKey] && setBook[currentKey].length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {setBook[currentKey].map((s, idx) =>
+                s ? (
+                  <span key={idx} className="text-xs px-2 py-1 rounded-full bg-slate-800 text-slate-200 border border-slate-700">
+                    S{s.set}: {s.weight}×{s.reps}
+                  </span>
+                ) : null,
+              )}
+            </div>
+          )}
+
           {restSeconds > 0 && <div className="mt-2 text-sm text-slate-200">Rest: {restSeconds}s</div>}
           <div className="mt-3 flex flex-wrap gap-2">
-            <button onClick={handleDone} className="px-3 py-2 rounded-xl bg-indigo-600 text-white">
+            <button onClick={() => handleDone()} className="px-3 py-2 rounded-xl bg-indigo-600 text-white">
               Done
             </button>
             <button
@@ -315,6 +392,10 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
             >
               Resume
             </button>
+          </div>
+
+          <div className="text-xs text-slate-400 mt-2">
+            Tip: enter set tuples like <span className="font-mono">1,8,50</span> → set 1, 8 reps, 50 lbs.
           </div>
         </div>
       )}
