@@ -76,7 +76,7 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
         if (prev <= 1) {
           if (timerRef.current) window.clearInterval(timerRef.current);
           timerRef.current = null;
-          speakLogged("Rest over. Get ready for your next set.", setUtterances);
+          addCoachLog("Rest over. Get ready for your next set.", setUtterances);
           setTimeline(t => t.concat({ t: Date.now(), type: "restEnd" }));
           return 0;
         }
