@@ -18,7 +18,7 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
   const [saving, setSaving] = useState(false);
   const timerRef = useRef<number | null>(null);
   const startedAtRef = useRef<number | null>(null);
-  const finishedRef = useRef<boolean>(false);
+  const lastTranscript = useRef("");
 
   const currentItem: PlanItem | null = useMemo(() => {
     if (!plan || !pointer) return null;
@@ -50,7 +50,6 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
   }, []);
 
   const beginExecution = useCallback((p: WorkoutPlan) => {
-    setPlan(p);
     setPointer({ phaseIndex: 0, itemIndex: 0, setIndex: 0 });
     setLog(l => l.concat(`Plan: ${p.name} · ${p.exercisesCount} exercises · ${p.totalSets} sets`));
     speakLogged(`First up: ${p.phases[0]?.items[0]?.name ?? "Warm-up"}. Say done when you complete a set.`, setUtterances);
@@ -65,7 +64,6 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
     if (!phase) return null;
     const item = phase.items[ptr.itemIndex];
     const totalSets = item?.sets ?? 1;
-    
     if (ptr.setIndex + 1 < totalSets) return { ...ptr, setIndex: ptr.setIndex + 1 };
     if (ptr.itemIndex + 1 < phase.items.length) return { phaseIndex: ptr.phaseIndex, itemIndex: ptr.itemIndex + 1, setIndex: 0 };
     if (ptr.phaseIndex + 1 < p.phases.length) return { phaseIndex: ptr.phaseIndex + 1, itemIndex: 0, setIndex: 0 };
@@ -74,13 +72,10 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
 
   const handleDone = useCallback(() => {
     if (!plan || !pointer || !currentItem) return;
-    
     setLog(l => l.concat(`Done: ${currentItem.name} (set ${pointer.setIndex + 1})`));
     setTimeline(t => t.concat({ t: Date.now(), type: "done", detail: currentItem.name }));
-    
     const rest = currentItem.restSeconds ?? defaultRestForPhase(plan, pointer.phaseIndex);
     const next = nextPointer(plan, pointer);
-    
     if (next && next.phaseIndex === pointer.phaseIndex && next.itemIndex === pointer.itemIndex) {
       resetTimer();
       setRestSeconds(rest);
@@ -100,9 +95,7 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
   const handleCommand = useCallback((text: string) => {
     const t = text.toLowerCase();
     if (!t) return;
-    
     if (t.includes("done")) { handleDone(); return; }
-    
     if (t.includes("skip")) {
       if (plan && pointer) {
         const phase = plan.phases[pointer.phaseIndex];
@@ -114,7 +107,6 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
       }
       return;
     }
-    
     if (t.includes("pause")) {
       if (timerRef.current) {
         window.clearInterval(timerRef.current);
@@ -124,13 +116,11 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
       }
       return;
     }
-    
     if (t.includes("resume")) {
       if (restSeconds > 0 && !timerRef.current) tickRest();
       setTimeline(t => t.concat({ t: Date.now(), type: "resume" }));
       return;
     }
-    
     if (t.includes("what's next") || t.includes("whats next") || t.includes("next")) {
       const ni = pointer && plan ? plan.phases[pointer.phaseIndex]?.items[pointer.itemIndex] : null;
       if (ni) speakLogged(`Next is ${ni.name}.`, setUtterances);
@@ -150,8 +140,6 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
     }
   }, [userId]);
 
-  // Wire transcript → commands (when executing) or plan request (when idle)
-  const lastTranscript = useRef("");
   if (transcript && transcript !== lastTranscript.current) {
     lastTranscript.current = transcript;
     setUtterances(u => u.concat({ from: "user", text: transcript, at: Date.now() }));
@@ -185,7 +173,6 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
     };
     try {
       await fetch("/api/workout/save", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
-      finishedRef.current = true;
       speakLogged("Session saved. Great job.", setUtterances);
     } finally {
       setSaving(false);
@@ -198,39 +185,19 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
         <h2 className="text-xl font-semibold">Workout (Chat + Voice)</h2>
         <div className="flex items-center gap-2">
           <label className="text-xs">
-            <input
-              type="checkbox"
-              checked={continuous}
-              onChange={e => setContinuous(e.target.checked)}
-              className="mr-1"
-            />
+            <input type="checkbox" checked={continuous} onChange={e => setContinuous(e.target.checked)} className="mr-1" />
             Continuous (may pick up music)
           </label>
-          <button
-            onClick={() => (listening ? stop() : start())}
-            className={`px-3 py-2 rounded-2xl shadow ${listening ? "bg-red-500 text-white" : "bg-black text-white"}`}
-          >
+          <button onClick={() => (listening ? stop() : start())} className={`px-3 py-2 rounded-2xl shadow ${listening ? "bg-red-500 text-white" : "bg-black text-white"}`}>
             {listening ? "Stop" : "Tap to Talk"}
           </button>
         </div>
       </div>
-
-      {!plan && (
-        <p className="text-sm opacity-80">
-          Tell me what you want (e.g., "Back day, foot is sore — use functional trainer only, 50 minutes").
-        </p>
-      )}
-
+      {!plan && <p className="text-sm opacity-80">Tell me what you want (e.g., "Back day, foot is sore — functional trainer, 45 minutes").</p>}
       <div className="flex gap-2">
-        <input
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          placeholder="Type here…"
-          className="flex-1 border rounded-xl px-3 py-2"
-        />
+        <input value={input} onChange={e => setInput(e.target.value)} placeholder="Type here…" className="flex-1 border rounded-xl px-3 py-2" />
         <button onClick={onSend} className="px-3 py-2 rounded-xl bg-black text-white">Send</button>
       </div>
-
       {plan && !started && (
         <div className="p-4 rounded-2xl bg-white shadow space-y-2">
           <div className="text-sm font-semibold">{plan.name}</div>
@@ -239,7 +206,6 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
           <button onClick={onStartWorkout} className="mt-2 px-3 py-2 rounded-xl bg-black text-white">Start Workout</button>
         </div>
       )}
-
       {plan && started && currentItem && (
         <div className="p-4 rounded-2xl bg-white shadow">
           <div className="text-sm font-semibold">{currentItem.name}</div>
@@ -255,18 +221,11 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
           </div>
         </div>
       )}
-
       {plan && (
         <div className="p-3 rounded-2xl bg-white shadow">
           <div className="text-xs opacity-70 mb-1">Log</div>
-          <ul className="text-sm space-y-1">
-            {log.map((l, i) => <li key={i}>• {l}</li>)}
-          </ul>
-          {started && (
-            <button onClick={onFinish} disabled={saving} className="mt-3 px-3 py-2 rounded-xl bg-green-600 text-white">
-              {saving ? "Saving…" : "Finish & Save"}
-            </button>
-          )}
+          <ul className="text-sm space-y-1">{log.map((l, i) => <li key={i}>• {l}</li>)}</ul>
+          {started && <button onClick={onFinish} disabled={saving} className="mt-3 px-3 py-2 rounded-xl bg-green-600 text-white">{saving ? "Saving…" : "Finish & Save"}</button>}
         </div>
       )}
     </div>

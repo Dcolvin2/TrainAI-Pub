@@ -3,28 +3,26 @@ import { useEffect, useRef, useState } from "react";
 
 type UseSpeechOptions = { lang?: string; interim?: boolean };
 
+type RecLike = {
+  start: () => void;
+  stop: () => void;
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((e: any) => void) | null;
+  onend: (() => void) | null;
+};
+
 export function useSpeechRecognition(options?: UseSpeechOptions) {
   const [listening, setListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [continuous, setContinuous] = useState(false);
-
-  // Avoid relying on lib.dom types that may not include Web Speech API
-  type RecLike = {
-    start: () => void;
-    stop: () => void;
-    continuous: boolean;
-    interimResults: boolean;
-    lang: string;
-    onresult: ((e: any) => void) | null;
-    onend: (() => void) | null;
-  };
-
   const recRef = useRef<RecLike | null>(null);
 
   useEffect(() => {
     const SR: any =
       typeof window !== "undefined"
-        ? ( (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition )
+        ? ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)
         : undefined;
 
     if (!SR) return;
@@ -36,10 +34,7 @@ export function useSpeechRecognition(options?: UseSpeechOptions) {
 
     rec.onresult = (e: any) => {
       const results = Array.from(e?.results as ArrayLike<any>);
-      const text = results
-        .map((r: any) => (r?.[0]?.transcript ?? ""))
-        .join(" ")
-        .trim();
+      const text = results.map((r: any) => (r?.[0]?.transcript ?? "")).join(" ").trim();
       setTranscript(text);
     };
 
