@@ -272,7 +272,7 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
   return (
     <div className="max-w-5xl mx-auto space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-slate-100">Workout (Chat + Voice)</h2>
+        <h2 className="text-xl font-semibold text-slate-100">AI Workout Assistant</h2>
         <div className="flex items-center gap-3">
           <label className="text-xs text-slate-300 flex items-center gap-1">
             <input
@@ -312,7 +312,7 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
           value={input}
           onChange={e => setInput(e.target.value)}
           placeholder="Type here…"
-          className="flex-1 rounded-xl px-3 py-2 bg-[#121826] text-slate-100 placeholder:text-slate-500 border border-slate-700"
+          className="flex-1 rounded-xl px-3 py-2 bg-[#121826] text-slate-100 placeholder:text-slate-400 border border-slate-700"
         />
         <button onClick={onSend} className="px-3 py-2 rounded-xl bg-indigo-600 text-white shadow">
           Send
