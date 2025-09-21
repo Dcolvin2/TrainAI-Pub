@@ -226,7 +226,9 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
     const data = await res.json();
     if (data?.ok && data?.plan) {
       setPlan(data.plan as WorkoutPlan);
-      setUtterances(u => u.concat({ from: "coach", text: data.plan.summaryMarkdown, at: Date.now() }));
+      // Don't echo the long summary into chat to avoid duplicate rendering with the plan card.
+      // Instead add a short heads-up message only.
+      setUtterances(u => u.concat({ from: "coach", text: "Plan ready. Review below and press Start.", at: Date.now() }));
       setPointer(null);
       setRestSeconds(0);
       setLog([]);
