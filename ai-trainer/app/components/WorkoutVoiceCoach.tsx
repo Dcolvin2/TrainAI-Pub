@@ -180,52 +180,111 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
   };
 
   return (
-    <div className="max-w-xl mx-auto p-4 space-y-4">
+    <div className="max-w-5xl mx-auto space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">Workout (Chat + Voice)</h2>
-        <div className="flex items-center gap-2">
-          <label className="text-xs">
-            <input type="checkbox" checked={continuous} onChange={e => setContinuous(e.target.checked)} className="mr-1" />
+        <h2 className="text-xl font-semibold text-slate-100">Workout (Chat + Voice)</h2>
+        <div className="flex items-center gap-3">
+          <label className="text-xs text-slate-300 flex items-center gap-1">
+            <input
+              type="checkbox"
+              checked={continuous}
+              onChange={e => setContinuous(e.target.checked)}
+              className="accent-slate-200"
+            />
             Continuous (may pick up music)
           </label>
-          <button onClick={() => (listening ? stop() : start())} className={`px-3 py-2 rounded-2xl shadow ${listening ? "bg-red-500 text-white" : "bg-black text-white"}`}>
+          <button
+            onClick={() => (listening ? stop() : start())}
+            className={`px-3 py-2 rounded-2xl ${
+              listening ? "bg-red-600" : "bg-indigo-600"
+            } text-white shadow`}
+          >
             {listening ? "Stop" : "Tap to Talk"}
           </button>
         </div>
       </div>
-      {!plan && <p className="text-sm opacity-80">Tell me what you want (e.g., "Back day, foot is sore — functional trainer, 45 minutes").</p>}
+      {!plan && (
+        <p className="text-sm text-slate-300">
+          Tell me what you want (e.g., "Back day, foot is sore — functional trainer, 45 minutes").
+        </p>
+      )}
       <div className="flex gap-2">
-        <input value={input} onChange={e => setInput(e.target.value)} placeholder="Type here…" className="flex-1 border rounded-xl px-3 py-2" />
-        <button onClick={onSend} className="px-3 py-2 rounded-xl bg-black text-white">Send</button>
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          placeholder="Type here…"
+          className="flex-1 rounded-xl px-3 py-2 bg-[#121826] text-slate-100 placeholder:text-slate-500 border border-slate-700"
+        />
+        <button onClick={onSend} className="px-3 py-2 rounded-xl bg-indigo-600 text-white shadow">
+          Send
+        </button>
       </div>
       {plan && !started && (
-        <div className="p-4 rounded-2xl bg-white shadow space-y-2">
-          <div className="text-sm font-semibold">{plan.name}</div>
-          <div className="text-xs opacity-70">~{plan.durationMinutes} min · {plan.exercisesCount} exercises · {plan.totalSets} sets</div>
-          <pre className="text-xs whitespace-pre-wrap">{plan.summaryMarkdown}</pre>
-          <button onClick={onStartWorkout} className="mt-2 px-3 py-2 rounded-xl bg-black text-white">Start Workout</button>
+        <div className="p-4 rounded-2xl bg-[#121826] border border-slate-800 shadow">
+          <div className="text-sm font-semibold text-slate-100">{plan.name}</div>
+          <div className="text-xs text-slate-400">
+            ~{plan.durationMinutes} min · {plan.exercisesCount} exercises · {plan.totalSets} sets
+          </div>
+          <pre className="text-xs whitespace-pre-wrap text-slate-200 mt-2">{plan.summaryMarkdown}</pre>
+          <button
+            onClick={onStartWorkout}
+            className="mt-3 px-3 py-2 rounded-xl bg-emerald-600 text-white shadow"
+          >
+            Start Workout
+          </button>
         </div>
       )}
       {plan && started && currentItem && (
-        <div className="p-4 rounded-2xl bg-white shadow">
-          <div className="text-sm font-semibold">{currentItem.name}</div>
-          <div className="text-xs opacity-80">
-            {(currentItem.sets ?? 1)} sets{currentItem.reps ? ` · ${currentItem.reps}` : ""}{currentItem.weightHint ? ` · ${currentItem.weightHint}` : ""}
+        <div className="p-4 rounded-2xl bg-[#121826] border border-slate-800 shadow">
+          <div className="text-sm font-semibold text-slate-100">{currentItem.name}</div>
+          <div className="text-xs text-slate-300">
+            {(currentItem.sets ?? 1)} sets
+            {currentItem.reps ? ` · ${currentItem.reps}` : ""}
+            {currentItem.weightHint ? ` · ${currentItem.weightHint}` : ""}
           </div>
-          {restSeconds > 0 && <div className="mt-2 text-sm">Rest: {restSeconds}s</div>}
-          <div className="mt-3 flex gap-2">
-            <button onClick={handleDone} className="px-3 py-2 rounded-xl bg-black text-white">Done</button>
-            <button onClick={() => handleCommand("skip")} className="px-3 py-2 rounded-xl border">Skip</button>
-            <button onClick={() => handleCommand("pause")} className="px-3 py-2 rounded-xl border">Pause</button>
-            <button onClick={() => handleCommand("resume")} className="px-3 py-2 rounded-xl border">Resume</button>
+          {restSeconds > 0 && <div className="mt-2 text-sm text-slate-200">Rest: {restSeconds}s</div>}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button onClick={handleDone} className="px-3 py-2 rounded-xl bg-indigo-600 text-white">
+              Done
+            </button>
+            <button
+              onClick={() => handleCommand("skip")}
+              className="px-3 py-2 rounded-xl border border-slate-700 text-slate-100"
+            >
+              Skip
+            </button>
+            <button
+              onClick={() => handleCommand("pause")}
+              className="px-3 py-2 rounded-xl border border-slate-700 text-slate-100"
+            >
+              Pause
+            </button>
+            <button
+              onClick={() => handleCommand("resume")}
+              className="px-3 py-2 rounded-xl border border-slate-700 text-slate-100"
+            >
+              Resume
+            </button>
           </div>
         </div>
       )}
       {plan && (
-        <div className="p-3 rounded-2xl bg-white shadow">
-          <div className="text-xs opacity-70 mb-1">Log</div>
-          <ul className="text-sm space-y-1">{log.map((l, i) => <li key={i}>• {l}</li>)}</ul>
-          {started && <button onClick={onFinish} disabled={saving} className="mt-3 px-3 py-2 rounded-xl bg-green-600 text-white">{saving ? "Saving…" : "Finish & Save"}</button>}
+        <div className="p-3 rounded-2xl bg-[#121826] border border-slate-800 shadow">
+          <div className="text-xs text-slate-400 mb-1">Log</div>
+          <ul className="text-sm text-slate-100 space-y-1">
+            {log.map((l, i) => (
+              <li key={i}>• {l}</li>
+            ))}
+          </ul>
+          {started && (
+            <button
+              onClick={onFinish}
+              disabled={saving}
+              className="mt-3 px-3 py-2 rounded-xl bg-emerald-600 text-white disabled:opacity-60"
+            >
+              {saving ? "Saving…" : "Finish & Save"}
+            </button>
+          )}
         </div>
       )}
     </div>
