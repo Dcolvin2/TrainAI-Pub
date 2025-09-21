@@ -1,12 +1,48 @@
 "use client";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSpeechRecognition, speak } from "@/app/components/useSpeech";
 import type { WorkoutPlan, PlanItem, ChatUtterance, TimelineEvent, SaveWorkoutRequest } from "@/app/lib/types";
 
 type StepPointer = { phaseIndex: number; itemIndex: number; setIndex: number };
 
+function useVoices() {
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    
+    const loadVoices = () => {
+      setVoices(window.speechSynthesis.getVoices());
+    };
+    
+    loadVoices();
+    window.speechSynthesis.addEventListener('voiceschanged', loadVoices);
+    
+    return () => {
+      window.speechSynthesis.removeEventListener('voiceschanged', loadVoices);
+    };
+  }, []);
+  
+  return voices;
+}
+
 export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }) {
   const { listening, transcript, start, stop, continuous, setContinuous } = useSpeechRecognition();
+  const voices = useVoices();
+  const [voiceName, setVoiceName] = useState<string | undefined>(() => {
+    if (typeof window === "undefined") return undefined;
+    return localStorage.getItem("ttsVoiceName") || undefined;
+  });
+  const [rate, setRate] = useState<number>(() => {
+    if (typeof window === "undefined") return 1;
+    const v = Number(localStorage.getItem("ttsRate"));
+    return Number.isFinite(v) && v > 0 ? v : 1;
+  });
+  const [pitch, setPitch] = useState<number>(() => {
+    if (typeof window === "undefined") return 1;
+    const v = Number(localStorage.getItem("ttsPitch"));
+    return Number.isFinite(v) && v > 0 ? v : 1;
+  });
   const [input, setInput] = useState("");
   const [plan, setPlan] = useState<WorkoutPlan | null>(null);
   const [pointer, setPointer] = useState<StepPointer | null>(null);
@@ -50,9 +86,14 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
   }, []);
 
   const beginExecution = useCallback((p: WorkoutPlan) => {
+    // Optional Spotify deep link (no OAuth required). Configure at build time if desired.
+    const spotifyUrl =
+      process.env.NEXT_PUBLIC_SPOTIFY_URL ??
+      "https://open.spotify.com/search/workout%20pump";
+    
     setPointer({ phaseIndex: 0, itemIndex: 0, setIndex: 0 });
     setLog(l => l.concat(`Plan: ${p.name} · ${p.exercisesCount} exercises · ${p.totalSets} sets`));
-    speakLogged(`First up: ${p.phases[0]?.items[0]?.name ?? "Warm-up"}. Say done when you complete a set.`, setUtterances);
+    addCoachLog(`First up: ${p.phases[0]?.items[0]?.name ?? "Warm-up"}. Say "done" when you complete a set.`, setUtterances);
     startedAtRef.current = Date.now();
     setTimeline([{ t: startedAtRef.current, type: "start" }]);
     setStarted(true);
@@ -79,7 +120,7 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
     if (next && next.phaseIndex === pointer.phaseIndex && next.itemIndex === pointer.itemIndex) {
       resetTimer();
       setRestSeconds(rest);
-      speakLogged(`Rest ${rest} seconds.`, setUtterances);
+      addCoachLog(`Rest ${rest} seconds.`, setUtterances);
       setTimeline(t => t.concat({ t: Date.now(), type: "restStart" }));
       tickRest();
       setPointer(next);
@@ -87,8 +128,8 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
       resetTimer();
       setPointer(next);
       const ni = next ? plan.phases[next.phaseIndex]?.items[next.itemIndex] : null;
-      if (ni) speakLogged(`Next: ${ni.name}. Say done when finished.`, setUtterances);
-      else speakLogged("Workout complete. Tap Finish to save.", setUtterances);
+      if (ni) addCoachLog(`Next: ${ni.name}. Say "done" when finished.`, setUtterances);
+      else addCoachLog("Workout complete. Tap Finish to save.", setUtterances);
     }
   }, [plan, pointer, currentItem, nextPointer, tickRest]);
 
@@ -111,7 +152,7 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
       if (timerRef.current) {
         window.clearInterval(timerRef.current);
         timerRef.current = null;
-        speakLogged("Timer paused.", setUtterances);
+        addCoachLog("Timer paused.", setUtterances);
         setTimeline(t => t.concat({ t: Date.now(), type: "pause" }));
       }
       return;
@@ -123,7 +164,7 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
     }
     if (t.includes("what's next") || t.includes("whats next") || t.includes("next")) {
       const ni = pointer && plan ? plan.phases[pointer.phaseIndex]?.items[pointer.itemIndex] : null;
-      if (ni) speakLogged(`Next is ${ni.name}.`, setUtterances);
+      if (ni) addCoachLog(`Next is ${ni.name}.`, setUtterances);
       return;
     }
   }, [handleDone, plan, pointer, restSeconds, tickRest]);
@@ -173,7 +214,7 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
     };
     try {
       await fetch("/api/workout/save", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
-      speakLogged("Session saved. Great job.", setUtterances);
+      addCoachLog("Session saved. Great job.", setUtterances);
     } finally {
       setSaving(false);
     }
@@ -193,6 +234,15 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
             />
             Continuous (may pick up music)
           </label>
+          <a
+            href={process.env.NEXT_PUBLIC_SPOTIFY_URL ?? "https://open.spotify.com/search/workout%20pump"}
+            target="_blank"
+            rel="noreferrer"
+            className="px-3 py-2 rounded-2xl bg-green-600 text-white shadow"
+            title="Open Spotify (playlist/search)"
+          >
+            Open Spotify
+          </a>
           <button
             onClick={() => (listening ? stop() : start())}
             className={`px-3 py-2 rounded-2xl ${
@@ -303,7 +353,9 @@ function defaultRestForPhase(plan: WorkoutPlan, phaseIndex: number): number {
   }
 }
 
-function speakLogged(text: string, setUtterances: React.Dispatch<React.SetStateAction<ChatUtterance[]>>) {
-  speak(text);
+function addCoachLog(
+  text: string,
+  setUtterances: React.Dispatch<React.SetStateAction<ChatUtterance[]>>
+) {
   setUtterances(u => u.concat({ from: "coach", text, at: Date.now() }));
 }
