@@ -176,7 +176,7 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
     }
 
     // Accept separators: comma / x / slash / spaces
-    const m = t.match(/^(\d+)\s*(?:,|x|/|\s)\s*(\d+)\s*(?:,|x|/|\s)\s*(\d+(?:.\d+)?)$/i);
+    const m = t.match(/^(\d+)\s*(?:,|x|/|\s)\s*(\d+)\s*(?:,|x|/|\s)\s*(\d+(?:\.\d+)?)$/i);
     if (m) {
       const set = Number(m[1]), reps = Number(m[2]), weight = Number(m[3]);
       if (isFinite(set) && isFinite(reps) && isFinite(weight)) return { set, reps, weight };
