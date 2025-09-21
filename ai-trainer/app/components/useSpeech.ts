@@ -29,7 +29,10 @@ export function useSpeechRecognition(options?: UseSpeechOptions) {
 
     const rec: any = new SR();
     rec.continuous = continuous;
-    rec.interimResults = !!options?.interim;
+    // For workout tuples we want finalized phrases, not partials that merge oddly.
+    rec.interimResults = !!options?.interim ?? false;
+    // Ask for a few alternatives; some browsers use this to try different tokenizations.
+    try { (rec as any).maxAlternatives = 3; } catch {}
     rec.lang = options?.lang ?? "en-US";
 
     rec.onresult = (e: any) => {

@@ -165,13 +165,64 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
     }
   }, [plan, pointer, currentItem, nextPointer, tickRest]);
 
-  // Parse "1,8,50" or "1 x 8 x 50" etc.
   function parseSetTuple(text: string): SetEntry | null {
-    const m = text.trim().match(/^(\d+)\s*(?:,|x|\s)\s*(\d+)\s*(?:,|x|\s)\s*(\d+(?:\.\d+)?)$/i);
-    if (!m) return null;
-    const set = Number(m[1]), reps = Number(m[2]), weight = Number(m[3]);
-    if (!Number.isFinite(set) || !Number.isFinite(reps) || !Number.isFinite(weight)) return null;
-    return { set, reps, weight };
+    const t = text.trim().toLowerCase();
+
+    // Accept explicit labels: "set 1, 8 reps, 50 pounds"
+    const labeled = t.match(/set\s*(\d+).(?:rep|reps)\s(\d+).(?:lb|lbs|pound|kg|kilos?)?\s(\d+(?:.\d+)?)/i);
+    if (labeled) {
+      const set = Number(labeled[1]), reps = Number(labeled[2]), weight = Number(labeled[3]);
+      if (isFinite(set) && isFinite(reps) && isFinite(weight)) return { set, reps, weight };
+    }
+
+    // Accept separators: comma / x / slash / spaces
+    const m = t.match(/^(\d+)\s*(?:,|x|/|\s)\s*(\d+)\s*(?:,|x|/|\s)\s*(\d+(?:.\d+)?)$/i);
+    if (m) {
+      const set = Number(m[1]), reps = Number(m[2]), weight = Number(m[3]);
+      if (isFinite(set) && isFinite(reps) && isFinite(weight)) return { set, reps, weight };
+    }
+
+    // Word numbers: "one eight fifty"
+    const wordMap: Record<string, number> = {
+      one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,
+      eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19,
+      twenty:20,thirty:30,forty:40,fifty:50,sixty:60,seventy:70,eighty:80,ninety:90,
+    };
+    const words = t.split(/[^a-z0-9.]+/).filter(Boolean);
+    if (words.length >= 3) {
+      const nums: number[] = [];
+      for (const w of words) {
+        if (/^\d+(?:\.\d+)?$/.test(w)) nums.push(Number(w));
+        else if (wordMap[w] !== undefined) nums.push(wordMap[w]);
+      }
+      if (nums.length >= 3) {
+        const [set, reps, weight] = nums.slice(0, 3);
+        if (isFinite(set) && isFinite(reps) && isFinite(weight)) return { set, reps, weight };
+      }
+    }
+
+    // Heuristic for concatenated digits from speech: e.g., "1335" => 1,3,35 or "11095" => 1,10,95
+    const justDigits = t.replace(/\D+/g, "");
+    if (/^\d{3,5}$/.test(justDigits)) {
+      const sCandidates = [1,2]; // typical set numbers
+      for (const sLen of [1,2]) {
+        const setStr = justDigits.slice(0, sLen);
+        const rest = justDigits.slice(sLen);
+        if (!rest) continue;
+        for (let rLen = 1; rLen <= Math.min(2, rest.length - 1); rLen++) {
+          const repsStr = rest.slice(0, rLen);
+          const weightStr = rest.slice(rLen);
+          const set = Number(setStr), reps = Number(repsStr), weight = Number(weightStr);
+          const ok =
+            isFinite(set) && set >= 1 && set <= 10 &&
+            isFinite(reps) && reps >= 3 && reps <= 30 &&
+            isFinite(weight) && weight >= 5 && weight <= 600;
+          if (ok) return { set, reps, weight };
+        }
+      }
+    }
+
+    return null;
   }
 
   const handleCommand = useCallback((text: string) => {
@@ -413,9 +464,10 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
             </button>
           </div>
 
-          <div className="text-xs text-slate-400 mt-2">
-            Tip: enter set tuples like <span className="font-mono">1,8,50</span> → set 1, 8 reps, 50 lbs.
-          </div>
+                  <div className="text-xs text-slate-400 mt-2">
+                    Tip: say or type triples like <span className="font-mono">1 8 50</span>, <span className="font-mono">1,8,50</span>, or
+                    <span className="font-mono"> 1 x 8 x 50</span> — I'll parse pauses and even "one eight fifty".
+                  </div>
         </div>
       )}
               {plan && log.length > 0 && (
