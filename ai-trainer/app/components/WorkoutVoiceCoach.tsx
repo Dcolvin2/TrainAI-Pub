@@ -418,25 +418,27 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
           </div>
         </div>
       )}
-      {plan && (
-        <div className="p-3 rounded-2xl bg-[#121826] border border-slate-800 shadow">
-          <div className="text-xs text-slate-400 mb-1">Log</div>
-          <ul className="text-sm text-slate-100 space-y-1">
-            {log.map((l, i) => (
-              <li key={i}>• {l}</li>
-            ))}
-          </ul>
-          {started && (
-            <button
-              onClick={onFinish}
-              disabled={saving}
-              className="mt-3 px-3 py-2 rounded-xl bg-emerald-600 text-white disabled:opacity-60"
-            >
-              {saving ? "Saving…" : "Finish & Save"}
-            </button>
-          )}
-        </div>
-      )}
+              {plan && log.length > 0 && (
+                <div className="p-3 rounded-2xl bg-[#121826] border border-slate-800 shadow">
+                  <div className="text-xs text-slate-400 mb-1">Log</div>
+                  <ul className="text-sm text-slate-100 space-y-1">
+                    {log.map((l, i) => (
+                      <li key={i}>• {l}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {plan && started && (
+                <div className="flex">
+                  <button
+                    onClick={onFinish}
+                    disabled={saving}
+                    className="ml-auto px-3 py-2 rounded-xl bg-emerald-600 text-white disabled:opacity-60"
+                  >
+                    {saving ? "Saving…" : "Finish & Save"}
+                  </button>
+                </div>
+              )}
     </div>
   );
 }
