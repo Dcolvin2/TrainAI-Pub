@@ -6,6 +6,28 @@ import type { WorkoutPlan, PlanItem, ChatUtterance, TimelineEvent, SaveWorkoutRe
 type StepPointer = { phaseIndex: number; itemIndex: number; setIndex: number };
 type SetEntry = { set: number; reps: number; weight: number };
 
+// Idempotent set logger to prevent duplicate "set N" events
+function useSetLogGuard() {
+  const seen = useRef<Set<string>>(new Set());
+  return useCallback((exerciseId: string, setIndex: number) => {
+    const key = `${exerciseId}:${setIndex}`;
+    if (seen.current.has(key)) return false;
+    seen.current.add(key);
+    return true;
+  }, []);
+}
+
+// Simple throttle so "Rest over" doesn't spam
+function useThrottle(ms: number) {
+  const t = useRef<number>(0);
+  return useCallback(() => {
+    const now = Date.now();
+    if (now - t.current < ms) return false;
+    t.current = now;
+    return true;
+  }, [ms]);
+}
+
 function useVoices() {
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   
@@ -56,6 +78,10 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
   const timerRef = useRef<number | null>(null);
   const startedAtRef = useRef<number | null>(null);
   const lastTranscript = useRef("");
+  
+  // Idempotent set logging and throttling
+  const canLog = useSetLogGuard();
+  const allowCoachPing = useThrottle(1500);
 
   // per-exercise set entries keyed by "phaseIndex:itemIndex"
   const [setBook, setSetBook] = useState<Record<string, SetEntry[]>>({});
@@ -85,14 +111,16 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
         if (prev <= 1) {
           if (timerRef.current) window.clearInterval(timerRef.current);
           timerRef.current = null;
-          addCoachLog("Rest over. Get ready for your next set.", setUtterances);
+          if (allowCoachPing()) {
+            addCoachLog("Rest over. Get ready for your next set.", setUtterances);
+          }
           setTimeline(t => t.concat({ t: Date.now(), type: "restEnd" }));
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
-  }, []);
+  }, [allowCoachPing]);
 
   const beginExecution = useCallback((p: WorkoutPlan) => {
     setPointer({ phaseIndex: 0, itemIndex: 0, setIndex: 0 });
@@ -121,6 +149,10 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
   const handleDone = useCallback((entry?: SetEntry) => {
     if (!plan || !pointer || !currentItem) return;
     const setNum = pointer.setIndex + 1;
+    const exerciseId = `${pointer.phaseIndex}:${pointer.itemIndex}`;
+
+    // Use idempotent logging to prevent duplicate messages
+    if (!canLog(exerciseId, setNum)) return;
 
     // record set details if supplied
     if (entry) {
@@ -150,7 +182,9 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
     if (next && next.phaseIndex === pointer.phaseIndex && next.itemIndex === pointer.itemIndex) {
       resetTimer();
       setRestSeconds(rest);
-      addCoachLog(`Rest ${rest} seconds.`, setUtterances);
+      if (allowCoachPing()) {
+        addCoachLog(`Rest ${rest} seconds.`, setUtterances);
+      }
       setTimeline(t => t.concat({ t: Date.now(), type: "restStart" }));
       tickRest();
       setPointer(next);
@@ -161,9 +195,11 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
         entry && typeof entry.weight === "number"
           ? `Great. For set ${nextSet}, keep ${entry.weight} lbs or adjust as needed.`
           : `Great. For set ${nextSet}, keep or adjust weight as needed.`;
-      addCoachLog(tip, setUtterances);
+      if (allowCoachPing()) {
+        addCoachLog(tip, setUtterances);
+      }
     }
-  }, [plan, pointer, currentItem, nextPointer, tickRest]);
+  }, [plan, pointer, currentItem, nextPointer, tickRest, canLog, allowCoachPing]);
 
   // Parse "1,8,50" or "1 x 8 x 50" etc.
   function parseSetTuple(text: string): SetEntry | null {

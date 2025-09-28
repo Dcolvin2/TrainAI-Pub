@@ -14,39 +14,55 @@ import { buildCoachNote } from '@/lib/coach';
 import { focusFromSplit, fetchCooldownContext, mapLLMToPlanItems, shuffleInPlace } from '@/lib/cooldown';
 
 // ---- LLM Routing (OpenAI only) ---------------------------------------------
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5';
 function pickModel() {
   if (!process.env.OPENAI_API_KEY) throw new Error('No OpenAI API key configured');
   return { provider: 'openai' as const, model: OPENAI_MODEL };
 }
 
-// ---- Split → Main Lift (deterministic mapper) ------------------------------
-function mainLiftForSplit(split: string, equipment: string[]): string | null {
-  const has = (s: string) => equipment.some(e => e.toLowerCase().includes(s));
+// ---- Intent parsing ---------------------------------------------------------
+function parseSplitFromText(txt: string): Split | null {
+  const s = (txt || '').toLowerCase();
   
-  switch ((split || '').toLowerCase()) {
-    case 'push': {
-      if (has('barbell')) return 'Barbell Bench Press';
-      if (has('dumbbell')) return 'Dumbbell Bench Press';
-      return 'Push-Up';
-    }
+  // Explicit split tokens win over equipment mentions
+  if (/\b(back day|back workout|pull day|pull)\b/.test(s)) return 'pull';
+  if (/\b(leg day|legs?)\b/.test(s)) return 'legs';
+  if (/\b(push day|push)\b/.test(s)) return 'push';
+  if (/\b(upper(?: body)?)\b/.test(s)) return 'upper';
+  if (/\b(hiit|metcon|wod)\b/.test(s)) return 'hiit';
+  
+  return null;
+}
+
+// ---- Split → Main Lift mapping ---------------------------------------------
+function mainLiftForSplit(split: Split, equipment: string[], userMsg: string): string | null {
+  const has = (k: string) => equipment.some(e => e.toLowerCase().includes(k));
+  const said = (k: string) => userMsg.toLowerCase().includes(k);
+  
+  switch (split) {
     case 'pull': {
+      // classic back-day main lifts
       if (has('trap')) return 'Trap Bar Deadlift';
       if (has('barbell')) return 'Barbell Deadlift';
       return 'Romanian Deadlift (DB)';
     }
     case 'legs': {
-      if (has('belt')) return 'Belt Squat';
+      // accept belt squat only on legs split
+      if (has('belt') || said('belt squat')) return 'Belt Squat';
       if (has('barbell')) return 'Back Squat';
       return 'Goblet Squat';
     }
+    case 'push': {
+      if (has('barbell')) return 'Barbell Bench Press';
+      if (has('dumbbell')) return 'Dumbbell Bench Press';
+      return 'Push-Up';
+    }
     case 'upper': return has('barbell') ? 'Overhead Press' : 'Dumbbell Shoulder Press';
     case 'hiit': return null;
-    default: return null;
   }
 }
 
-// ---- Minimal JSON validator (no deps) --------------------------------------
+// ---- JSON validation --------------------------------------------------------
 function isObj(x: unknown): x is Record<string, unknown> { return !!x && typeof x === 'object'; }
 function okStr(x: unknown) { return typeof x === 'string' && x.trim() !== ''; }
 function okNum(x: unknown) { return typeof x === 'number' && Number.isFinite(x); }
@@ -57,11 +73,11 @@ function validatePlan(input: unknown): { ok: true } | { ok: false; error: string
   if (!okNum(duration)) return { ok: false, error: 'duration must be number' };
   if (!Array.isArray(phases) || phases.length === 0) return { ok: false, error: 'phases must be array' };
   for (const p of phases) {
-    if (!isObj(p)) return { ok: false, error: 'phase must be object' };
-    if (!okStr((p as any).phase)) return { ok: false, error: 'phase.phase must be string' };
-    if (!Array.isArray((p as any).items)) return { ok: false, error: 'phase.items must be array' };
+    if (!isObj(p) || !okStr((p as any).phase) || !Array.isArray((p as any).items)) {
+      return { ok: false, error: 'phase/items invalid' };
+    }
     for (const it of (p as any).items) {
-      if (!isObj(it) || !okStr((it as any).name)) return { ok: false, error: 'item.name must be string' };
+      if (!isObj(it) || !okStr((it as any).name)) return { ok: false, error: 'item.name invalid' };
     }
   }
   return { ok: true };
@@ -89,7 +105,7 @@ const PROGRAMS_ENABLED = process.env.NEXT_PUBLIC_ENABLE_PROGRAMS === '1';
 const HYBRID_SPLIT_ENABLED = process.env.NEXT_PUBLIC_HYBRID_SPLIT_ENABLED === '1';
 
 type Msg = { role: 'user'|'assistant'|'system'; content: string };
-type Split = 'pull'|'push'|'legs'|'upper'|'full'|'hiit';
+type Split = 'push' | 'pull' | 'legs' | 'upper' | 'hiit';
 
 type PlanItem = {
   name: string;
@@ -423,6 +439,7 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json() as {
       messages?: Msg[];
+      message?: string;
       minutes?: number;
       split?: Split;
       equipment?: string[];
@@ -433,6 +450,7 @@ export async function POST(req: NextRequest) {
 
     // identify user once for the whole handler
     const userId = (body?.userId ?? req.headers.get('x-user-id') ?? '') as string;
+    const userMsg = String(body?.message ?? '');
 
     const debug: DebugLog = {};
     const dbg = wantDebug(req, body);
@@ -448,7 +466,10 @@ export async function POST(req: NextRequest) {
     const qaHintsText = extractQAHints(body?.messages);
     if (qaHintsText) dpush(debug, 'hints', { qa: qaHintsText.slice(0, 240) });
 
-    const splitInput = typeof body?.split === 'string' ? body.split.trim().toLowerCase() : undefined;
+    // Derive split: explicit UI param wins; else parse from message; never infer from equipment.
+    const splitParam = typeof body?.split === 'string' ? body.split.trim().toLowerCase() : undefined;
+    const parsedSplit = parseSplitFromText(userMsg || '');
+    const splitInput = (splitParam as Split | undefined) ?? parsedSplit ?? null;
 
     // Mark which path we take
     const branch = (HYBRID_SPLIT_ENABLED && !!splitInput) ? 'HYBRID' : 'LEGACY';
@@ -664,7 +685,7 @@ export async function POST(req: NextRequest) {
         .map(s => s.trim()).filter(Boolean);
 
       // Determine a main lift for the chosen split (first strength item must be a core lift)
-      const main = mainLiftForSplit(splitInput, equipmentList);
+      const main = mainLiftForSplit(splitInput as Split, equipmentList, userMsg);
 
       // Build a STRICT JSON plan (no chatty text). Keep coach brief.
       const basePlan = {
@@ -703,7 +724,7 @@ export async function POST(req: NextRequest) {
         'Return STRICT JSON only with keys: split, duration, phases[].phase, phases[].items[].',
         'Do not include commentary. No markdown.',
         'First item under phase=strength must be the core/main lift for the split (if any).',
-        'Cooldown items must match the split focus muscles; avoid generic upper-body stretches on leg day.',
+        'Cooldown items must match the split focus muscles; avoid upper-body stretches on leg day and vice versa.',
       ].join(' ');
 
       const duration = Number(profile?.preferred_workout_duration ?? 45);
@@ -779,7 +800,7 @@ export async function POST(req: NextRequest) {
       const out = {
         ok: true,
         plan: finalPlan,
-        message: `${splitInput.charAt(0).toUpperCase()}${splitInput.slice(1)} — Day`,
+        message: `${String(splitInput).charAt(0).toUpperCase()}${String(splitInput).slice(1)} — Day`,
         coach: 'Move with control, leave 1–2 reps in reserve on main sets, and prioritize quality over load.',
       };
 
@@ -1068,7 +1089,7 @@ Schema (strict):
     }
 
     // Derive plan & phases for your UI with proper main lift and naming
-    const mainLift = mainLiftForSplit(split, equipment) || workout?.mainExercises?.[0]?.name || '';
+    const mainLift = mainLiftForSplit(split, equipment, userMsg) || workout?.mainExercises?.[0]?.name || '';
     
     // Ensure the main lift is the first item in strength phase
     if (mainLift && (!workout.mainExercises?.[0] || workout.mainExercises[0].name !== mainLift)) {
