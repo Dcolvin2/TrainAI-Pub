@@ -464,10 +464,10 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
             </button>
           </div>
 
-                  <div className="text-xs text-slate-400 mt-2">
-                    Tip: say or type triples like <span className="font-mono">1 8 50</span>, <span className="font-mono">1,8,50</span>, or
-                    <span className="font-mono"> 1 x 8 x 50</span> — I'll parse pauses and even "one eight fifty".
-                  </div>
+          <div className="text-xs text-slate-400 mt-2">
+            Tip: say or type triples like <span className="font-mono">1 8 50</span>, <span className="font-mono">1,8,50</span>, or
+            <span className="font-mono"> 1 x 8 x 50</span> — I'll parse pauses and even "one eight fifty".
+          </div>
         </div>
       )}
               {plan && log.length > 0 && (
