@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabaseServer';
 import { supabase } from '@/lib/supabase';
 import { claudeJSON } from '@/lib/llm';
+import { openai } from '@/lib/openaiClient';
+import { Anthropic } from '@anthropic-ai/sdk';
 import { ResponseOut, phasesFromWorkout, budget } from '@/lib/schema';
 import { fetchCatalog, fetchUserEquipmentNames, fetchMobilityByTargets } from '@/lib/catalog';
 import { getUserPrefs, mergeUserPrefs } from '@/lib/prefs';
@@ -10,6 +12,75 @@ import { sanitizeCooldown } from '@/lib/cooldownPolicy';
 import { fetchRecentSetsForExercise, summarizeHistory } from '@/lib/history';
 import { buildCoachNote } from '@/lib/coach';
 import { focusFromSplit, fetchCooldownContext, mapLLMToPlanItems, shuffleInPlace } from '@/lib/cooldown';
+
+// ---- LLM Routing (OpenAI only) ---------------------------------------------
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+function pickModel() {
+  if (!process.env.OPENAI_API_KEY) throw new Error('No OpenAI API key configured');
+  return { provider: 'openai' as const, model: OPENAI_MODEL };
+}
+
+// ---- Split → Main Lift (deterministic mapper) ------------------------------
+function mainLiftForSplit(split: string, equipment: string[]): string | null {
+  const has = (s: string) => equipment.some(e => e.toLowerCase().includes(s));
+  
+  switch ((split || '').toLowerCase()) {
+    case 'push': {
+      if (has('barbell')) return 'Barbell Bench Press';
+      if (has('dumbbell')) return 'Dumbbell Bench Press';
+      return 'Push-Up';
+    }
+    case 'pull': {
+      if (has('trap')) return 'Trap Bar Deadlift';
+      if (has('barbell')) return 'Barbell Deadlift';
+      return 'Romanian Deadlift (DB)';
+    }
+    case 'legs': {
+      if (has('belt')) return 'Belt Squat';
+      if (has('barbell')) return 'Back Squat';
+      return 'Goblet Squat';
+    }
+    case 'upper': return has('barbell') ? 'Overhead Press' : 'Dumbbell Shoulder Press';
+    case 'hiit': return null;
+    default: return null;
+  }
+}
+
+// ---- Minimal JSON validator (no deps) --------------------------------------
+function isObj(x: unknown): x is Record<string, unknown> { return !!x && typeof x === 'object'; }
+function okStr(x: unknown) { return typeof x === 'string' && x.trim() !== ''; }
+function okNum(x: unknown) { return typeof x === 'number' && Number.isFinite(x); }
+function validatePlan(input: unknown): { ok: true } | { ok: false; error: string } {
+  if (!isObj(input)) return { ok: false, error: 'plan must be object' };
+  const { split, duration, phases } = input as Record<string, unknown>;
+  if (!okStr(split)) return { ok: false, error: 'split must be string' };
+  if (!okNum(duration)) return { ok: false, error: 'duration must be number' };
+  if (!Array.isArray(phases) || phases.length === 0) return { ok: false, error: 'phases must be array' };
+  for (const p of phases) {
+    if (!isObj(p)) return { ok: false, error: 'phase must be object' };
+    if (!okStr((p as any).phase)) return { ok: false, error: 'phase.phase must be string' };
+    if (!Array.isArray((p as any).items)) return { ok: false, error: 'phase.items must be array' };
+    for (const it of (p as any).items) {
+      if (!isObj(it) || !okStr((it as any).name)) return { ok: false, error: 'item.name must be string' };
+    }
+  }
+  return { ok: true };
+}
+
+// ---- Profile helper ---------------------------------------------------------
+async function getProfile(userId: string) {
+  if (!userId) return null;
+  try {
+    const { data } = await supabaseServer()
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+    return data;
+  } catch {
+    return null;
+  }
+}
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -90,40 +161,6 @@ function norm(s: unknown) {
   return String(s ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
-function mainLiftForSplit(split: string, equipment: string[]): string | null {
-  const equipmentSet = new Set(equipment.map(e => e.toLowerCase()));
-  
-  switch (split.toLowerCase()) {
-    case 'push':
-      if (equipmentSet.has('barbell') && equipmentSet.has('bench')) return 'Barbell Bench Press';
-      if (equipmentSet.has('barbell') && equipmentSet.has('incline bench')) return 'Barbell Incline Press';
-      if (equipmentSet.has('dumbbell')) return 'Dumbbell Bench Press';
-      if (equipmentSet.has('dumbbell') && equipmentSet.has('incline bench')) return 'Dumbbell Incline Press';
-      return 'Barbell Bench Press'; // fallback
-      
-    case 'pull':
-      if (equipmentSet.has('trap bar')) return 'Trap Bar Deadlift';
-      if (equipmentSet.has('barbell')) return 'Barbell Deadlift';
-      return 'Trap Bar Deadlift'; // fallback
-      
-    case 'legs':
-      if (equipmentSet.has('belt squat machine')) return 'Belt Squat';
-      if (equipmentSet.has('barbell') && equipmentSet.has('rack')) return 'Back Squat';
-      if (equipmentSet.has('barbell')) return 'Front Squat';
-      return 'Back Squat'; // fallback
-      
-    case 'upper':
-      if (equipmentSet.has('barbell')) return 'Overhead Press';
-      if (equipmentSet.has('dumbbell')) return 'Dumbbell Shoulder Press';
-      return 'Overhead Press'; // fallback
-      
-    case 'hiit':
-      return null; // no main lift for HIIT
-      
-    default:
-      return 'Trap Bar Deadlift'; // default fallback
-  }
-}
 
 function synthCoach(raw: any, plan: any, workout: any, split: Split, minutes: number, style: 'default'|'ocho') {
   const s = String(raw || '').trim();
@@ -618,6 +655,137 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(out, { status: 200 });
     }
     // ---------- end HYBRID SPLIT v2 ----------
+
+    // Ensure that when a split is explicitly provided, we do NOT label as "Ad Hoc".
+    if (splitInput) {
+      // Load profile/equipment from your existing helper
+      const profile = await getProfile(userId);
+      const equipmentList = (profile?.equipment ? String(profile.equipment).split(',') : [])
+        .map(s => s.trim()).filter(Boolean);
+
+      // Determine a main lift for the chosen split (first strength item must be a core lift)
+      const main = mainLiftForSplit(splitInput, equipmentList);
+
+      // Build a STRICT JSON plan (no chatty text). Keep coach brief.
+      const basePlan = {
+        split: splitInput,
+        duration: Number(profile?.preferred_workout_duration ?? 45),
+        phases: [
+          {
+            phase: 'warmup',
+            items: [
+              { name: 'Bike or Row', duration: '3-5 min', instruction: 'Easy pace to raise core temp' },
+              { name: 'Dynamic Shoulder + T-Spine', duration: '2-3 min', instruction: 'Arm circles, band pull-aparts' },
+            ],
+          },
+          {
+            phase: 'strength',
+            items: [
+              ...(main ? [{ name: main, sets: '4', reps: '5-8', instruction: 'Build to a moderate-heavy top set' }] : []),
+            ],
+          },
+          {
+            phase: 'accessory',
+            items: [
+              // Keep minimal; your cooldown builder will append cooldown later
+              { name: 'Incline DB Press', sets: '3', reps: '8-12', instruction: 'Focus on controlled movement' },
+              { name: 'Lateral Raise', sets: '3', reps: '12-15', instruction: 'Light weight, full range of motion' },
+              { name: 'Cable Triceps Pressdown', sets: '3', reps: '10-12', instruction: 'Keep elbows pinned to sides' },
+            ],
+          },
+        ],
+      };
+
+      // --- LLM call (deterministic) -------------------------------------------
+      const { provider, model } = pickModel();
+      const system = [
+        'You are TrainAI Workout Planner.',
+        'Return STRICT JSON only with keys: split, duration, phases[].phase, phases[].items[].',
+        'Do not include commentary. No markdown.',
+        'First item under phase=strength must be the core/main lift for the split (if any).',
+        'Cooldown items must match the split focus muscles; avoid generic upper-body stretches on leg day.',
+      ].join(' ');
+
+      const duration = Number(profile?.preferred_workout_duration ?? 45);
+      const seed = 7; // stable output across identical inputs
+      const user = JSON.stringify({
+        split: splitInput,
+        duration,
+        equipment: equipmentList,
+        forceMainLift: main, // hint; still validated after
+        goal: profile?.training_goal || 'weight_loss',
+        fitness: profile?.fitness_level || 'intermediate',
+      });
+
+      // NOTE: Keep provider branching minimal and deterministic params.
+      let rawPlan: unknown;
+      if (provider === 'openai') {
+        const resp = await openai.chat.completions.create({
+          model,
+          temperature: 0,
+          top_p: 1,
+          presence_penalty: 0,
+          frequency_penalty: 0,
+          seed,
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: user },
+          ],
+          response_format: { type: 'json_object' },
+        });
+        rawPlan = JSON.parse(resp.choices[0]?.message?.content ?? '{}');
+      } else {
+        const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+        const resp = await anthropic.messages.create({
+          model,
+          temperature: 0,
+          top_p: 1,
+          messages: [{ role: 'user', content: [{ type: 'text', text: `${system}\n\n${user}` }] }],
+          max_tokens: 1200,
+          // Sonnet: use JSON tool mode for strictness
+          tools: [{ name: 'return_json', description: 'Return workout JSON', input_schema: { type: 'object' } }],
+          tool_choice: { type: 'tool', name: 'return_json' },
+        });
+        const tool = resp?.content?.find((c: any) => c.type === 'tool_result') as any;
+        rawPlan = tool?.content && typeof tool.content === 'string' ? JSON.parse(tool.content) : {};
+      }
+
+      // Validate and enforce invariants (first strength item is main/core lift)
+      const valid = validatePlan(rawPlan);
+      if (!valid.ok) {
+        return new Response(JSON.stringify({ ok: false, error: `Invalid plan: ${valid.error}` }), {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+
+      const finalPlan = rawPlan as {
+        split: string; duration: number;
+        phases: Array<{ phase: string; items: Array<{ name: string; [k: string]: unknown }> }>;
+      };
+
+      if (splitInput !== 'hiit') {
+        const strength = finalPlan.phases.find(p => p.phase === 'strength');
+        const first = strength?.items?.[0]?.name || '';
+        if (main && first.toLowerCase() !== main.toLowerCase()) {
+          // Force the chosen main lift deterministically to the first slot.
+          if (strength) {
+            const without = (strength.items || []).filter(i => i.name.toLowerCase() !== main.toLowerCase());
+            strength.items = [{ name: main, sets: '4', reps: '5-8' }, ...without];
+          }
+        }
+      }
+
+      const out = {
+        ok: true,
+        plan: finalPlan,
+        message: `${splitInput.charAt(0).toUpperCase()}${splitInput.slice(1)} — Day`,
+        coach: 'Move with control, leave 1–2 reps in reserve on main sets, and prioritize quality over load.',
+      };
+
+      return new Response(JSON.stringify(out), { headers: { 'content-type': 'application/json' } });
+    }
+
     const equipment =
       Array.isArray(body.equipment) && body.equipment.length
         ? body.equipment
