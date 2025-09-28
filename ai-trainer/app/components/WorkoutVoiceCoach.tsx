@@ -180,24 +180,24 @@ export default function WorkoutVoiceCoach({ userId }: { userId?: string | null }
     const rest = currentItem.restSeconds ?? defaultRestForPhase(plan, pointer.phaseIndex);
     const next = nextPointer(plan, pointer);
     if (next && next.phaseIndex === pointer.phaseIndex && next.itemIndex === pointer.itemIndex) {
+      // Same exercise, next set - show rest message
       resetTimer();
       setRestSeconds(rest);
       if (allowVoice()) {
-        addCoachLog(`Rest ${rest} seconds.`, setUtterances);
+        addCoachLog(`Rest ${rest}s.`, setUtterances);
       }
       setTimeline(t => t.concat({ t: Date.now(), type: "restStart" }));
       tickRest();
       setPointer(next);
     } else {
-      // gentle prompt for next set with suggestion
+      // Different exercise or workout complete
       const nextSet = (entry?.set ?? setNum) + 1;
-      const tip =
-        entry && typeof entry.weight === "number"
-          ? `Great. For set ${nextSet}, keep ${entry.weight} lbs or adjust as needed.`
-          : `Great. For set ${nextSet}, keep or adjust weight as needed.`;
-      if (allowVoice()) {
-        addCoachLog(tip, setUtterances);
+      if (entry && typeof entry.weight === "number") {
+        addCoachLog(`Logged set ${entry.set}: ${entry.reps} reps @ ${entry.weight} lbs. Rest 90s.`, setUtterances);
+      } else {
+        addCoachLog(`Set ${setNum} complete.`, setUtterances);
       }
+      setPointer(next);
     }
   }, [plan, pointer, currentItem, nextPointer, tickRest, canLog, allowVoice]);
 

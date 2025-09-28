@@ -49,13 +49,16 @@ function classifyIntent(txt: string): Intent {
   const s = txt.toLowerCase().trim();
   if (!s) return 'smalltalk';
   
-  // keywords that indicate the user wants to change/apply constraints, not start a new plan
-  if (/\b(use|swap|change|let.?s use|make it|replace|can we)\b/.test(s)) return 'modify_request';
+  // Smalltalk patterns - questions about the system
+  if (/\b(what model|who are you|what are you|how do you work|what can you do|help|hello|hi|hey)\b/.test(s)) return 'smalltalk';
   
-  // if they explicitly ask for a day/split/program, treat as plan
-  if (/\b(leg day|back day|pull day|push day|upper|hiit|plan|workout)\b/.test(s)) return 'plan_now';
+  // Plan patterns - explicit requests for workout plans
+  if (/\b(start|begin|plan|workout|leg day|back day|pull day|push day|upper|hiit)\b/.test(s)) return 'plan_now';
   
-  return 'modify_request';
+  // Modify patterns - requests to change preferences/constraints
+  if (/\b(use|swap|change|let.?s use|make it|replace|can we|remove|add|different)\b/.test(s)) return 'modify_request';
+  
+  return 'smalltalk';
 }
 
 // ---- Split → Main Lift mapping ---------------------------------------------
@@ -134,7 +137,7 @@ async function getUserPref(userId: string) {
   }
 }
 
-async function setUserPref(userId: string, prefs: { forceMainLift?: string }) {
+async function setUserPref(userId: string, prefs: { forceMainLift?: string; customWarmup?: boolean; customCooldown?: boolean }) {
   if (!userId) return;
   try {
     await supabaseServer()
@@ -725,6 +728,32 @@ export async function POST(req: NextRequest) {
     }
     // ---------- end HYBRID SPLIT v2 ----------
 
+    // SMALLTALK path: answer questions, no plan generation
+    if (intent === 'smalltalk') {
+      const s = userMsg.toLowerCase();
+      let response = '';
+      
+      if (/\b(what model|who are you|what are you)\b/.test(s)) {
+        response = "I'm GPT-5, tuned for workout planning.";
+      } else if (/\b(how do you work|what can you do)\b/.test(s)) {
+        response = "I create personalized workout plans based on your equipment and preferences. Say 'start leg day' or 'plan workout' to begin.";
+      } else if (/\b(help)\b/.test(s)) {
+        response = "I can help you plan workouts! Try saying 'start back day', 'plan leg day', or 'use belt squat' to modify preferences.";
+      } else if (/\b(hello|hi|hey)\b/.test(s)) {
+        response = "Hello! Ready to plan your workout?";
+      } else {
+        response = "I'm here to help with workout planning. What would you like to do?";
+      }
+      
+      const out = {
+        ok: true,
+        ts: Date.now(),
+        message: response,
+        smalltalk: true,
+      };
+      return new Response(JSON.stringify(out), { headers: { 'content-type': 'application/json' } });
+    }
+
     // MODIFY path: capture constraint, do NOT build a plan yet
     if (intent === 'modify_request' && !splitParam && !parsedSplit) {
       // Example: "let's use the belt squat" → record preference
@@ -738,6 +767,18 @@ export async function POST(req: NextRequest) {
         };
         return new Response(JSON.stringify(out), { headers: { 'content-type': 'application/json' } });
       }
+      
+      // Handle warmup/cooldown modifications
+      if (/\b(warmup|warm.?up|cooldown|cool.?down)\b/.test(userMsg.toLowerCase())) {
+        await setUserPref(userId, { customWarmup: true, customCooldown: true });
+        const out = {
+          ok: true,
+          ts: Date.now(),
+          message: "Got it — I'll remove generic warmups for your next plan.",
+        };
+        return new Response(JSON.stringify(out), { headers: { 'content-type': 'application/json' } });
+      }
+      
       const out = {
         ok: true,
         ts: Date.now(),
@@ -878,7 +919,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Filter warm-up/cooldown by split
+      // Filter warm-up/cooldown by split and user preferences
       const warm = finalPlan.phases.find(p => p.phase === 'warmup' || p.phase === 'prep');
       const cool = finalPlan.phases.find(p => p.phase === 'cooldown');
       const isLegs = splitInput === 'legs';
@@ -891,15 +932,21 @@ export async function POST(req: NextRequest) {
         return true;
       };
       
-      if (warm) warm.items = warm.items.filter(i => keepItem(i.name));
-      if (cool) cool.items = cool.items.filter(i => keepItem(i.name));
+      // Apply user preferences for warmup/cooldown
+      if (savedPref?.customWarmup && warm) {
+        warm.items = warm.items.filter(i => keepItem(i.name));
+      }
+      if (savedPref?.customCooldown && cool) {
+        cool.items = cool.items.filter(i => keepItem(i.name));
+      }
 
+      const mainLiftName = main || 'main lift';
       const out = {
         ok: true,
         ts: Date.now(),
         plan: finalPlan,
-        message: `${String(splitInput).charAt(0).toUpperCase()}${String(splitInput).slice(1)} — Day`,
-        coach: 'Move with control, leave 1–2 reps in reserve on main sets, and prioritize quality over load.',
+        message: `Plan ready. First up: ${mainLiftName} (main lift). 4×5–8.`,
+        coach: 'Say "done" or tuple like "1,8,225".',
       };
 
       return new Response(JSON.stringify(out), { headers: { 'content-type': 'application/json' } });
