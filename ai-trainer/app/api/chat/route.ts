@@ -17,48 +17,62 @@ import { focusFromSplit, fetchCooldownContext, mapLLMToPlanItems, shuffleInPlace
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5';
 function pickModel() {
   if (!process.env.OPENAI_API_KEY) throw new Error('No OpenAI API key configured');
-  return { provider: 'openai' as const, model: OPENAI_MODEL };
+  return { model: OPENAI_MODEL };
+}
+
+// ---- Ephemeral in-memory user prefs (no deps; replace with real store later)
+type UserPrefs = { forceMainLift?: string; skipWarmups?: boolean };
+const __USER_PREFS = new Map<string, UserPrefs>();
+async function setUserPref(userId: string, patch: UserPrefs) {
+  const cur = __USER_PREFS.get(userId) ?? {};
+  __USER_PREFS.set(userId, { ...cur, ...patch });
+}
+async function getUserPref(userId: string): Promise<UserPrefs> {
+  return __USER_PREFS.get(userId) ?? {};
 }
 
 // ---- Intent gating ----------------------------------------------------------
-type Split = 'push' | 'pull' | 'legs' | 'upper' | 'hiit';
 type Intent = 'plan_now' | 'modify_request' | 'smalltalk';
 
 function parseSplit(txt: string): Split | null {
-  const s = txt.toLowerCase();
+  const s = (txt || '').toLowerCase();
+  
   if (/\b(pull|back day|back workout)\b/.test(s)) return 'pull';
   if (/\b(legs?|leg day)\b/.test(s)) return 'legs';
   if (/\b(push|chest day)\b/.test(s)) return 'push';
   if (/\b(upper(?: body)?)\b/.test(s)) return 'upper';
   if (/\b(hiit|metcon|wod)\b/.test(s)) return 'hiit';
+  
   return null;
 }
 
 function parseModifyLift(txt: string): string | null {
-  const s = txt.toLowerCase();
+  const s = (txt || '').toLowerCase();
+  
   if (/\bbelt\s*squat\b/.test(s)) return 'Belt Squat';
-  if (/\b(back|barbell)\s* squat\b/.test(s)) return 'Back Squat';
+  if (/\bback\s*squat\b/.test(s) || /\bbarbell\s*squat\b/.test(s)) return 'Back Squat';
   if (/\bfront\s*squat\b/.test(s)) return 'Front Squat';
-  if (/\bbench press\b/.test(s)) return 'Barbell Bench Press';
-  if (/\bdeadlift\b/.test(s)) return 'Barbell Deadlift';
+  if (/\bbench\s*press\b/.test(s)) return 'Barbell Bench Press';
   if (/\btrap\s*bar\s*deadlift\b/.test(s)) return 'Trap Bar Deadlift';
+  if (/\bdeadlift\b/.test(s)) return 'Barbell Deadlift';
+  
   return null;
 }
 
 function classifyIntent(txt: string): Intent {
-  const s = txt.toLowerCase().trim();
+  const s = (txt || '').toLowerCase().trim();
+  
   if (!s) return 'smalltalk';
   
-  // Smalltalk patterns - questions about the system
-  if (/\b(what model|who are you|what are you|how do you work|what can you do|help|hello|hi|hey)\b/.test(s)) return 'smalltalk';
+  if (/\b(what\s+model\s+are\s+you|who\s+are\s+you|model\?)\b/.test(s)) return 'smalltalk';
   
-  // Plan patterns - explicit requests for workout plans
-  if (/\b(start|begin|plan|workout|leg day|back day|pull day|push day|upper|hiit)\b/.test(s)) return 'plan_now';
+  // modify constraints (don't build a plan)
+  if (/\b(use|swap|change|let.?s use|make it|replace|can we|warm-?up|warmups?)\b/.test(s)) return 'modify_request';
   
-  // Modify patterns - requests to change preferences/constraints
-  if (/\b(use|swap|change|let.?s use|make it|replace|can we|remove|add|different)\b/.test(s)) return 'modify_request';
+  // explicit plan intent
+  if (/\b(leg day|back day|pull day|push day|upper|hiit|plan|workout|start)\b/.test(s)) return 'plan_now';
   
-  return 'smalltalk';
+  return 'modify_request';
 }
 
 // ---- Split → Main Lift mapping ---------------------------------------------
@@ -69,21 +83,27 @@ function mainLiftForSplit(split: Split, equipment: string[], force?: string | nu
   const has = (k: string) => equipment.some(e => e.toLowerCase().includes(k));
   
   switch (split) {
-    case 'pull':
+    case 'pull': {
       if (has('trap')) return 'Trap Bar Deadlift';
       if (has('barbell')) return 'Barbell Deadlift';
       return 'Romanian Deadlift (DB)';
-    case 'legs':
+    }
+    case 'legs': {
       if (has('belt')) return 'Belt Squat';
       if (has('barbell')) return 'Back Squat';
       return 'Goblet Squat';
-    case 'push':
+    }
+    case 'push': {
       if (has('barbell')) return 'Barbell Bench Press';
       if (has('dumbbell')) return 'Dumbbell Bench Press';
       return 'Push-Up';
-    case 'upper':
+    }
+    case 'upper': {
       return has('barbell') ? 'Overhead Press' : 'Dumbbell Shoulder Press';
+    }
   }
+  
+  return null;
 }
 
 // ---- JSON validation --------------------------------------------------------
@@ -122,32 +142,6 @@ async function getProfile(userId: string) {
   }
 }
 
-// ---- User preferences -------------------------------------------------------
-async function getUserPref(userId: string) {
-  if (!userId) return null;
-  try {
-    const { data } = await supabaseServer()
-      .from('user_preferences')
-      .select('*')
-      .eq('user_id', userId)
-      .single();
-    return data;
-  } catch {
-    return null;
-  }
-}
-
-async function setUserPref(userId: string, prefs: { forceMainLift?: string; customWarmup?: boolean; customCooldown?: boolean }) {
-  if (!userId) return;
-  try {
-    await supabaseServer()
-      .from('user_preferences')
-      .upsert({ user_id: userId, ...prefs, updated_at: new Date().toISOString() });
-  } catch {
-    // ignore errors
-  }
-}
-
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -155,6 +149,7 @@ const PROGRAMS_ENABLED = process.env.NEXT_PUBLIC_ENABLE_PROGRAMS === '1';
 const HYBRID_SPLIT_ENABLED = process.env.NEXT_PUBLIC_HYBRID_SPLIT_ENABLED === '1';
 
 type Msg = { role: 'user'|'assistant'|'system'; content: string };
+type Split = 'push' | 'pull' | 'legs' | 'upper' | 'hiit';
 
 type PlanItem = {
   name: string;
@@ -521,8 +516,30 @@ export async function POST(req: NextRequest) {
     const parsedSplit = parseSplit(userMsg);
     const requestedLift = parseModifyLift(userMsg);
 
+    const out: any = { ok: true, ts: Date.now() };
+
+    // MODIFY path: capture constraint, do NOT build a plan yet
+    if (intent === 'modify_request' && !splitParam && !parsedSplit) {
+      if (requestedLift) {
+        await setUserPref(userId, { forceMainLift: requestedLift });
+        out.message = `Got it — I'll use ${requestedLift} as your main lift when we build your next plan. Say "start leg day" or specify a split when you're ready.`;
+        return new Response(JSON.stringify(out), { headers: { 'content-type': 'application/json' } });
+      }
+      
+      if (/\b(skip|remove|swap).*\bwarm/.test(userMsg.toLowerCase())) {
+        await setUserPref(userId, { skipWarmups: true });
+        out.message = 'Got it — I\'ll minimize generic warmups for your next plan.';
+        return new Response(JSON.stringify(out), { headers: { 'content-type': 'application/json' } });
+      }
+      
+      out.message = 'Noted. Tell me the split (legs/pull/push/upper/HIIT) or say "start" to build the plan.';
+      return new Response(JSON.stringify(out), { headers: { 'content-type': 'application/json' } });
+    }
+
+    // PLAN path
+    const splitInput: Split | null = splitParam ?? parsedSplit ?? null;
+
     // Mark which path we take
-    const splitInput = splitParam ?? parsedSplit;
     const branch = (HYBRID_SPLIT_ENABLED && !!splitInput) ? 'HYBRID' : 'LEGACY';
     if (dbg) dpush(debug, 'branch', branch);
 
@@ -728,73 +745,14 @@ export async function POST(req: NextRequest) {
     }
     // ---------- end HYBRID SPLIT v2 ----------
 
-    // SMALLTALK path: answer questions, no plan generation
-    if (intent === 'smalltalk') {
-      const s = userMsg.toLowerCase();
-      let response = '';
-      
-      if (/\b(what model|who are you|what are you)\b/.test(s)) {
-        response = "I'm GPT-5, tuned for workout planning.";
-      } else if (/\b(how do you work|what can you do)\b/.test(s)) {
-        response = "I create personalized workout plans based on your equipment and preferences. Say 'start leg day' or 'plan workout' to begin.";
-      } else if (/\b(help)\b/.test(s)) {
-        response = "I can help you plan workouts! Try saying 'start back day', 'plan leg day', or 'use belt squat' to modify preferences.";
-      } else if (/\b(hello|hi|hey)\b/.test(s)) {
-        response = "Hello! Ready to plan your workout?";
-      } else {
-        response = "I'm here to help with workout planning. What would you like to do?";
-      }
-      
-      const out = {
-        ok: true,
-        ts: Date.now(),
-        message: response,
-        smalltalk: true,
-      };
-      return new Response(JSON.stringify(out), { headers: { 'content-type': 'application/json' } });
-    }
-
-    // MODIFY path: capture constraint, do NOT build a plan yet
-    if (intent === 'modify_request' && !splitParam && !parsedSplit) {
-      // Example: "let's use the belt squat" → record preference
-      if (requestedLift) {
-        // persist lightweight preference in session cache (replace with your own store)
-        await setUserPref(userId, { forceMainLift: requestedLift });
-        const out = {
-          ok: true,
-          ts: Date.now(),
-          message: `Got it — I'll use ${requestedLift} as your main lift when we build your next plan. Say "start leg day" or specify a split when you're ready.`,
-        };
-        return new Response(JSON.stringify(out), { headers: { 'content-type': 'application/json' } });
-      }
-      
-      // Handle warmup/cooldown modifications
-      if (/\b(warmup|warm.?up|cooldown|cool.?down)\b/.test(userMsg.toLowerCase())) {
-        await setUserPref(userId, { customWarmup: true, customCooldown: true });
-        const out = {
-          ok: true,
-          ts: Date.now(),
-          message: "Got it — I'll remove generic warmups for your next plan.",
-        };
-        return new Response(JSON.stringify(out), { headers: { 'content-type': 'application/json' } });
-      }
-      
-      const out = {
-        ok: true,
-        ts: Date.now(),
-        message: 'Noted. Tell me the split (legs/pull/push/upper/HIIT) or say "start" to build the plan.',
-      };
-      return new Response(JSON.stringify(out), { headers: { 'content-type': 'application/json' } });
-    }
-
-    // PLAN path
+    // Ensure that when a split is explicitly provided, we do NOT label as "Ad Hoc".
     if (splitInput) {
       // Load profile/equipment from your existing helper
       const profile = await getProfile(userId);
       const equipmentList = (profile?.equipment ? String(profile.equipment).split(',') : [])
         .map(s => s.trim()).filter(Boolean);
 
-      const savedPref = await getUserPref(userId); // { forceMainLift?: string }
+      const savedPref = await getUserPref(userId); // { forceMainLift?: string, skipWarmups?: boolean }
 
       // Determine main lift with guardrails:
       // - If split=legs and user asked for Belt Squat → allow it.
@@ -807,7 +765,7 @@ export async function POST(req: NextRequest) {
         return null;
       })();
 
-      const main = mainLiftForSplit(splitInput as Split, equipmentList, forced);
+      const main = mainLiftForSplit(splitInput, equipmentList, forced);
 
       // Build a STRICT JSON plan (no chatty text). Keep coach brief.
       const basePlan = {
@@ -840,7 +798,7 @@ export async function POST(req: NextRequest) {
       };
 
       // --- LLM call (deterministic) -------------------------------------------
-      const { provider, model } = pickModel();
+      const { model } = pickModel();
       const system = [
         'You are TrainAI Workout Planner.',
         'Return STRICT JSON only with keys: split, duration, phases[].phase, phases[].items[].',
@@ -860,38 +818,21 @@ export async function POST(req: NextRequest) {
         fitness: profile?.fitness_level || 'intermediate',
       });
 
-      // NOTE: Keep provider branching minimal and deterministic params.
-      let rawPlan: unknown;
-      if (provider === 'openai') {
-        const resp = await openai.chat.completions.create({
-          model,
-          temperature: 0,
-          top_p: 1,
-          presence_penalty: 0,
-          frequency_penalty: 0,
-          seed,
-          messages: [
-            { role: 'system', content: system },
-            { role: 'user', content: user },
-          ],
-          response_format: { type: 'json_object' },
-        });
-        rawPlan = JSON.parse(resp.choices[0]?.message?.content ?? '{}');
-      } else {
-        const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
-        const resp = await anthropic.messages.create({
-          model,
-          temperature: 0,
-          top_p: 1,
-          messages: [{ role: 'user', content: [{ type: 'text', text: `${system}\n\n${user}` }] }],
-          max_tokens: 1200,
-          // Sonnet: use JSON tool mode for strictness
-          tools: [{ name: 'return_json', description: 'Return workout JSON', input_schema: { type: 'object' } }],
-          tool_choice: { type: 'tool', name: 'return_json' },
-        });
-        const tool = resp?.content?.find((c: any) => c.type === 'tool_result') as any;
-        rawPlan = tool?.content && typeof tool.content === 'string' ? JSON.parse(tool.content) : {};
-      }
+      // NOTE: OpenAI only, deterministic params.
+      const resp = await openai.chat.completions.create({
+        model,
+        temperature: 0,
+        top_p: 1,
+        presence_penalty: 0,
+        frequency_penalty: 0,
+        seed,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+        response_format: { type: 'json_object' },
+      });
+      const rawPlan = JSON.parse(resp.choices[0]?.message?.content ?? '{}');
 
       // Validate and enforce invariants (first strength item is main/core lift)
       const valid = validatePlan(rawPlan);
@@ -919,7 +860,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Filter warm-up/cooldown by split and user preferences
+      // Filter warm-up/cooldown by split
       const warm = finalPlan.phases.find(p => p.phase === 'warmup' || p.phase === 'prep');
       const cool = finalPlan.phases.find(p => p.phase === 'cooldown');
       const isLegs = splitInput === 'legs';
@@ -932,21 +873,14 @@ export async function POST(req: NextRequest) {
         return true;
       };
       
-      // Apply user preferences for warmup/cooldown
-      if (savedPref?.customWarmup && warm) {
-        warm.items = warm.items.filter(i => keepItem(i.name));
-      }
-      if (savedPref?.customCooldown && cool) {
-        cool.items = cool.items.filter(i => keepItem(i.name));
-      }
+      if (warm) warm.items = warm.items.filter(i => keepItem(i.name));
+      if (cool) cool.items = cool.items.filter(i => keepItem(i.name));
 
-      const mainLiftName = main || 'main lift';
       const out = {
         ok: true,
-        ts: Date.now(),
         plan: finalPlan,
-        message: `Plan ready. First up: ${mainLiftName} (main lift). 4×5–8.`,
-        coach: 'Say "done" or tuple like "1,8,225".',
+        message: `${String(splitInput).charAt(0).toUpperCase()}${String(splitInput).slice(1)} — Day`,
+        coach: 'Move with control, leave 1–2 reps in reserve on main sets, and prioritize quality over load.',
       };
 
       return new Response(JSON.stringify(out), { headers: { 'content-type': 'application/json' } });
