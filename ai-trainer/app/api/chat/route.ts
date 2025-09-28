@@ -20,45 +20,66 @@ function pickModel() {
   return { provider: 'openai' as const, model: OPENAI_MODEL };
 }
 
-// ---- Intent parsing ---------------------------------------------------------
-function parseSplitFromText(txt: string): Split | null {
-  const s = (txt || '').toLowerCase();
-  
-  // Explicit split tokens win over equipment mentions
-  if (/\b(back day|back workout|pull day|pull)\b/.test(s)) return 'pull';
-  if (/\b(leg day|legs?)\b/.test(s)) return 'legs';
-  if (/\b(push day|push)\b/.test(s)) return 'push';
+// ---- Intent gating ----------------------------------------------------------
+type Split = 'push' | 'pull' | 'legs' | 'upper' | 'hiit';
+type Intent = 'plan_now' | 'modify_request' | 'smalltalk';
+
+function parseSplit(txt: string): Split | null {
+  const s = txt.toLowerCase();
+  if (/\b(pull|back day|back workout)\b/.test(s)) return 'pull';
+  if (/\b(legs?|leg day)\b/.test(s)) return 'legs';
+  if (/\b(push|chest day)\b/.test(s)) return 'push';
   if (/\b(upper(?: body)?)\b/.test(s)) return 'upper';
   if (/\b(hiit|metcon|wod)\b/.test(s)) return 'hiit';
-  
   return null;
 }
 
+function parseModifyLift(txt: string): string | null {
+  const s = txt.toLowerCase();
+  if (/\bbelt\s*squat\b/.test(s)) return 'Belt Squat';
+  if (/\b(back|barbell)\s* squat\b/.test(s)) return 'Back Squat';
+  if (/\bfront\s*squat\b/.test(s)) return 'Front Squat';
+  if (/\bbench press\b/.test(s)) return 'Barbell Bench Press';
+  if (/\bdeadlift\b/.test(s)) return 'Barbell Deadlift';
+  if (/\btrap\s*bar\s*deadlift\b/.test(s)) return 'Trap Bar Deadlift';
+  return null;
+}
+
+function classifyIntent(txt: string): Intent {
+  const s = txt.toLowerCase().trim();
+  if (!s) return 'smalltalk';
+  
+  // keywords that indicate the user wants to change/apply constraints, not start a new plan
+  if (/\b(use|swap|change|let.?s use|make it|replace|can we)\b/.test(s)) return 'modify_request';
+  
+  // if they explicitly ask for a day/split/program, treat as plan
+  if (/\b(leg day|back day|pull day|push day|upper|hiit|plan|workout)\b/.test(s)) return 'plan_now';
+  
+  return 'modify_request';
+}
+
 // ---- Split → Main Lift mapping ---------------------------------------------
-function mainLiftForSplit(split: Split, equipment: string[], userMsg: string): string | null {
+function mainLiftForSplit(split: Split, equipment: string[], force?: string | null): string | null {
+  if (split === 'hiit') return null;
+  if (force) return force;
+  
   const has = (k: string) => equipment.some(e => e.toLowerCase().includes(k));
-  const said = (k: string) => userMsg.toLowerCase().includes(k);
   
   switch (split) {
-    case 'pull': {
-      // classic back-day main lifts
+    case 'pull':
       if (has('trap')) return 'Trap Bar Deadlift';
       if (has('barbell')) return 'Barbell Deadlift';
       return 'Romanian Deadlift (DB)';
-    }
-    case 'legs': {
-      // accept belt squat only on legs split
-      if (has('belt') || said('belt squat')) return 'Belt Squat';
+    case 'legs':
+      if (has('belt')) return 'Belt Squat';
       if (has('barbell')) return 'Back Squat';
       return 'Goblet Squat';
-    }
-    case 'push': {
+    case 'push':
       if (has('barbell')) return 'Barbell Bench Press';
       if (has('dumbbell')) return 'Dumbbell Bench Press';
       return 'Push-Up';
-    }
-    case 'upper': return has('barbell') ? 'Overhead Press' : 'Dumbbell Shoulder Press';
-    case 'hiit': return null;
+    case 'upper':
+      return has('barbell') ? 'Overhead Press' : 'Dumbbell Shoulder Press';
   }
 }
 
@@ -98,6 +119,32 @@ async function getProfile(userId: string) {
   }
 }
 
+// ---- User preferences -------------------------------------------------------
+async function getUserPref(userId: string) {
+  if (!userId) return null;
+  try {
+    const { data } = await supabaseServer()
+      .from('user_preferences')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+async function setUserPref(userId: string, prefs: { forceMainLift?: string }) {
+  if (!userId) return;
+  try {
+    await supabaseServer()
+      .from('user_preferences')
+      .upsert({ user_id: userId, ...prefs, updated_at: new Date().toISOString() });
+  } catch {
+    // ignore errors
+  }
+}
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -105,7 +152,6 @@ const PROGRAMS_ENABLED = process.env.NEXT_PUBLIC_ENABLE_PROGRAMS === '1';
 const HYBRID_SPLIT_ENABLED = process.env.NEXT_PUBLIC_HYBRID_SPLIT_ENABLED === '1';
 
 type Msg = { role: 'user'|'assistant'|'system'; content: string };
-type Split = 'push' | 'pull' | 'legs' | 'upper' | 'hiit';
 
 type PlanItem = {
   name: string;
@@ -466,12 +512,14 @@ export async function POST(req: NextRequest) {
     const qaHintsText = extractQAHints(body?.messages);
     if (qaHintsText) dpush(debug, 'hints', { qa: qaHintsText.slice(0, 240) });
 
-    // Derive split: explicit UI param wins; else parse from message; never infer from equipment.
-    const splitParam = typeof body?.split === 'string' ? body.split.trim().toLowerCase() : undefined;
-    const parsedSplit = parseSplitFromText(userMsg || '');
-    const splitInput = (splitParam as Split | undefined) ?? parsedSplit ?? null;
+    // Intent & constraints
+    const intent = classifyIntent(userMsg);
+    const splitParam = typeof body?.split === 'string' ? (body.split.trim().toLowerCase() as Split) : null;
+    const parsedSplit = parseSplit(userMsg);
+    const requestedLift = parseModifyLift(userMsg);
 
     // Mark which path we take
+    const splitInput = splitParam ?? parsedSplit;
     const branch = (HYBRID_SPLIT_ENABLED && !!splitInput) ? 'HYBRID' : 'LEGACY';
     if (dbg) dpush(debug, 'branch', branch);
 
@@ -677,15 +725,48 @@ export async function POST(req: NextRequest) {
     }
     // ---------- end HYBRID SPLIT v2 ----------
 
-    // Ensure that when a split is explicitly provided, we do NOT label as "Ad Hoc".
+    // MODIFY path: capture constraint, do NOT build a plan yet
+    if (intent === 'modify_request' && !splitParam && !parsedSplit) {
+      // Example: "let's use the belt squat" → record preference
+      if (requestedLift) {
+        // persist lightweight preference in session cache (replace with your own store)
+        await setUserPref(userId, { forceMainLift: requestedLift });
+        const out = {
+          ok: true,
+          ts: Date.now(),
+          message: `Got it — I'll use ${requestedLift} as your main lift when we build your next plan. Say "start leg day" or specify a split when you're ready.`,
+        };
+        return new Response(JSON.stringify(out), { headers: { 'content-type': 'application/json' } });
+      }
+      const out = {
+        ok: true,
+        ts: Date.now(),
+        message: 'Noted. Tell me the split (legs/pull/push/upper/HIIT) or say "start" to build the plan.',
+      };
+      return new Response(JSON.stringify(out), { headers: { 'content-type': 'application/json' } });
+    }
+
+    // PLAN path
     if (splitInput) {
       // Load profile/equipment from your existing helper
       const profile = await getProfile(userId);
       const equipmentList = (profile?.equipment ? String(profile.equipment).split(',') : [])
         .map(s => s.trim()).filter(Boolean);
 
-      // Determine a main lift for the chosen split (first strength item must be a core lift)
-      const main = mainLiftForSplit(splitInput as Split, equipmentList, userMsg);
+      const savedPref = await getUserPref(userId); // { forceMainLift?: string }
+
+      // Determine main lift with guardrails:
+      // - If split=legs and user asked for Belt Squat → allow it.
+      // - If split=pull and user asked for Belt Squat → ignore (legs-only).
+      const forced = ((): string | null => {
+        if (!requestedLift && savedPref?.forceMainLift) return savedPref.forceMainLift as string;
+        if (!requestedLift) return null;
+        if (splitInput === 'legs' && requestedLift === 'Belt Squat') return 'Belt Squat';
+        // disallow cross-split forcing
+        return null;
+      })();
+
+      const main = mainLiftForSplit(splitInput as Split, equipmentList, forced);
 
       // Build a STRICT JSON plan (no chatty text). Keep coach brief.
       const basePlan = {
@@ -724,7 +805,7 @@ export async function POST(req: NextRequest) {
         'Return STRICT JSON only with keys: split, duration, phases[].phase, phases[].items[].',
         'Do not include commentary. No markdown.',
         'First item under phase=strength must be the core/main lift for the split (if any).',
-        'Cooldown items must match the split focus muscles; avoid upper-body stretches on leg day and vice versa.',
+        'Warm-up and cooldown must match the split/body region; do not include upper-body-only items on a leg day, and vice versa.',
       ].join(' ');
 
       const duration = Number(profile?.preferred_workout_duration ?? 45);
@@ -797,8 +878,25 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // Filter warm-up/cooldown by split
+      const warm = finalPlan.phases.find(p => p.phase === 'warmup' || p.phase === 'prep');
+      const cool = finalPlan.phases.find(p => p.phase === 'cooldown');
+      const isLegs = splitInput === 'legs';
+      const isUpperish = splitInput === 'push' || splitInput === 'pull' || splitInput === 'upper';
+      
+      const keepItem = (name: string) => {
+        const n = name.toLowerCase();
+        if (isLegs && /lat|pulldown|pec|shoulder|triceps|biceps/.test(n)) return false;
+        if (isUpperish && /hamstring|hip|quad|adductor|calf/.test(n)) return false;
+        return true;
+      };
+      
+      if (warm) warm.items = warm.items.filter(i => keepItem(i.name));
+      if (cool) cool.items = cool.items.filter(i => keepItem(i.name));
+
       const out = {
         ok: true,
+        ts: Date.now(),
         plan: finalPlan,
         message: `${String(splitInput).charAt(0).toUpperCase()}${String(splitInput).slice(1)} — Day`,
         coach: 'Move with control, leave 1–2 reps in reserve on main sets, and prioritize quality over load.',
@@ -1089,7 +1187,7 @@ Schema (strict):
     }
 
     // Derive plan & phases for your UI with proper main lift and naming
-    const mainLift = mainLiftForSplit(split, equipment, userMsg) || workout?.mainExercises?.[0]?.name || '';
+    const mainLift = mainLiftForSplit(split, equipment) || workout?.mainExercises?.[0]?.name || '';
     
     // Ensure the main lift is the first item in strength phase
     if (mainLift && (!workout.mainExercises?.[0] || workout.mainExercises[0].name !== mainLift)) {

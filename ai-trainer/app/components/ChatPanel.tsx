@@ -1,33 +1,23 @@
 // components/ChatPanel.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
+import React from 'react';
 
-type Msg = { role: 'user' | 'assistant'; content: string };
-
-export default function ChatPanel({ initialAssistant }: { initialAssistant?: string }) {
-  const [messages, setMessages] = useState<Msg[]>([]);
-
-  useEffect(() => {
-    if (initialAssistant) {
-      setMessages([{ role: 'assistant', content: initialAssistant }]);
-    }
-  }, [initialAssistant]);
+export default function ChatMessages({ items }: { items: Array<{ id: string; role: 'user' | 'coach'; text: string; createdAt?: number; ts?: number }>}) {
+  // Always render chronologically
+  const list = [...items].sort((a, b) => {
+    const ta = a.createdAt ?? a.ts ?? 0;
+    const tb = b.createdAt ?? b.ts ?? 0;
+    return ta - tb;
+  });
 
   return (
-    <div className="rounded-xl bg-slate-900 p-4">
-      <div className="text-white text-sm space-y-2 min-h-[160px]">
-        {messages.length === 0 ? (
-          <div className="opacity-70">Ready when you are.</div>
-        ) : (
-          messages.map((m, i) => (
-            <div key={i} className={m.role === 'assistant' ? 'opacity-100' : 'opacity-80'}>
-              {m.content}
-            </div>
-          ))
-        )}
-      </div>
-      {/* input omitted for now */}
+    <div>
+      {list.map(m => (
+        <div key={m.id} data-role={m.role}>
+          {m.text}
+        </div>
+      ))}
     </div>
   );
 }
