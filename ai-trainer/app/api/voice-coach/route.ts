@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import type { VoiceCoachRequest, VoiceCoachResponse, WorkoutPlan, PlanItem, PlanPhase } from "@/lib/types";
-import { REST_BY_PHASE, filterBlacklisted, hasEquip, bodyAwareCooldown, computeCounts, trimPlanToDuration } from "@/lib/workout-helpers";
+import { supabaseAdmin } from "@/app/lib/db";
+import type { VoiceCoachRequest, VoiceCoachResponse, WorkoutPlan, PlanItem, PlanPhase } from "@/app/lib/types";
+import { REST_BY_PHASE, filterBlacklisted, hasEquip, bodyAwareCooldown, computeCounts, trimPlanToDuration } from "@/app/lib/workout-helpers";
 
 export async function POST(req: NextRequest) {
   try {
