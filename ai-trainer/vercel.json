@@ -1,6 +1,10 @@
 {
+  "version": 2,
   "framework": "nextjs",
+  "rootDirectory": "ai-trainer",
+  "installCommand": "npm ci --no-audit --no-fund",
   "buildCommand": "npm run build",
-  "outputDirectory": ".next",
-  "installCommand": "npm install"
+  "env": {
+    "NEXT_TELEMETRY_DISABLED": "1"
+  }
 } 
